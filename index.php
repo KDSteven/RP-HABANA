@@ -69,7 +69,7 @@
                         </div>
                         <div class="mb-3">
                             <label class="form-label">Password</label>
-                            <input type="password" class="form-control" placeholder="Enter your password">
+                            <input type="password" class="form-control" placeholder="Enter your password" required pattern="^(?=.*\d)(?=.*[a-zA-Z])[a-zA-Z\d]{6,}$">
                         </div>
                         <button type="submit" class="btn btn-primary w-100">SIGN-IN</button>
                     </form>
