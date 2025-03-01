@@ -38,7 +38,11 @@
             border-radius: 10px;
             color: #fff;
         }
-        
+        hr{
+            height: 3px;
+            background-color: #fff;
+            color: #fff;
+        }
     </style>
 </head>
 <body>
