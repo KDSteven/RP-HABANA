@@ -59,12 +59,12 @@
                         <div class="mb-3">
                             <i class="fas fa-user"></i>
                             <label class="form-label">Username</label>
-                            <input type="text" id="username" class="form-control" placeholder="Enter your username" required>
+                            <input type="text" id="username" name="username" class="form-control" placeholder="Enter your username" required>
                         </div>
                         <div class="mb-3">
                             <i class="fas fa-lock"></i>
                             <label class="form-label">Password</label>
-                            <input type="password" id="password" class="form-control" placeholder="Enter your password" required>
+                            <input type="password" id="password" name="password" class="form-control" placeholder="Enter your password" required>
                         </div>
                         <button type="submit" class="btn btn-primary w-100" name="signin-Btn">SIGN-IN</button>
                     </form>
