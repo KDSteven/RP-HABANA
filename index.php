@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>R.P Habana - Inventory System</title>
+    <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.7.1/css/all.css">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>
         
@@ -70,10 +71,12 @@
                     <hr>
                     <form id="loginForm">
                         <div class="mb-3">
+                            <i class="fas fa-user"></i>
                             <label class="form-label">Username</label>
                             <input type="text" id="username" class="form-control" placeholder="Enter your username" required>
                         </div>
                         <div class="mb-3">
+                            <i class="fas fa-lock"></i>
                             <label class="form-label">Password</label>
                             <input type="password" id="password" class="form-control" placeholder="Enter your password" required>
                         </div>
