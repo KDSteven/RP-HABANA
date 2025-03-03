@@ -1,11 +1,14 @@
-<?php 
+<?php
+$servername = "localhost";  
+$username = "root";         
+$password = "";            
+$dbname = "rp_habana";  
 
-$con = mysqli_connect("localhost", "root","","rp habana");
+// Create connection
+$conn = new mysqli($servername, $username, $password, $dbname);
 
-if($con -> connect_error) {
-    die("connection failed: " . $con -> connect_error);
-} 
-// else{
-//     echo("Connected succesfully");
-// }
+// Check connection
+if ($conn->connect_error) {
+    die("Connection failed: " . $conn->connect_error);
+}
 ?>
