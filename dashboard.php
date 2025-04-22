@@ -1,174 +1,143 @@
 <?php
-session_start();
 include 'config/db.php';
 
-// Redirect if not logged in
-if (!isset($_SESSION['user_id'])) {
-    header("Location: index.php");
-    exit();
-}
+// Placeholder queries (replace with your actual logic)
+$totalProducts = $conn->query("SELECT COUNT(*) AS count FROM inventory")->fetch_assoc()['count'];
+$lowStocks = $conn->query("
+  SELECT COUNT(*) AS count FROM inventory 
+  WHERE 
+    (branch_1_stock BETWEEN 1 AND 9) OR 
+    (branch_2_stock BETWEEN 1 AND 9) OR 
+    (branch_3_stock BETWEEN 1 AND 9) OR
+    (branch_4_stock BETWEEN 1 AND 9) OR
+    (branch_5_stock BETWEEN 1 AND 9) OR 
+    (branch_6_stock BETWEEN 1 AND 9) OR
+    (branch_7_stock BETWEEN 1 AND 9)
+")->fetch_assoc()['count'];
 
-$username = $_SESSION['username'];
-$role = $_SESSION['role'];
-$location_id = $_SESSION['location_id'];
+$outOfStocks = $conn->query("
+  SELECT COUNT(*) AS count FROM inventory 
+  WHERE 
+    branch_1_stock = 0 AND 
+    branch_2_stock = 0 AND 
+    branch_3_stock = 0 AND 
+    branch_4_stock = 0 AND 
+    branch_5_stock = 0 AND 
+    branch_6_stock = 0 AND 
+    branch_4_stock = 0
+")->fetch_assoc()['count'];
+
+$totalSales = 123456; // Example static number, replace with real calculation if needed
 ?>
 
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dashboard</title>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-    <style>
-        body {
-            display: flex;
-        }
-        .sidebar {
-            width: 250px;
-            height: 100vh;
-            background:#f39200;
-            padding-top: 20px;
-            position: fixed;
-            color: white;
-        }
-        .sidebar a {
-            color: white;
-            text-decoration: none;
-            display: block;
-            padding: 10px;
-        }
-        .sidebar a:hover {
-            color: #f39200;;
-            background: white;
-        }
-        .content {
-            margin-left: 260px;
-            padding: 20px;
-            width: 100%;
-        }
-        .section {
-            margin-top: 50px;
-        }
-    </style>
+  <meta charset="UTF-8">
+  <title>Admin Dashboard</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; font-family: Arial, sans-serif; }
+    body { display: flex; height: 100vh; background: #ddd; }
+
+    .sidebar {
+      width: 220px;
+      background-color: #f7931e;
+      color: white;
+      padding: 30px 10px;
+    }
+
+    .sidebar h2 { margin-bottom: 40px; }
+
+    .sidebar a {
+      display: flex;
+      align-items: center;
+      text-decoration: none;
+      color: white;
+      padding: 10px 20px;
+      margin: 5px 0;
+      border-radius: 5px;
+    }
+
+    .sidebar a:hover, .sidebar a.active {
+      background-color: #e67e00;
+    }
+
+    .sidebar a i { margin-right: 10px; }
+
+    .content {
+      flex: 1;
+      padding: 40px;
+      background-color: #ccc;
+    }
+
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 25px;
+    }
+
+    .card {
+      padding: 30px;
+      border-radius: 15px;
+      box-shadow: 0 5px 10px rgba(0,0,0,0.15);
+      color: white;
+      font-weight: bold;
+      text-align: center;
+      position: relative;
+    }
+
+    .card.green { background-color: #28a745; }
+    .card.orange { background-color: #fd7e14; }
+    .card.red { background-color: #dc3545; }
+
+    .card h3 { font-size: 20px; margin-bottom: 10px; }
+    .card p { font-size: 32px; }
+
+    .card::after {
+      content: "● ● ●";
+      position: absolute;
+      bottom: 15px;
+      left: 0;
+      right: 0;
+      text-align: center;
+      font-size: 18px;
+      color: #fff;
+      opacity: 0.8;
+    }
+  </style>
 </head>
 <body>
+  <div class="sidebar">
+    <h2>ADMIN</h2>
+    <a href="dashboard.php" class="active"><i class="fas fa-tv"></i> Dashboard</a>
+    <a href="inventory.php"><i class="fas fa-box"></i> Inventory</a>
+    <a href="#"><i class="fas fa-user"></i> Accounts</a>
+    <a href="#"><i class="fas fa-archive"></i> Archive</a>
+    <a href="#"><i class="fas fa-calendar-alt"></i> Logs</a>
+    <a href="index.html"><i class="fas fa-sign-out-alt"></i> Logout</a>
+  </div>
 
-<!-- Sidebar -->
-<div class="sidebar">
-    <h4 class="text-center">Admin Panel</h4>
-    <a href="#dashboard">📊 Dashboard</a>
-    <a href="#inventory">📦 Inventory</a>
-    <a href="logout.php">🚪 Logout</a>
-</div>
-
-<div class="sidebar">
-    <h4 class="text-center">Admin Panel</h4>
-    <a href="#dashboard"><i class="fa-solid fa-house"></i> Dashboard</a>
-    <a href="#inventory"><i class="fa-solid fa-warehouse"></i> Inventory</a>
-    <a href="index.html"><i class="fa-solid fa-right-from-bracket"></i> Logout</a>
-</div>
-
-<!-- Main Content -->
-<div class="content">
-    <!-- Dashboard Section -->
-    <section id="dashboard">
-        <h2>Welcome, <?php echo $username; ?>!</h2>
-        <h4>Your Role: <?php echo ucfirst($role); ?></h4>
-    </section>
-
-    <!-- Inventory Section -->
-    <section id="inventory" class="section">
-        <h3>Inventory</h3>
-
-        <?php if ($role === 'admin'): ?>
-            <!-- Admin sees all branches -->
-            <?php for ($i = 1; $i <= 7; $i++): ?>
-                <div class="accordion" id="inventoryAccordion">
-                    <div class="accordion-item">
-                        <h2 class="accordion-header" id="heading<?= $i ?>">
-                            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapse<?= $i ?>" aria-expanded="false" aria-controls="collapse<?= $i ?>">
-                                Branch <?= $i ?>
-                            </button>
-                        </h2>
-                        <div id="collapse<?= $i ?>" class="accordion-collapse collapse" aria-labelledby="heading<?= $i ?>" data-bs-parent="#inventoryAccordion">
-                            <div class="accordion-body">
-                                <table class="table table-bordered">
-                                    <thead>
-                                        <tr>
-                                            <th>Product</th>
-                                            <th>Category</th>
-                                            <th>Price</th>
-                                            <th>Stock</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        <?php
-                                        $sql = "SELECT product_name, category, price, branch_{$i}_stock AS stock FROM inventory";
-                                        $result = $conn->query($sql);
-                                        while ($row = $result->fetch_assoc()):
-                                        ?>
-                                            <tr>
-                                                <td><?= $row['product_name'] ?></td>
-                                                <td><?= $row['category'] ?></td>
-                                                <td><?= number_format($row['price'], 2) ?></td>
-                                                <td><?= $row['stock'] ?></td>
-                                            </tr>
-                                        <?php endwhile; ?>
-                                    </tbody>
-                                </table>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            <?php endfor; ?>
-
-        <?php else: ?>
-            <!-- Staff sees only their assigned branch -->
-            <div class="accordion" id="inventoryAccordion">
-                <div class="accordion-item">
-                    <h2 class="accordion-header" id="heading<?= $location_id ?>">
-                        <button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#collapse<?= $location_id ?>" aria-expanded="true" aria-controls="collapse<?= $location_id ?>">
-                            Branch <?= $location_id ?>
-                        </button>
-                    </h2>
-                    <div id="collapse<?= $location_id ?>" class="accordion-collapse collapse show" aria-labelledby="heading<?= $location_id ?>" data-bs-parent="#inventoryAccordion">
-                        <div class="accordion-body">
-                            <table class="table table-bordered">
-                                <thead>
-                                    <tr>
-                                        <th>Product</th>
-                                        <th>Category</th>
-                                        <th>Price</th>
-                                        <th>Stock</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    <?php
-                                    $sql = "SELECT product_name, category, price, branch_{$location_id}_stock AS stock FROM inventory";
-                                    $result = $conn->query($sql);
-                                    while ($row = $result->fetch_assoc()):
-                                    ?>
-                                        <tr>
-                                            <td><?= $row['product_name'] ?></td>
-                                            <td><?= $row['category'] ?></td>
-                                            <td><?= number_format($row['price'], 2) ?></td>
-                                            <td><?= $row['stock'] ?></td>
-                                        </tr>
-                                    <?php endwhile; ?>
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        <?php endif; ?>
-
-    </section>
-</div>
-
+  <div class="content">
+    <div class="cards">
+      <div class="card green">
+        <h3>TOTAL PRODUCTS</h3>
+        <p><?= $totalProducts ?></p>
+      </div>
+      <div class="card orange">
+        <h3>LOW STOCKS</h3>
+        <p><?= $lowStocks ?></p>
+      </div>
+      <div class="card red">
+        <h3>OUT OF STOCKS</h3>
+        <p><?= $outOfStocks ?></p>
+      </div>
+      <div class="card green">
+        <h3>TOTAL SALES</h3>
+        <p><?= number_format($totalSales) ?></p>
+      </div>
+    </div>
+  </div>
 </body>
 </html>
 
