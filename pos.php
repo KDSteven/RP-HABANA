@@ -24,11 +24,12 @@ $categories_result = $conn->query("SELECT DISTINCT category FROM products");
 
 // Prepare base query for products available for the staff's branch
 $query = "
-  SELECT inventory.stock, products.product_id, products.product_name, products.price, products.category
+  SELECT inventory.stock, products.product_id, products.product_name, products.price, products.markup_price, products.category
   FROM inventory 
   JOIN products ON inventory.product_id = products.product_id 
   WHERE inventory.branch_id = ?
 ";
+
 
 $params = [$branch_id];
 $types = "i";
@@ -127,7 +128,7 @@ if (isset($_POST['checkout'])) {
             if (!$product) {
                 throw new Exception("Product not found.");
             }
-            $price = $product['price'];
+            $price = $product['price'] + $product['markup_price'];
             $subtotal = $price * $quantity;
             $total += $subtotal;
 
@@ -184,34 +185,50 @@ if (isset($_POST['checkout'])) {
   <title>Point of Sale - Staff</title>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" />
   <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; font-family: Arial, sans-serif; }
-    body { display: flex; height: 100vh; background: #ddd; }
+     * {
+      margin: 0; padding: 0; box-sizing: border-box;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    }
+
+    body {
+      display: flex;
+      height: 100vh;
+      background: #f5f5f5;
+      color: #333;
+    }
 
     .sidebar {
       width: 220px;
       background-color: #f7931e;
+      padding: 30px 15px;
       color: white;
-      padding: 30px 10px;
     }
 
-    .sidebar h2 { margin-bottom: 40px; }
+    .sidebar h2 {
+      margin-bottom: 30px;
+      font-size: 22px;
+      text-align: center;
+    }
 
     .sidebar a {
       display: flex;
       align-items: center;
       text-decoration: none;
       color: white;
-      padding: 10px 20px;
-      margin: 5px 0;
-      border-radius: 5px;
+      padding: 12px 15px;
+      margin: 6px 0;
+      border-radius: 8px;
+      transition: background 0.2s;
     }
 
     .sidebar a:hover, .sidebar a.active {
       background-color: #e67e00;
     }
 
-    .sidebar a i { margin-right: 10px; }
-
+    .sidebar a i {
+      margin-right: 10px;
+      font-size: 16px;
+    }
     .content {
       flex: 1;
       padding: 40px;
@@ -366,6 +383,7 @@ if (isset($_POST['checkout'])) {
   <div class="sidebar">
     <h2>STAFF</h2>
     <a href="dashboard.php" class=""><i class="fas fa-tv"></i> Dashboard</a>
+    <a href="inventory.php"><i class="fas fa-box"></i> Inventory</a>
     <a href="pos.php" class="active"><i class="fas fa-cash-register"></i> Point of Sale</a>
     <a href="history.php"><i class="fas fa-history"></i> Sales History</a>
     <a href="index.html"><i class="fas fa-sign-out-alt"></i> Logout</a>
@@ -393,7 +411,7 @@ if (isset($_POST['checkout'])) {
       <?php while ($row = $products_result->fetch_assoc()): ?>
         <div class="product-card">
           <div class="product-name"><?= htmlspecialchars($row['product_name']) ?></div>
-          <div class="product-price">₱<?= number_format($row['price'], 2) ?></div>
+          <div class="product-price">₱<?= number_format($row['price'] + $row['markup_price'], 2) ?> <small style="color:gray">(Orig: ₱<?= number_format($row['price'], 2) ?>)</small></div>
           <div class="product-stock">Stock: <?= (int)$row['stock'] ?></div>
           <form class="add-to-cart-form" method="POST" action="pos.php?search=<?= urlencode($search) ?>&category=<?= urlencode($category_filter) ?>">
             <input type="hidden" name="product_id" value="<?= (int)$row['product_id'] ?>" />
@@ -404,65 +422,70 @@ if (isset($_POST['checkout'])) {
       <?php endwhile; ?>
     </div>
 
-    <!-- Cart Display -->
-    <div class="cart-box">
-      <h3>Cart</h3>
-      <?php if (empty($_SESSION['cart'])): ?>
-        <p>Your cart is empty.</p>
-      <?php else: ?>
-        <table>
-          <thead>
-            <tr>
-              <th>Product Name</th>
-              <th>Quantity</th>
-              <th>Price (₱)</th>
-              <th>Subtotal (₱)</th>
-              <th>Action</th>
-            </tr>
-          </thead>
-          <tbody>
-            <?php
-            $total = 0;
-            foreach ($_SESSION['cart'] as $item):
-                $product_id = (int)$item['product_id'];
-                $quantity = (int)$item['stock'];
-                $product_stmt = $conn->prepare("SELECT product_name, price FROM products WHERE product_id = ?");
-                $product_stmt->bind_param("i", $product_id);
-                $product_stmt->execute();
-                $product_result = $product_stmt->get_result();
-                $product = $product_result->fetch_assoc();
-                if (!$product) continue;
-                $subtotal = $product['price'] * $quantity;
-                $total += $subtotal;
-            ?>
-            <tr>
-              <td><?= htmlspecialchars($product['product_name']) ?></td>
-              <td><?= $quantity ?></td>
-              <td><?= number_format($product['price'], 2) ?></td>
-              <td><?= number_format($subtotal, 2) ?></td>
-              <td>
-                <form method="POST" style="margin:0;">
-                  <input type="hidden" name="product_id" value="<?= $product_id ?>" />
-                  <button type="submit" name="remove" class="remove-btn">Remove</button>
-                </form>
-              </td>
-            </tr>
-            <?php endforeach; ?>
-          </tbody>
-          <tfoot>
-            <tr>
-              <th colspan="3" style="text-align:right;">Total:</th>
-              <th><?= number_format($total, 2) ?></th>
-              <th></th>
-            </tr>
-          </tfoot>
-        </table>
-        <form method="POST" style="margin-top: 15px;">
-          <button type="submit" name="checkout">Checkout</button>
-        </form>
-      <?php endif; ?>
-    </div>
+   <!-- Cart Display -->
+<div class="cart-box">
+  <h3>Cart</h3>
+  <?php if (empty($_SESSION['cart'])): ?>
+    <p>Your cart is empty.</p>
+  <?php else: ?>
+    <table>
+      <thead>
+        <tr>
+          <th>Product Name</th>
+          <th>Quantity</th>
+          <th>Price (₱)</th>
+          <th>Subtotal (₱)</th>
+          <th>Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        <?php
+        $total = 0;
+        foreach ($_SESSION['cart'] as $item):
+            $product_id = (int)$item['product_id'];
+            $quantity = (int)$item['stock'];
+
+            // Fetch both price and markup_price
+            $product_stmt = $conn->prepare("SELECT product_name, price, markup_price FROM products WHERE product_id = ?");
+            $product_stmt->bind_param("i", $product_id);
+            $product_stmt->execute();
+            $product_result = $product_stmt->get_result();
+            $product = $product_result->fetch_assoc();
+
+            if (!$product) continue;
+
+            // Calculate full price and subtotal
+            $full_price = $product['price'] + $product['markup_price'];
+            $subtotal = $full_price * $quantity;
+            $total += $subtotal;
+        ?>
+        <tr>
+          <td><?= htmlspecialchars($product['product_name']) ?></td>
+          <td><?= $quantity ?></td>
+          <td><?= number_format($full_price, 2) ?></td>
+          <td><?= number_format($subtotal, 2) ?></td>
+          <td>
+            <form method="POST" style="margin:0;">
+              <input type="hidden" name="product_id" value="<?= $product_id ?>" />
+              <button type="submit" name="remove" class="remove-btn">Remove</button>
+            </form>
+          </td>
+        </tr>
+        <?php endforeach; ?>
+      </tbody>
+      <tfoot>
+        <tr>
+          <th colspan="3" style="text-align:right;">Total:</th>
+          <th><?= number_format($total, 2) ?></th>
+          <th></th>
+        </tr>
+      </tfoot>
+    </table>
+    <form method="POST" style="margin-top: 15px;">
+      <button type="submit" name="checkout">Checkout</button>
+    </form>
+  <?php endif; ?>
+</div>
   </div>
 </body>
 </html>
-w

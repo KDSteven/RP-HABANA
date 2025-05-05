@@ -12,11 +12,23 @@ $branch_id = isset($_SESSION['branch_id']) ? (int)$_SESSION['branch_id'] : 0;
 
 // Fetch sales history based on role
 if ($role === 'staff') {
-    $stmt = $conn->prepare("SELECT sale_id, sale_date, total FROM sales WHERE branch_id = ? ORDER BY sale_date DESC");
-    $stmt->bind_param("i", $branch_id);
+  // Staff sees only sales from their own branch
+  $stmt = $conn->prepare("
+      SELECT s.sale_id, s.sale_date, s.total, b.branch_name 
+      FROM sales s
+      JOIN branches b ON s.branch_id = b.branch_id
+      WHERE s.branch_id = ?
+      ORDER BY s.sale_date DESC
+  ");
+  $stmt->bind_param("i", $branch_id);
 } else {
-    // Admin sees all sales
-    $stmt = $conn->prepare("SELECT sale_id, sale_date, total FROM sales ORDER BY sale_date DESC");
+  // Admin sees all sales
+  $stmt = $conn->prepare("
+      SELECT s.sale_id, s.sale_date, s.total, b.branch_name 
+      FROM sales s
+      JOIN branches b ON s.branch_id = b.branch_id
+      ORDER BY s.sale_date DESC
+  ");
 }
 $stmt->execute();
 $sales_result = $stmt->get_result();
@@ -29,13 +41,51 @@ $sales_result = $stmt->get_result();
   <title>Sales History</title>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" />
   <style>
-    body {
-      font-family: Arial, sans-serif;
-      max-width: 900px;
-      margin: 20px auto;
-      padding: 20px;
-      background: #f5f5f5;a
+   * {
+      margin: 0; padding: 0; box-sizing: border-box;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
     }
+
+    body {
+      display: flex;
+      height: 100vh;
+      background: #f5f5f5;
+      color: #333;
+    }
+
+    .sidebar {
+      width: 220px;
+      background-color: #f7931e;
+      padding: 30px 15px;
+      color: white;
+    }
+
+    .sidebar h2 {
+      margin-bottom: 30px;
+      font-size: 22px;
+      text-align: center;
+    }
+
+    .sidebar a {
+      display: flex;
+      align-items: center;
+      text-decoration: none;
+      color: white;
+      padding: 12px 15px;
+      margin: 6px 0;
+      border-radius: 8px;
+      transition: background 0.2s;
+    }
+
+    .sidebar a:hover, .sidebar a.active {
+      background-color: #e67e00;
+    }
+
+    .sidebar a i {
+      margin-right: 10px;
+      font-size: 16px;
+    }
+
     h1 {
       color: #f7931e;
       text-align: center;
@@ -68,56 +118,31 @@ $sales_result = $stmt->get_result();
       text-decoration: underline;
       color: #e67e00;
     }
-    .sidebar {
-      width: 220px;
-      background-color: #f7931e;
-      color: white;
-      padding: 30px 10px;
-      position: fixed;
-      height: 100vh;
-      box-shadow: 2px 0 5px rgba(0,0,0,0.1);
-    }
-    .sidebar h2 {
-      margin-bottom: 40px;
-      font-weight: 700;
-      font-size: 1.8rem;
-      letter-spacing: 1px;
-    }
-    .sidebar a {
-      display: flex;
-      align-items: center;
-      text-decoration: none;
-      color: white;
-      padding: 10px 20px;
-      margin: 5px 0;
-      border-radius: 5px;
-      font-weight: 600;
-      font-size: 1.1rem;
-      transition: background-color 0.3s ease;
-    }
-    .sidebar a:hover, .sidebar a.active {
-      background-color: #e67e00;
-    }
-    .sidebar a i {
-      margin-right: 10px;
-      font-size: 1.2rem;
-    }
     .content {
-      margin-left: 240px;
+      flex: 1;
       padding: 40px;
-      background: #f5f5f5;
-      min-height: 100vh;
-      box-shadow: inset 0 0 10px rgba(0,0,0,0.05);
-      border-radius: 8px;
+      overflow-y: auto;
     }
   </style>
 </head>
 <body>
   <div class="sidebar">
-    <h2>STAFF</h2>
+ 
+  <h2><?= strtoupper($role) ?></h2>
     <a href="dashboard.php"><i class="fas fa-tv"></i> Dashboard</a>
-    <a href="pos.php"><i class="fas fa-cash-register"></i> Point of Sale</a>
-    <a href="history.php" class="active"><i class="fas fa-history"></i> Sales History</a>
+    <a href="inventory.php?branch=<?= $branch_id ?> "><i class="fas fa-box"></i> Inventory</a>
+    <?php if ($role !== 'admin'): ?>
+      <a href="pos.php"><i class="fas fa-cash-register"></i> Point of Sale</a>
+    <?php endif; ?>
+    <a href="history.php"  class="active"><i class="fas fa-history" ></i> Sales History</a>
+
+    <?php if ($role === 'admin'): ?>
+      <a href="accounts.php"><i class="fas fa-user"></i> Accounts</a>
+      <a href=""><i class="fas fa-archive"></i> Archive</a>
+      <a href=""><i class="fas fa-calendar-alt"></i> Logs</a>
+
+
+    <?php endif; ?>
     <a href="index.html"><i class="fas fa-sign-out-alt"></i> Logout</a>
   </div>
 
@@ -130,15 +155,18 @@ $sales_result = $stmt->get_result();
         <thead>
           <tr>
             <th>Sale ID</th>
+            <th>Branch</th>
             <th>Date</th>
             <th>Total (₱)</th>
             <th>Receipt</th>
+
           </tr>
         </thead>
         <tbody>
           <?php while ($sale = $sales_result->fetch_assoc()): ?>
           <tr>
             <td><?= (int)$sale['sale_id'] ?></td>
+            <td><?= htmlspecialchars($sale['branch_name']) ?></td>
             <td><?= htmlspecialchars($sale['sale_date']) ?></td>
             <td><?= number_format($sale['total'], 2) ?></td>
             <td><a class="view-link" href="receipt.php?sale_id=<?= (int)$sale['sale_id'] ?>" target="_blank">View Receipt</a></td>

@@ -80,33 +80,50 @@ if ($row = $result->fetch_assoc()) {
     <title><?= strtoupper($role) ?> Dashboard</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; font-family: Arial, sans-serif; }
-        body { display: flex; height: 100vh; background: #ddd; }
+       * {
+      margin: 0; padding: 0; box-sizing: border-box;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    }
 
-        .sidebar {
-            width: 220px;
-            background-color: #f7931e;
-            color: white;
-            padding: 30px 10px;
-        }
+    body {
+      display: flex;
+      height: 100vh;
+      background: #f5f5f5;
+      color: #333;
+    }
 
-        .sidebar h2 { margin-bottom: 40px; }
+    .sidebar {
+      width: 220px;
+      background-color: #f7931e;
+      padding: 30px 15px;
+      color: white;
+    }
 
-        .sidebar a {
-            display: flex;
-            align-items: center;
-            text-decoration: none;
-            color: white;
-            padding: 10px 20px;
-            margin: 5px 0;
-            border-radius: 5px;
-        }
+    .sidebar h2 {
+      margin-bottom: 30px;
+      font-size: 22px;
+      text-align: center;
+    }
 
-        .sidebar a:hover, .sidebar a.active {
-            background-color: #e67e00;
-        }
+    .sidebar a {
+      display: flex;
+      align-items: center;
+      text-decoration: none;
+      color: white;
+      padding: 12px 15px;
+      margin: 6px 0;
+      border-radius: 8px;
+      transition: background 0.2s;
+    }
 
-        .sidebar a i { margin-right: 10px; }
+    .sidebar a:hover, .sidebar a.active {
+      background-color: #e67e00;
+    }
+
+    .sidebar a i {
+      margin-right: 10px;
+      font-size: 16px;
+    }
 
         .content {
             flex: 1;
