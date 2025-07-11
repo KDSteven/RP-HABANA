@@ -202,20 +202,24 @@ if ($row = $result->fetch_assoc()) {
 </head>
 <body>
 <div class="sidebar">
-    <h2><?= strtoupper($role) ?></h2>
+  
+    <h2><?= htmlspecialchars($_SESSION['username']) ?> (<?= ucfirst($_SESSION['role']) ?>)</h2>
+
+
+    
     <a href="dashboard.php"><i class="fas fa-tv"></i> Dashboard</a>
     <a href="inventory.php?branch=<?= $branch_id ?>"><i class="fas fa-box"></i> Inventory</a>
-    <?php if ($role !== 'admin'): ?>
-      <a href="pos.php"><i class="fas fa-cash-register"></i> Point of Sale</a>
-    <?php endif; ?>
+    <a href="transfer.php"> <i class="fas fa-box"></i> Transfer</a>
+  
+    <?php if ($role === 'staff'): ?>
+    <a href="pos.php"><i class="fas fa-cash-register"></i> Point of Sale</a>
     <a href="history.php"><i class="fas fa-history"></i> Sales History</a>
+    <?php endif; ?>
 
     <?php if ($role === 'admin'): ?>
       <a href="accounts.php"><i class="fas fa-user"></i> Accounts</a>
       <a href=""><i class="fas fa-archive"></i> Archive</a>
       <a href=""><i class="fas fa-calendar-alt"></i> Logs</a>
-
-
     <?php endif; ?>
     <a href="index.html"><i class="fas fa-sign-out-alt"></i> Logout</a>
   </div>

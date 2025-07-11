@@ -8,7 +8,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $role = $_POST['role'];
 
     // Set branch_id only if the role is 'staff'
-    $branch_id = ($role === 'staff') ? $_POST['branch_id'] : null;
+    $branch_id = ($role === 'staff' || $role ==='stockman') ? $_POST['branch_id'] : null;
 
     // Prepare the statement to insert the new user
     $stmt = $conn->prepare("INSERT INTO users (username, password, role, branch_id) VALUES (?, ?, ?, ?)");

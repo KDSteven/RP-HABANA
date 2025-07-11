@@ -123,6 +123,17 @@ if ($role === 'staff') {
                               LEFT JOIN inventory i ON p.product_id = i.product_id" . $searchQuery);
   }
 }
+// Deletion of product
+if (isset($_POST['delete_product'])) {
+  $delete_id = intval($_POST['delete_product_id']); // sanitize input
+  $delete_query = "DELETE FROM products WHERE product_id = $delete_id";
+
+  if (mysqli_query($conn, $delete_query)) {
+      echo "<script>window.location.href='inventory.php';</script>"; // Redirect after deletion
+  } else {
+      echo "Error deleting product: " . mysqli_error($conn);
+  }
+}
 
 ?>
 
@@ -138,37 +149,56 @@ if ($role === 'staff') {
   
 <style>
     /* General Styles */
-    * { box-sizing: border-box; margin: 0; padding: 0; font-family: Arial, sans-serif; }
-    body { display: flex; background: #f4f4f4; height: 100vh; }
+    * {
+      margin: 0; padding: 0; box-sizing: border-box;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    }
+
+    body {
+      display: flex;
+      height: 140vh;
+      max-height: 200vh;
+      background: #f5f5f5;
+      color: #333;
+    }
+
     .sidebar {
       width: 220px;
       background-color: #f7931e;
+      padding: 30px 15px;
       color: white;
-      padding: 30px 10px;
     }
 
-    .sidebar h2 { margin-bottom: 40px; }
+    .sidebar h2 {
+      margin-bottom: 30px;
+      font-size: 22px;
+      text-align: center;
+    }
 
     .sidebar a {
       display: flex;
       align-items: center;
       text-decoration: none;
       color: white;
-      padding: 10px 20px;
-      margin: 5px 0;
-      border-radius: 5px;
+      padding: 12px 15px;
+      margin: 6px 0;
+      border-radius: 8px;
+      transition: background 0.2s;
     }
 
     .sidebar a:hover, .sidebar a.active {
       background-color: #e67e00;
     }
 
-    .sidebar a i { margin-right: 10px; }
+    .sidebar a i {
+      margin-right: 10px;
+      font-size: 16px;
+    }
+
 
     .content {
       flex: 1;
       padding: 40px;
-  
     }
 
     input, select, button {
@@ -180,13 +210,21 @@ if ($role === 'staff') {
     }
 
     button {
+      width: 250px;
       background-color: #f7931e;
       color: white;
       font-weight: bold;
       border: none;
       cursor: pointer;
     }
-
+    .button-small{
+      width: 150px;
+      background-color: red;
+    }
+    .button-small-b{
+      width: 150px;
+      background-color:#f7931e ;
+    }
     button:hover {
       background-color: #e67e00;
     }
@@ -207,6 +245,7 @@ if ($role === 'staff') {
       border-radius: 5px;
       padding: 10px;
       margin-bottom: 20px;
+      max-height: 5000px;
     }
     .branches a {
       display: block;
@@ -221,6 +260,7 @@ if ($role === 'staff') {
       background: white;
       border-radius: 5px;
       overflow: hidden;
+      padding: 20px;
     }
     table {
       width: 100%;
@@ -247,13 +287,14 @@ if ($role === 'staff') {
     }
     .btn-create { background: #28a745; }
     .btn-delete { background: #dc3545; }
-    
     .modal {
   display: none;
   position: fixed;
   z-index: 9999;
-  top: 0; left: 0;
-  width: 100%; height: 100%;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
   background-color: rgba(0, 0, 0, 0.5);
   justify-content: center;
   align-items: center;
@@ -261,56 +302,63 @@ if ($role === 'staff') {
 }
 
 .modal-content {
-  background-color: #e0e0e0;
-  padding: 30px;
-  border-radius: 10px;
-  width: 500px;
-  max-width: 90%;
-  text-align: center;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+  background-color: #f9f9f9;
+  padding: 25px 30px;
+  border-radius: 12px;
+  width: 100%;
+  max-width: 800px;
+  text-align: left;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.2);
 }
 
 .modal-header {
   font-size: 22px;
   font-weight: bold;
-  margin-bottom: 20px;
-}
-
-.modal form {
+  margin-bottom: 10px;
   display: flex;
-  flex-direction: column;
-  gap: 12px;
+  justify-content: space-between;
+  align-items: center;
 }
 
-.modal input,
-.modal label {
+.modal-body form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px;
+}
+
+.modal-body input,
+.modal-body select,
+.modal-body label {
   font-size: 14px;
 }
 
-.modal input[type="text"],
-.modal input[type="email"] {
+.modal-body input[type="text"],
+.modal-body input[type="number"],
+.modal-body input[type="email"],
+.modal-body input[type="date"],
+.modal-body select {
   width: 100%;
   padding: 10px;
   border-radius: 6px;
-  border: none;
-  background-color: #d9d9d9;
+  border: 1px solid #ccc;
+  background-color: #f1f1f1;
 }
 
 .modal-footer {
   display: flex;
-  flex-direction: column;
+  justify-content: flex-end;
   gap: 10px;
-  margin-top: 15px;
+  margin-top: 20px;
 }
 
-.modal-footer : {
+.modal-footer button {
   background-color: #28a745;
   color: white;
-  padding: 12px;
+  padding: 10px 16px;
   font-size: 15px;
   font-weight: bold;
   border: none;
-  border-radius: 8px;
+  border-radius: 6px;
   cursor: pointer;
 }
 
@@ -318,14 +366,15 @@ if ($role === 'staff') {
   background-color: #218838;
 }
 
-.modal-footer button.cancel {
+.modal-footer .cancel {
   background-color: #c4c4c4;
   color: black;
 }
 
-.modal-footer button.cancel:hover {
+.modal-footer .cancel:hover {
   background-color: #aaa;
 }
+
 
 /* Danger Modal (Delete Confirmation) */
 #deleteConfirmationModal{
@@ -496,24 +545,26 @@ display: flex;
 </head>
 <body>
 <div class="sidebar">
+  
     <h2><?= strtoupper($role) ?></h2>
+    
     <a href="dashboard.php"><i class="fas fa-tv"></i> Dashboard</a>
     <a href="inventory.php?branch=<?= $branch_id ?>"><i class="fas fa-box"></i> Inventory</a>
-    <?php if ($role !== 'admin'): ?>
-      <a href="pos.php"><i class="fas fa-cash-register"></i> Point of Sale</a>
-    <?php endif; ?>
+    <a href="transfer.php"> <i class="fas fa-box"></i> Transfer</a>
+  
+    <?php if ($role === 'staff'): ?>
+    <a href="pos.php"><i class="fas fa-cash-register"></i> Point of Sale</a>
     <a href="history.php"><i class="fas fa-history"></i> Sales History</a>
+    <?php endif; ?>
 
     <?php if ($role === 'admin'): ?>
       <a href="accounts.php"><i class="fas fa-user"></i> Accounts</a>
       <a href=""><i class="fas fa-archive"></i> Archive</a>
       <a href=""><i class="fas fa-calendar-alt"></i> Logs</a>
-
-
     <?php endif; ?>
     <a href="index.html"><i class="fas fa-sign-out-alt"></i> Logout</a>
   </div>
-
+</div>
   <!-- Content -->
   <div class="content">
   <div class="search-box">
@@ -565,6 +616,10 @@ display: flex;
         <td><?= $row['critical_point'] ?></td>
         <td><?= $row['stock'] ?></td>
         <td>
+        <form method="POST" style="display:inline; " onsubmit="return confirm('Are you sure you want to delete this product?');">
+  <input type="hidden" name="delete_product_id" value="<?php echo $row['product_id']; ?>">
+  <button type="submit" name="delete_product" class="button-small">Delete</button>
+</form>
           <button onclick="openEditModal(
             <?= $row['product_id'] ?>,
             '<?= htmlspecialchars($row['product_name'], ENT_QUOTES) ?>',
@@ -574,102 +629,192 @@ display: flex;
             <?= $row['markup_price'] ?>,
             <?= $row['ceiling_point'] ?>,
             <?= $row['critical_point'] ?>
-          )">Edit</button>
+          )" class="button-small-b">Edit</button>
         </td>
+       
       </tr>
     <?php endwhile; ?>
   <?php else: ?>
     <tr><td colspan="9">No products found for this branch.</td></tr>
   <?php endif; ?>
+  
 </tbody>
-
-  </table>
-</div>
-
-    
-<!-- Button to trigger modal -->
 <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addProductModal">
   Add Product
 </button>
 
-<!-- Modal -->
+  </table>
+  
+  <div class="actions">
+    <?php if ($role === 'admin'): ?>
+      <button class="btn btn-create" onclick="openCreateModal()">Create Branch</button>
+      <button class="btn btn-delete" onclick="openDeleteModal()">Delete Branch</button>
+      <?php endif; ?>
+    </div>
+  </div>
+<!-- Button to trigger modal -->
+</div><!-- Add Product Modal -->
 <div class="modal fade" id="addProductModal" tabindex="-1" aria-labelledby="addProductModalLabel" aria-hidden="true">
-  <div class="modal-dialog">
+  <div class="modal-dialog modal-lg"> <!-- Use modal-lg for more space -->
     <div class="modal-content">
       <div class="modal-header">
         <h5 class="modal-title" id="addProductModalLabel">Add New Product</h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
-      <div class="modal-body">
-        <form id="addProductForm" method="POST" action="add_product.php">
-          <div class="mb-3">
-            <label for="productName" class="form-label">Product Name</label>
-            <input type="text" class="form-control" id="productName" name="product_name" required>
+
+      <form id="addProductForm" method="POST" action="add_product.php">
+        <div class="modal-body">
+          <div class="row g-3">
+
+            <div class="col-md-6">
+              <label for="brand" class="form-label">Brand</label>
+              <select name="brand_id" class="form-select" required>
+                <option value="">-- Select Brand --</option>
+                ADD BRAND
+                ?>
+              </select>
+            </div>
+
+            <div class="col-md-6">
+              <label for="productName" class="form-label">Product Name</label>
+              <input type="text" class="form-control" id="productName" name="product_name" required>
+            </div>
+
+            <div class="col-md-6">
+              <label for="category" class="form-label">Category</label>
+              <select name="category" id="category" class="form-select" required>
+                <option value="">-- Select Category --</option>
+                <option value="Solid">Solid</option>
+                <option value="Liquid">Liquid</option>
+              </select>
+            </div>
+
+            <div class="col-md-6">
+              <label for="price" class="form-label">Price</label>
+              <input type="number" class="form-control" id="price" name="price" step="0.01" required>
+            </div>
+
+            <div class="col-md-6">
+              <label for="markupPrice" class="form-label">Markup (%)</label>
+              <input type="number" class="form-control" id="markupPrice" name="markup_price" step="0.01" required>
+            </div>
+
+            <div class="col-md-6">
+              <label for="retailPrice" class="form-label">Retail Price</label>
+              <input type="number" class="form-control" id="retailPrice" name="retail_price" step="0.01" required>
+            </div>
+
+            <div class="col-md-6">
+              <label for="ceilingPoint" class="form-label">Ceiling Point</label>
+              <input type="number" class="form-control" id="ceilingPoint" name="ceiling_point" required>
+            </div>
+
+            <div class="col-md-6">
+              <label for="criticalPoint" class="form-label">Critical Point</label>
+              <input type="number" class="form-control" id="criticalPoint" name="critical_point" required>
+            </div>
+
+            <div class="col-md-6">
+              <label for="stocks" class="form-label">Stocks</label>
+              <input type="number" class="form-control" id="stocks" name="stocks" required>
+            </div>
+
+            <div class="col-md-6">
+              <label for="vat" class="form-label">VAT (%)</label>
+              <input type="number" class="form-control" id="vat" name="vat" step="0.01" required>
+            </div>
+
+            <div class="col-md-6">
+              <label for="expiration" class="form-label">Expiration Date</label>
+              <input type="date" class="form-control" id="expiration" name="expiration_date">
+              <div class="form-text">Leave blank if none</div>
+            </div>
+
+            <div class="col-md-6">
+              <label for="branch" class="form-label">Branch</label>
+              <select name="branch_id" id="branch" class="form-select" required>
+                <option value="">-- Select Branch --</option>
+                <?php
+                  $branches = $conn->query("SELECT branch_id, branch_name FROM branches");
+                  while ($row = $branches->fetch_assoc()) {
+                    echo "<option value='{$row['branch_id']}'>{$row['branch_name']}</option>";
+                  }
+                ?>
+              </select>
+            </div>
+
           </div>
-          <div class="mb-3">
-            <label for="category" class="form-label">Category</label>
-            <input type="text" class="form-control" id="category" name="category" required>
-          </div>
-          <div class="mb-3">
-            <label for="price" class="form-label">Price</label>
-            <input type="number" class="form-control" id="price" name="price" required>
-          </div>
-          <div class="mb-3">
-            <label for="markupPrice" class="form-label">Markup Price</label>
-            <input type="number" class="form-control" id="markupPrice" name="markup_price" required>
-          </div>
-          <div class="mb-3">
-            <label for="ceilingPoint" class="form-label">Ceiling Point</label>
-            <input type="number" class="form-control" id="ceilingPoint" name="ceiling_point" required>
-          </div>
-          <div class="mb-3">
-            <label for="criticalPoint" class="form-label">Critical Point</label>
-            <input type="number" class="form-control" id="criticalPoint" name="critical_point" required>
-          </div>
-          <div class="mb-3">
-            <label for="stocks" class="form-label">Stocks</label>
-            <input type="number" class="form-control" id="stocks" name="stocks" required>
-          </div>
-          <select name="branch_id" required>
-          <?php
-            $result = $conn->query("SELECT branch_id, branch_name FROM branches");
-            while ($row = $result->fetch_assoc()) {
-              echo "<option value='{$row['branch_id']}'>{$row['branch_name']}</option>";
-            }
-          ?>
-        </select>
+        </div>
+
+        <div class="modal-footer">
           <button type="submit" class="btn btn-primary">Save Product</button>
-        </form>
-      </div>
+        </div>
+      </form>
     </div>
   </div>
 </div>
 
 
-  <div class="modal" id="editModal">
+ <!-- Edit Product Modal -->
+<div class="modal fade" id="editProductModal" tabindex="-1" aria-labelledby="editProductModalLabel" aria-hidden="true">
+  <div class="modal-dialog">
     <div class="modal-content">
-      <div class="modal-header">Edit Product</div>
-      <form id="editProductForm" method="POST" action="update_product.php?branch=<?= $branch_id ?>">
-        <input type="hidden" name="product_id" id="edit_product_id">
-        <input type="text" name="product_name" id="edit_product_name" required>
-        <input type="text" name="category" id="edit_category" required>
-        <input type="number" name="price" id="edit_price" step="0.01" required>
-        <input type="number" name="markup_price" id="edit_markup_price" step="0.01" required>
-        <input type="number" name="ceiling_point" id="edit_ceiling_point" required>
-        <input type="number" name="critical_point" id="edit_critical_point" required>
-        <input type="number" name="stock" id="edit_stock" required>
+      <form id="editProductForm" method="POST" action="update_product.php">
+        <div class="modal-header">
+          <h5 class="modal-title" id="editProductModalLabel">Edit Product</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <!-- Hidden field to store product ID -->
+          <input type="hidden" name="product_id" id="edit_product_id">
 
-        <button type="submit">Save Changes</button>
+          <div class="mb-3">
+            <label for="edit_product_name" class="form-label">Product Name</label>
+            <input type="text" class="form-control" id="edit_product_name" name="product_name" required>
+          </div>
+
+          <div class="mb-3">
+            <label for="edit_category" class="form-label">Category</label>
+            <input type="text" class="form-control" id="edit_category" name="category" required>
+          </div>
+
+          <div class="mb-3">
+            <label for="edit_price" class="form-label">Price</label>
+            <input type="number" step="0.01" class="form-control" id="edit_price" name="price" required>
+          </div>
+
+          <div class="mb-3">
+            <label for="edit_markup_price" class="form-label">Markup Price</label>
+            <input type="number" step="0.01" class="form-control" id="edit_markup_price" name="markup_price" required>
+          </div>
+
+          <div class="mb-3">
+            <label for="edit_ceiling_point" class="form-label">Ceiling Point</label>
+            <input type="number" class="form-control" id="edit_ceiling_point" name="ceiling_point" required>
+          </div>
+
+          <div class="mb-3">
+            <label for="edit_critical_point" class="form-label">Critical Point</label>
+            <input type="number" class="form-control" id="edit_critical_point" name="critical_point" required>
+          </div>
+
+          <div class="mb-3">
+            <label for="edit_stock" class="form-label">Stock</label>
+            <input type="number" class="form-control" id="edit_stock" name="stock" required>
+          </div>
+
+        </div>
+        <div class="modal-footer">
+          <button type="submit" class="btn btn-primary">Save Changes</button>
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        </div>
       </form>
     </div>
   </div>
-  
-    <div class="actions">
-      <button class="btn btn-create" onclick="openCreateModal()">Create Branch</button>
-      <button class="btn btn-delete" onclick="openDeleteModal()">Delete Branch</button>
-    </div>
-  </div>
+</div>
 
+  
+    
 </body>
 </html>
 <script>
@@ -697,11 +842,11 @@ display: flex;
     <div class="modal-content">
       <div class="modal-header">Create Branch</div>
       <form method="POST">
-      <input type="text" name="branch_number" placeholder="Branch Number" required>
-        <input type="text" name="branch_name" placeholder="Branch Name" required>
-        <input type="text" name="branch_location" placeholder="Branch Location" required>
-        <input type="email" name="branch_email" placeholder="Branch Email" required>
-        <input type="text" name="branch_contact" placeholder="Branch Contact" required>
+      <input type="text" name="branch_number" placeholder="Branch Number" required pattern="\d+" title="Branch Number must be numeric">
+      <input type="text" name="branch_name" placeholder="Branch Name" required pattern="^[A-Za-z0-9\s\-']+$" title="Branch name must only contain letters, numbers, spaces, hyphens, or apostrophes">
+      <input type="text" name="branch_location" placeholder="Branch Location">
+      <input type="email" name="branch_email" placeholder="Branch Email" required>
+      <input type="text" name="branch_contact" placeholder="Branch Contact">
         <div class="modal-footer">
           <button type="button" onclick="closeModal()">Cancel</button>
           <button type="submit" name="create_branch">Create Branch</button>
@@ -760,25 +905,29 @@ display: flex;
   </script>
   
 
-  <script>function openEditModal(id, name, category, price, stock, markup_price, ceiling_point, critical_point) {
-  document.getElementById("edit_product_id").value = id;
-  document.getElementById("edit_product_name").value = name;
-  document.getElementById("edit_category").value = category;
-  document.getElementById("edit_price").value = price;
-  document.getElementById("edit_stock").value = stock;
+  <script>
+function openEditModal(id, name, category, price, stock, markup_price, ceiling_point, critical_point) {
+  document.getElementById('edit_product_id').value = id;
+  document.getElementById('edit_product_name').value = name;
+  document.getElementById('edit_category').value = category;
+  document.getElementById('edit_price').value = price;
+  document.getElementById('edit_markup_price').value = markup_price;
+  document.getElementById('edit_ceiling_point').value = ceiling_point;
+  document.getElementById('edit_critical_point').value = critical_point;
+  document.getElementById('edit_stock').value = stock;
 
-  document.getElementById("edit_markup_price").value = markup_price;
-  document.getElementById("edit_ceiling_point").value = ceiling_point;
-  document.getElementById("edit_critical_point").value = critical_point;
+  
+  // Show the modal using Bootstrap 5
+  const editModal = new bootstrap.Modal(document.getElementById('editProductModal'));
+  editModal.show();
 
-  // Set the form action with the current branch_id to ensure correct update
-  const branchId = <?= json_encode($branch_id) ?>;
+// Set the form action with the current branch_id to ensure correct update
+const branchId = <?= json_encode($branch_id) ?>;
   const form = document.getElementById("editProductForm");
   form.action = `update_product.php?branch=${branchId}`;
 
   document.getElementById("editModal").style.display = "block";
 }
-
 </script>
 
   <script>

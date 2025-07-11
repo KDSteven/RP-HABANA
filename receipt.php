@@ -10,11 +10,15 @@ $sale_id = (int)$_GET['sale_id'];
 
 // Fetch sale and branch details
 $stmt = $conn->prepare("
-    SELECT s.sale_id, s.sale_date, s.total, b.branch_name, b.branch_location, b.branch_contact, b.branch_email
+    SELECT s.sale_id, s.sale_date, s.total, s.payment, s.change_given, 
+           b.branch_name, b.branch_location, b.branch_contact, b.branch_email,
+           u.username AS staff_name
     FROM sales s
     JOIN branches b ON s.branch_id = b.branch_id
+    LEFT JOIN users u ON s.processed_by = u.id
     WHERE s.sale_id = ?
 ");
+
 $stmt->bind_param("i", $sale_id);
 $stmt->execute();
 $result = $stmt->get_result();
@@ -143,7 +147,10 @@ $items_result = $item_stmt->get_result();
   </div>
 
   <div class="info">
-    <p><strong>Date of Sale:</strong> <?= htmlspecialchars($sale['sale_date']) ?></p>
+    <p><strong>Processed By:</strong> <?= htmlspecialchars($sale['staff_name'] ?? 'N/A') ?></p>
+<p><strong>Payment Received:</strong> ₱<?= number_format($sale['payment'], 2) ?></p>
+<p><strong>Change Given:</strong> ₱<?= number_format($sale['change_given'], 2) ?></p>
+
   </div>
 
   <table>

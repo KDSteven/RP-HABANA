@@ -165,6 +165,7 @@ $branches = $conn->query("SELECT * FROM branches");
         <select name="role" id="roleSelect" onchange="toggleBranchDropdown()">
           <option value="admin">Admin</option>
           <option value="staff">Staff</option>
+          <option value="stockman">Stockman</option>
         </select>
 
         <div id="branchRadioGroup" class="radio-group" style="display: none;">
