@@ -82,85 +82,11 @@ $requests = $conn->query("
     <meta charset="UTF-8">
     <title>Approvals - Admin</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <link rel="stylesheet" href="css/notifications.css">
+    <link rel="stylesheet" href="css/approvals.css">
+<audio id="notifSound" src="notif.mp3" preload="auto"></audio>
     <style>
-        * {
-      margin: 0; padding: 0; box-sizing: border-box;
-      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-    }
-        body {
-      display: flex;
-      height: 100vh;
-      background: #f5f5f5;
-      color: #333;
-    }
-
-    .sidebar {
-      width: 220px;
-      background-color: #f7931e;
-      padding: 30px 15px;
-      color: white;
-    }
-
-    .sidebar h2 {
-      margin-bottom: 30px;
-      font-size: 22px;
-      text-align: center;
-    }
-
-    .sidebar a {
-      display: flex;
-      align-items: center;
-      text-decoration: none;
-      color: white;
-      padding: 12px 15px;
-      margin: 6px 0;
-      border-radius: 8px;
-      transition: background 0.2s;
-    }
-
-    .sidebar a:hover, .sidebar a.active {
-      background-color: #e67e00;
-    }
-
-    .sidebar a i {
-      margin-right: 10px;
-      font-size: 16px;
-    }
-
-    .content {
-      flex: 1;
-      padding: 40px;
-      overflow-y: auto;
-    }
-
-    .card {
-      background: white;
-      padding: 30px;
-      border-radius: 10px;
-      box-shadow: 0 4px 10px rgba(0,0,0,0.1);
-      margin-bottom: 30px;
-    }
-
-    .card h2 {
-      margin-bottom: 20px;
-      font-size: 22px;
-      color: #333;
-    }
-        table {
-            width: 100%; border-collapse: collapse; background: #fff; border-radius: 8px; overflow: hidden;
-            box-shadow: 0 3px 8px rgba(0,0,0,0.1);
-        }
-        th, td { padding: 12px; text-align: left; border-bottom: 1px solid #ddd; }
-        th { background: #f7931e; color: #fff; }
-        tr:hover { background: #f9f9f9; }
-
-        .btn {
-            padding: 6px 12px; border: none; border-radius: 5px; cursor: pointer; font-weight: bold;
-        }
-        .btn-approve { background: #28a745; color: #fff; }
-        .btn-reject { background: #dc3545; color: #fff; }
-        .btn-approve:hover { background: #218838; }
-        .btn-reject:hover { background: #c82333; }
+      
     </style>
 </head>
 <body>
