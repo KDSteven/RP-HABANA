@@ -1,0 +1,67 @@
+/* =======================
+   GLOBAL SIDEBAR & LAYOUT
+========================= */
+* {
+    margin: 0; padding: 0;
+    box-sizing: border-box;
+    font-family: 'Segoe UI', Tahoma, sans-serif;
+}
+
+body {
+    display: flex;
+    min-height: 100vh;
+    background: #f5f5f5;
+    color: #333;
+}
+
+/* Sidebar */
+.sidebar {
+    width: 220px;
+    background: #f7931e;
+    padding: 30px 15px;
+    color: white;
+    flex-shrink: 0;
+}
+
+.sidebar h2 {
+    text-align: center;
+    margin-bottom: 30px;
+    position: relative;
+}
+
+.sidebar a {
+    display: flex;
+    align-items: center;
+    text-decoration: none;
+    color: white;
+    padding: 12px;
+    margin: 6px 0;
+    border-radius: 8px;
+    transition: background 0.3s;
+}
+
+.sidebar a:hover,
+.sidebar a.active {
+    background: #e67e00;
+}
+
+.sidebar a i {
+    margin-right: 10px;
+}
+
+.content {
+    flex: 1;
+    padding: 20px;
+    overflow-y: auto;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    body {
+        flex-direction: column;
+    }
+    .sidebar {
+        width: 100%;
+        text-align: center;
+    }
+}

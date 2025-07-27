@@ -2,10 +2,15 @@
 session_start();
 include 'config/db.php';
 
-if (!isset($_SESSION['role']) || !in_array($_SESSION['role'], ['staff', 'admin'])) {
-    header("Location: index.html");
+// Check if user is logged in
+if (!isset($_SESSION['role'])) {
+    header("Location: index.html"); // redirect to login if not logged in
     exit;
 }
+
+// Get role and branch_id from session
+$role = $_SESSION['role'];
+$branch_id = $_SESSION['branch_id'] ?? 0;
 
 $role = $_SESSION['role'];
 $branch_id = isset($_SESSION['branch_id']) ? (int)$_SESSION['branch_id'] : 0;
@@ -126,25 +131,30 @@ $sales_result = $stmt->get_result();
   </style>
 </head>
 <body>
-  <div class="sidebar">
- 
-  <h2><?= strtoupper($role) ?></h2>
+ <div class="sidebar">
+    <h2><?= strtoupper($role) ?></h2>
+
     <a href="dashboard.php"><i class="fas fa-tv"></i> Dashboard</a>
-    <a href="inventory.php?branch=<?= $branch_id ?> "><i class="fas fa-box"></i> Inventory</a>
-    <?php if ($role !== 'admin'): ?>
-      <a href="pos.php"><i class="fas fa-cash-register"></i> Point of Sale</a>
-    <?php endif; ?>
-    <a href="history.php"  class="active"><i class="fas fa-history" ></i> Sales History</a>
 
     <?php if ($role === 'admin'): ?>
-      <a href="accounts.php"><i class="fas fa-user"></i> Accounts</a>
-      <a href=""><i class="fas fa-archive"></i> Archive</a>
-      <a href=""><i class="fas fa-calendar-alt"></i> Logs</a>
-
-
+        <a href="inventory.php?branch=<?= $branch_id ?>"><i class="fas fa-box"></i> Inventory</a>
+        <a href="transfer.php"><i class="fas fa-box"></i> Transfer</a>
     <?php endif; ?>
+
+    <?php if ($role === 'staff'): ?>
+        <a href="pos.php"><i class="fas fa-cash-register"></i> Point of Sale</a>
+        <a href="history.php"><i class="fas fa-history"></i> Sales History</a>
+    <?php endif; ?>
+
+    <?php if ($role === 'admin'): ?>
+        <a href="accounts.php"><i class="fas fa-user"></i> Accounts</a>
+        <a href=""><i class="fas fa-archive"></i> Archive</a>
+        <a href=""><i class="fas fa-calendar-alt"></i> Logs</a>
+    <?php endif; ?>
+
     <a href="index.html"><i class="fas fa-sign-out-alt"></i> Logout</a>
-  </div>
+</div>
+
 
   <div class="content">
     <h1>Sales History</h1>
@@ -176,5 +186,6 @@ $sales_result = $stmt->get_result();
       </table>
     <?php endif; ?>
   </div>
+  <script src="notifications.js"></script>
 </body>
 </html>

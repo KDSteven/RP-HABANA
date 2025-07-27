@@ -1,11 +1,16 @@
 <?php
 session_start();
 include 'config/db.php';
-
-if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'staff') {
-    header("Location: dashboard.php");
+// Check if user is logged in
+if (!isset($_SESSION['role'])) {
+    header("Location: index.html"); // redirect to login if not logged in
     exit;
 }
+
+// Get role and branch_id from session
+$role = $_SESSION['role'];
+$branch_id = $_SESSION['branch_id'] ?? 0;
+
 
 // Initialize cart session
 if (!isset($_SESSION['cart'])) {
@@ -226,210 +231,35 @@ if ($change < 0) $change = 0; // prevent negative change
   <meta charset="UTF-8" />
   <title>Point of Sale - Staff</title>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" />
-  <style>
-     * {
-      margin: 0; padding: 0; box-sizing: border-box;
-      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-    }
-
-    body {
-      display: flex;
-      height: 100vh;
-      background: #f5f5f5;
-      color: #333;
-    }
-
-    .sidebar {
-      width: 220px;
-      background-color: #f7931e;
-      padding: 30px 15px;
-      color: white;
-    }
-
-    .sidebar h2 {
-      margin-bottom: 30px;
-      font-size: 22px;
-      text-align: center;
-    }
-
-    .sidebar a {
-      display: flex;
-      align-items: center;
-      text-decoration: none;
-      color: white;
-      padding: 12px 15px;
-      margin: 6px 0;
-      border-radius: 8px;
-      transition: background 0.2s;
-    }
-
-    .sidebar a:hover, .sidebar a.active {
-      background-color: #e67e00;
-    }
-
-    .sidebar a i {
-      margin-right: 10px;
-      font-size: 16px;
-    }
-    .content {
-      flex: 1;
-      padding: 40px;
-      background: #f5f5f5;
-      overflow-y: auto;
-    }
-
-    input, select, button {
-      padding: 10px;
-      margin-bottom: 15px;
-      border: 1px solid #aaa;
-      border-radius: 5px;
-    }
-
-    button {
-      background-color: #f7931e;
-      color: white;
-      font-weight: bold;
-      border: none;
-      cursor: pointer;
-    }
-
-    button:hover {
-      background-color: #e67e00;
-    }
-
-    .search-bar {
-      margin-bottom: 20px;
-      display: flex;
-      gap: 10px;
-      align-items: center;
-    }
-
-    .search-bar input[type="text"] {
-      flex-grow: 1;
-      padding: 10px;
-      font-size: 1rem;
-    }
-
-    .category-filter {
-      padding: 10px;
-      font-size: 1rem;
-      border: 1px solid #aaa;
-      border-radius: 5px;
-      background: white;
-      color: black;
-    }
-
-    .products-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill,minmax(180px,1fr));
-      gap: 15px;
-    }
-
-    .product-card {
-      background: white;
-      border-radius: 8px;
-      padding: 15px;
-      box-shadow: 0 2px 6px rgba(0,0,0,0.1);
-      display: flex;
-      flex-direction: column;
-      justify-content: space-between;
-    }
-
-    .product-name {
-      font-weight: bold;
-      margin-bottom: 10px;
-      font-size: 1.1rem;
-    }
-
-    .product-price {
-      color: #f7931e;
-      font-weight: bold;
-      margin-bottom: 10px;
-    }
-
-    .product-stock {
-      font-size: 0.9rem;
-      margin-bottom: 10px;
-      color: #555;
-    }
-
-    .add-to-cart-form {
-      display: flex;
-      gap: 5px;
-      align-items: center;
-    }
-
-    .add-to-cart-form input[type="number"] {
-      width: 60px;
-      padding: 5px;
-      font-size: 1rem;
-      border: 1px solid #aaa;
-      border-radius: 5px;
-    }
-
-    .add-to-cart-form button {
-      flex-grow: 1;
-      padding: 8px;
-      font-weight: bold;
-      background-color: #f7931e;
-      border: none;
-      color: white;
-      border-radius: 5px;
-      cursor: pointer;
-      transition: background-color 0.3s ease;
-    }
-
-    .add-to-cart-form button:hover {
-      background-color: #e67e00;
-    }
-
-    .cart-box {
-      background: white;
-      padding: 20px;
-      margin-top: 20px;
-      border-radius: 5px;
-    }
-
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      margin-top: 15px;
-    }
-
-    th, td {
-      border: 1px solid #ccc;
-      padding: 10px;
-      text-align: left;
-    }
-
-    th {
-      background-color: #f7931e;
-      color: white;
-    }
-
-    .remove-btn {
-      background-color: #e74c3c;
-      padding: 5px 10px;
-      border: none;
-      color: white;
-      border-radius: 3px;
-      cursor: pointer;
-    }
-
-    .remove-btn:hover {
-      background-color: #c0392b;
-    }
-  </style>
+  <link rel="stylesheet" href="css/notifications.css">
+  <link rel="stylesheet" href="css/pos.css">
+<audio id="notifSound" src="notif.mp3" preload="auto"></audio>
 </head>
 <body>
-  <div class="sidebar">
-    <h2>STAFF</h2>
-    <a href="dashboard.php" class=""><i class="fas fa-tv"></i> Dashboard</a>
-    <a href="inventory.php"><i class="fas fa-box"></i> Inventory</a>
-    <a href="pos.php" class="active"><i class="fas fa-cash-register"></i> Point of Sale</a>
-    <a href="history.php"><i class="fas fa-history"></i> Sales History</a>
+ <div class="sidebar">
+    <h2><?= strtoupper($role) ?></h2>
+
+    <a href="dashboard.php"><i class="fas fa-tv"></i> Dashboard</a>
+
+    <?php if ($role === 'admin'): ?>
+        <a href="inventory.php?branch=<?= $branch_id ?>"><i class="fas fa-box"></i> Inventory</a>
+        <a href="transfer.php"><i class="fas fa-box"></i> Transfer</a>
+    <?php endif; ?>
+
+    <?php if ($role === 'staff'): ?>
+        <a href="pos.php"><i class="fas fa-cash-register"></i> Point of Sale</a>
+        <a href="history.php"><i class="fas fa-history"></i> Sales History</a>
+    <?php endif; ?>
+
+    <?php if ($role === 'admin'): ?>
+        <a href="accounts.php"><i class="fas fa-user"></i> Accounts</a>
+        <a href=""><i class="fas fa-archive"></i> Archive</a>
+        <a href=""><i class="fas fa-calendar-alt"></i> Logs</a>
+    <?php endif; ?>
+
     <a href="index.html"><i class="fas fa-sign-out-alt"></i> Logout</a>
-  </div>
+</div>
+
 
   <div class="content">
     <h2>Point of Sale</h2>
@@ -549,5 +379,6 @@ if ($change < 0) $change = 0; // prevent negative change
   <?php endif; ?>
 </div>
   </div>
+  <script src="notifications.js"></script>
 </body>
 </html>
