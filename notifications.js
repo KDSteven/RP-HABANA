@@ -10,7 +10,7 @@ let lastCount = parseInt(localStorage.getItem('lastNotifCount')) || 0;
 let lastPopupTime = parseInt(localStorage.getItem('lastPopupTime')) || 0;
 let modalOpen = false;
 const POLL_INTERVAL = 5000;  // Check every 5s
-const POPUP_INTERVAL = 600000; // Show popup every 30s if items exist
+const POPUP_INTERVAL = 10000; // Show popup every 30s if items exist
 
 // Request desktop notification permission
 if (Notification.permission !== "granted") Notification.requestPermission();
@@ -30,11 +30,14 @@ const newNotifications = data.count > lastCount; // Check if there are new ones
 
 if ((newNotifications || (data.count > 0 && now - lastPopupTime >= POPUP_INTERVAL)) && !modalOpen) {
     console.log("✅ Triggering popup now...");
+    lastPopupTime = now; // ✅ Update timestamp
+    localStorage.setItem('lastPopupTime', now); // ✅ Persist
     openNotificationModal(data.items);
     playSound();
     showDesktopNotification("Stock Alert", "You have new stock alerts!");
     broadcastPopup();
 }
+
 
 
             lastCount = data.count;
