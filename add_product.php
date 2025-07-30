@@ -30,7 +30,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     // ✅ Insert into products table
     $stmt = $conn->prepare("INSERT INTO products (product_name, category, price, markup_price, ceiling_point, critical_point, brand_name) VALUES (?, ?, ?, ?, ?, ?, ?)");
-$stmt->bind_param("ssddiis",  $productName, $category, $price, $markupPrice, $ceilingPoint, $criticalPoint, $brandNsame);
+$stmt->bind_param("ssddiis",  $productName, $category, $price, $markupPrice, $ceilingPoint, $criticalPoint, $brandName);
 
 
     if ($stmt->execute()) {

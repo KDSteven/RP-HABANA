@@ -21,29 +21,41 @@ if (isset($_GET['branch'])) {
     $current_branch_id = $_SESSION['current_branch_id'] ?? $branch_id;
 }
 
-// Queries based on role
-// Display products and their inventory in a branch
+// Search filter
+$search = $_GET['search'] ?? '';
+$searchQuery = '';
+if ($search) {
+    $searchQuery = " AND (p.product_name LIKE '%" . $conn->real_escape_string($search) . "%' 
+                     OR p.category LIKE '%" . $conn->real_escape_string($search) . "%')";
+}// Build base query
+$sql = "
+    SELECT p.product_id, p.product_name, p.category, p.price, p.markup_price,
+           p.ceiling_point, p.critical_point, IFNULL(i.stock, 0) AS stock
+    FROM products p
+    LEFT JOIN inventory i ON p.product_id = i.product_id
+";
+
+// Add conditions
+$conditions = ["p.archived = 0"];
+
 if ($role === 'staff') {
-  $result = $conn->query("SELECT p.product_id, p.product_name, p.category, p.price, p.markup_price, p.ceiling_point, p.critical_point, i.stock 
-                          FROM products p 
-                          LEFT JOIN inventory i ON p.product_id = i.product_id 
-                          WHERE i.branch_id = $branch_id");
-} else {
-  // Admin can select any brancha
-  if ($current_branch_id) {
-      $result = $conn->query("SELECT p.product_id, p.product_name, p.category, p.price, p.markup_price, p.ceiling_point, p.critical_point, i.stock 
-                              FROM products p 
-                              LEFT JOIN inventory i ON p.product_id = i.product_id 
-                              WHERE i.branch_id = $current_branch_id");
-  } else {
-      $result = $conn->query("SELECT p.product_id, p.product_name, p.category, p.price, p.markup_price, p.ceiling_point, p.critical_point, i.stock 
-                              FROM products p 
-                              LEFT JOIN inventory i ON p.product_id = i.product_id");
-  }
+    $conditions[] = "i.branch_id = " . (int)$branch_id;
+} elseif ($current_branch_id) {
+    $conditions[] = "i.branch_id = " . (int)$current_branch_id;
 }
 
+if (!empty($searchQuery)) {
+    $conditions[] = $searchQuery;
+}
 
-// Handle Create Branch Request (SAFE with prepared statements)
+// Combine conditions
+if (count($conditions) > 0) {
+    $sql .= " WHERE " . implode(" AND ", $conditions);
+}
+
+$result = $conn->query($sql);
+
+// Handle Create Branch
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['create_branch'])) {
     $branch_number   = $_POST['branch_number'];
     $branch_name     = $_POST['branch_name'];
@@ -64,77 +76,39 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['create_branch'])) {
     $stmt->close();
 }
 
-// Handle Delete Branches
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['confirm_delete']) && $_POST['confirm_delete'] === 'yes') {
-    if (!empty($_POST['branches_to_delete'])) {
-        foreach ($_POST['branches_to_delete'] as $branch_id_to_delete) {
-            $branch_id_to_delete = (int)$branch_id_to_delete;
-            $stmt = $conn->prepare("DELETE FROM branches WHERE branch_id = ?");
-            $stmt->bind_param("i", $branch_id_to_delete);
-            $stmt->execute();
-            $stmt->close();
-        }
-        header("Location: inventory.php?success=branches_deleted");
-        exit;
-    } else {
-        header("Location: inventory.php?error=no_branch_selected");
-        exit;
-    }
+// Handle Delete Branch
+if (isset($_POST['archive_branch'])) {
+    $branch_id = (int) $_POST['branch_id'];
+    $stmt = $conn->prepare("UPDATE branches SET archived = 1 WHERE branch_id = ?");
+    $stmt->bind_param("i", $branch_id);
+    $stmt->execute();
+    header("Location: inventory.php?archived=branch");
+    exit;
 }
-// Fix branch_id usage for update and navigation
-$branch_id = isset($_GET['branch']) ? intval($_GET['branch']) : ($branch_id ?? null);
 
-// Fetch branches for navigation
+
+// Fetch branches
 if ($role === 'staff') {
-  $stmt = $conn->prepare("SELECT * FROM branches WHERE branch_id = ?");
-  $stmt->bind_param("i", $branch_id);
-  $stmt->execute();
-  $branches_result = $stmt->get_result();
-  $stmt->close();
+    $stmt = $conn->prepare("SELECT * FROM branches WHERE branch_id = ?");
+    $stmt->bind_param("i", $branch_id);
+    $stmt->execute();
+    $branches_result = $stmt->get_result();
+    $stmt->close();
 } else {
-  $branches_result = $conn->query("SELECT * FROM branches");
+    $branches_result = $conn->query("SELECT * FROM branches");
 }
 
-// Searches product
-$search = $_GET['search'] ?? '';
-$searchQuery = '';
+// Fetch brands
+$brand_result = $conn->query("SELECT brand_id, brand_name FROM brands ORDER BY brand_name ASC");
 
-if ($search) {
-    $searchQuery = " AND (p.product_name LIKE '%" . $conn->real_escape_string($search) . "%' 
-                     OR p.category LIKE '%" . $conn->real_escape_string($search) . "%')";
+// Archive product
+if (isset($_POST['archive_product'])) {
+    $product_id = (int) $_POST['product_id'];
+    $stmt = $conn->prepare("UPDATE products SET archived = 1 WHERE product_id = ?");
+    $stmt->bind_param("i", $product_id);
+    $stmt->execute();
+    header("Location: inventory.php?archived=success");
 }
-
-// Queries based on role
-if ($role === 'staff') {
-  $result = $conn->query("SELECT p.product_id, p.product_name, p.category, p.price, p.markup_price, p.ceiling_point, p.critical_point, i.stock 
-                          FROM products p 
-                          LEFT JOIN inventory i ON p.product_id = i.product_id 
-                          WHERE i.branch_id = $branch_id" . $searchQuery);
-} else {
-  // Admin can select any branch
-  if ($current_branch_id) {
-      $result = $conn->query("SELECT p.product_id, p.product_name, p.category, p.price, p.markup_price, p.ceiling_point, p.critical_point, i.stock 
-                              FROM products p 
-                              LEFT JOIN inventory i ON p.product_id = i.product_id 
-                              WHERE i.branch_id = $current_branch_id" . $searchQuery);
-  } else {
-      $result = $conn->query("SELECT p.product_id, p.product_name, p.category, p.price, p.markup_price, p.ceiling_point, p.critical_point, i.stock 
-                              FROM products p 
-                              LEFT JOIN inventory i ON p.product_id = i.product_id" . $searchQuery);
-  }
-}
-// Deletion of product
-if (isset($_POST['delete_product'])) {
-  $delete_id = intval($_POST['delete_product_id']); // sanitize input
-  $delete_query = "DELETE FROM products WHERE product_id = $delete_id";
-
-  if (mysqli_query($conn, $delete_query)) {
-      echo "<script>window.location.href='inventory.php';</script>"; // Redirect after deletion
-  } else {
-      echo "Error deleting product: " . mysqli_error($conn);
-  }
-}
-
 ?>
 
 <!DOCTYPE html>
@@ -144,427 +118,47 @@ if (isset($_POST['delete_product'])) {
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Branch Inventory</title>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
-
-  
-<style>
-    /* General Styles */
-    * {
-      margin: 0; padding: 0; box-sizing: border-box;
-      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-    }
-
-    body {
-      display: flex;
-      height: 140vh;
-      max-height: 200vh;
-      background: #f5f5f5;
-      color: #333;
-    }
-
-    .sidebar {
-      width: 220px;
-      background-color: #f7931e;
-      padding: 30px 15px;
-      color: white;
-    }
-
-    .sidebar h2 {
-      margin-bottom: 30px;
-      font-size: 22px;
-      text-align: center;
-    }
-
-    .sidebar a {
-      display: flex;
-      align-items: center;
-      text-decoration: none;
-      color: white;
-      padding: 12px 15px;
-      margin: 6px 0;
-      border-radius: 8px;
-      transition: background 0.2s;
-    }
-
-    .sidebar a:hover, .sidebar a.active {
-      background-color: #e67e00;
-    }
-
-    .sidebar a i {
-      margin-right: 10px;
-      font-size: 16px;
-    }
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" >
+  <link rel="stylesheet" href="css/notifications.css">
+  <link rel="stylesheet" href="css/inventory.css">
+<audio id="notifSound" src="notif.mp3" preload="auto"></audio>
 
 
-    .content {
-      flex: 1;
-      padding: 40px;
-    }
-
-    input, select, button {
-      padding: 10px;
-      width: 250px;
-      margin-bottom: 15px;
-      border: 1px solid #aaa;
-      border-radius: 5px;
-    }
-
-    button {
-      width: 250px;
-      background-color: #f7931e;
-      color: white;
-      font-weight: bold;
-      border: none;
-      cursor: pointer;
-    }
-    .button-small{
-      width: 150px;
-      background-color: red;
-    }
-    .button-small-b{
-      width: 150px;
-      background-color:#f7931e ;
-    }
-    button:hover {
-      background-color: #e67e00;
-    }
-    .content { flex: 1; padding: 30px; }
-    .search-box {
-      display: flex;
-      align-items: center;
-      margin-bottom: 20px;
-    }
-    .search-box input {
-      padding: 10px;
-      width: 100%;
-      border: 1px solid #ccc;
-      border-radius: 5px;
-    }
-    .branches {
-      background: white;
-      border-radius: 5px;
-      padding: 10px;
-      margin-bottom: 20px;
-      max-height: 5000px;
-    }
-    .branches a {
-      display: block;
-      padding: 15px;
-      border-bottom: 1px solid #ddd;
-      color: #333;
-      font-weight: bold;
-      text-decoration: none;
-    }
-    .branches a:hover, .branches a.active { background: #f2f2f2; }
-    .table {
-      background: white;
-      border-radius: 5px;
-      overflow: hidden;
-      padding: 20px;
-    }
-    table {
-      width: 100%;
-      border-collapse: collapse;
-    }
-    table thead { background: #eee; }
-    table th, table td {
-      padding: 10px;
-      text-align: left;
-      border-bottom: 1px solid #ddd;
-    }
-    .actions {
-      margin-top: 20px;
-      display: flex;
-      gap: 10px;
-    }
-    .btn {
-      padding: 10px 20px;
-      border: none;
-      border-radius: 5px;
-      color: white;
-      font-weight: bold;
-      cursor: pointer;
-    }
-    .btn-create { background: #28a745; }
-    .btn-delete { background: #dc3545; }
-    .modal {
-  display: none;
-  position: fixed;
-  z-index: 9999;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  background-color: rgba(0, 0, 0, 0.5);
-  justify-content: center;
-  align-items: center;
-  font-family: Arial, sans-serif;
-}
-
-.modal-content {
-  background-color: #f9f9f9;
-  padding: 25px 30px;
-  border-radius: 12px;
-  width: 100%;
-  max-width: 800px;
-  text-align: left;
-  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.2);
-}
-
-.modal-header {
-  font-size: 22px;
-  font-weight: bold;
-  margin-bottom: 10px;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.modal-body form {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 20px;
-}
-
-.modal-body input,
-.modal-body select,
-.modal-body label {
-  font-size: 14px;
-}
-
-.modal-body input[type="text"],
-.modal-body input[type="number"],
-.modal-body input[type="email"],
-.modal-body input[type="date"],
-.modal-body select {
-  width: 100%;
-  padding: 10px;
-  border-radius: 6px;
-  border: 1px solid #ccc;
-  background-color: #f1f1f1;
-}
-
-.modal-footer {
-  display: flex;
-  justify-content: flex-end;
-  gap: 10px;
-  margin-top: 20px;
-}
-
-.modal-footer button {
-  background-color: #28a745;
-  color: white;
-  padding: 10px 16px;
-  font-size: 15px;
-  font-weight: bold;
-  border: none;
-  border-radius: 6px;
-  cursor: pointer;
-}
-
-.modal-footer button:hover {
-  background-color: #218838;
-}
-
-.modal-footer .cancel {
-  background-color: #c4c4c4;
-  color: black;
-}
-
-.modal-footer .cancel:hover {
-  background-color: #aaa;
-}
-
-
-/* Danger Modal (Delete Confirmation) */
-#deleteConfirmationModal{
-    display: none;
-  position: fixed;
-  padding-top: 250px;
- padding-left: 650px;
-  z-index: 999;
-  top: 0; left: 0;
-  width: 100%; height: 100%;
-  background-color: rgba(0, 0, 0, 0.5);
-  justify-content: center;
-  align-items: center;
-  font-family: Arial, sans-serif;
-}
-
-#deleteConfirmationModal .modal-content {
-  background-color: #fff;
-  padding: 35px;
-  border-radius: 12px;
-  width: 500px;
-  max-width: 90%;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
-  text-align: center;
-  border-top: 6px solid #d32f2f;
-}
-
-#deleteConfirmationModal .modal-header {
-  font-size: 24px;
-  font-weight: bold;
-  color: #d32f2f;
-  margin-bottom: 15px;
-}
-
-#deleteConfirmationModal p {
-  font-size: 16px;
-  color: #333;
-  margin-bottom: 25px;
-  line-height: 1.6;
-}
-
-#deleteConfirmationModal form {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-#deleteConfirmationModal button {
-  padding: 14px;
-  font-size: 16px;
-  font-weight: bold;
-  border: none;
-  border-radius: 10px;
-  cursor: pointer;
-  transition: background-color 0.2s;
-}
-
-#deleteConfirmationModal button[name="confirm_delete"] {
-  background-color: #d32f2f;
-  color: white;
-}
-
-#deleteConfirmationModal button[name="confirm_delete"]:hover {
-  background-color: #b71c1c;
-}
-
-#deleteConfirmationModal button[type="button"] {
-  background-color: #f0f0f0;
-  color: #333;
-}
-
-#deleteConfirmationModal button[type="button"]:hover {
-  background-color: #ddd;
-}
-
-
-/* Delete Selection Modal */
-#deleteSelectionModal{
-display: flex;
-  z-index: 999;
-  top: 0; left: 0;
- padding-top: 250px;
- padding-left: 650px;
-  background-color: rgba(0, 0, 0, 0.5);
-  justify-content: center;
-  align-items: center;
-  font-family: Arial, sans-serif;
-}
-
-#deleteSelectionModal .modal-content {
-  background-color: #fff8f7;
-  padding: 30px 24px;
-  border-radius: 10px;
-  max-width: 90%;
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
-    
-}
-
-#deleteSelectionModal .modal-header {
-  font-size: 22px;
-  font-weight: bold;
-  color: #d32f2f;
-  margin-bottom: 20px;
-  text-align: center;
-}
-
-#deleteSelectionModal label {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 10px;
-  font-size: 15px;
-  color: #444;
-}
-
-#deleteSelectionModal button {
-  width: 100%;
-  padding: 14px;
-  margin-top: 20px;
-  background-color: #d32f2f;
-  color: white;
-  font-weight: bold;
-  font-size: 15px;
-  border: none;
-  border-radius: 8px;
-  cursor: pointer;
-  transition: background 0.3s;
-}
-
-#deleteSelectionModal button:hover {
-  background-color: #b71c1c;
-}
-.branches a {
-  display: inline-block;
-  margin: 5px;
-  padding: 10px 15px;
-  background-color: #eee;
-  color: #000;
-  text-decoration: none;
-  border: 1px solid #ccc;
-  border-radius: 4px;
-}
-
-.branches a.active {
-  background-color: #4CAF50;
-  color: white;
-  font-weight: bold;
-}
-.branches a {
-  display: flex;
-  margin: 5px;
-  padding: 10px 15px;
-  background-color: #eee;
-  color: #000;
-  text-decoration: none;
-  border: 1px solid #ccc;
-  border-radius: 4px;
-}
-
-.branches a.active {
-  background-color: #4CAF50;
-  color: white;
-  font-weight: bold;
-}
-
-    
-  </style>
 </head>
 <body>
 <div class="sidebar">
-  
-    <h2><?= strtoupper($role) ?></h2>
-    
+    <h2><?= strtoupper($role) ?><i class="fas fa-bell" id="notifBell" style="font-size: 24px; cursor: pointer;"></i>
+<span id="notifCount" style="
+    background:red; color:white; border-radius:50%; padding:2px 8px;
+    font-size:12px;  position:absolute;display:none;">
+0</span>
+
+</h2>
+
+    <!-- Common for all -->
     <a href="dashboard.php"><i class="fas fa-tv"></i> Dashboard</a>
-    <a href="inventory.php?branch=<?= $branch_id ?>"><i class="fas fa-box"></i> Inventory</a>
-    <a href="transfer.php"> <i class="fas fa-box"></i> Transfer</a>
-  
-    <?php if ($role === 'staff'): ?>
-    <a href="pos.php"><i class="fas fa-cash-register"></i> Point of Sale</a>
-    <a href="history.php"><i class="fas fa-history"></i> Sales History</a>
-    <?php endif; ?>
 
     <?php if ($role === 'admin'): ?>
-      <a href="accounts.php"><i class="fas fa-user"></i> Accounts</a>
-      <a href=""><i class="fas fa-archive"></i> Archive</a>
-      <a href=""><i class="fas fa-calendar-alt"></i> Logs</a>
+        <a href="inventory.php"><i class="fas fa-box"></i> Inventory</a>
+        <a href="approvals.php"><i class="fas fa-check-circle"></i> Approvals</a>
+        <a href="accounts.php"><i class="fas fa-users"></i> Accounts</a>
+        <a href="archive.php"><i class="fas fa-archive"></i> Archive</a>
+        <a href="logs.php"><i class="fas fa-file-alt"></i> Logs</a>
     <?php endif; ?>
-    <a href="index.html"><i class="fas fa-sign-out-alt"></i> Logout</a>
-  </div>
+
+    <?php if ($role === 'stockman'): ?>
+        <a href="transfer.php"><i class="fas fa-exchange-alt"></i> Transfer Request</a>
+    <?php endif; ?>
+
+    <?php if ($role === 'staff'): ?>
+        <a href="pos.php"><i class="fas fa-cash-register"></i> Point of Sale</a>
+        <a href="history.php"><i class="fas fa-history"></i> Sales History</a>
+    <?php endif; ?>
+
+    <a href="logout.php"><i class="fas fa-sign-out-alt"></i> Logout</a>
 </div>
+
+
   <!-- Content -->
   <div class="content">
   <div class="search-box">
@@ -574,84 +168,125 @@ display: flex;
   </form>
 </div>
 
-    <div class="branches">
-      <?php while ($branch = $branches_result->fetch_assoc()): ?>
-        <a href="inventory.php?branch=<?= $branch['branch_id'] ?>" class="<?= ($branch['branch_id'] == $branch_id) ? 'active' : '' ?>">
-          <?= $branch['branch_name'] ?> - <?= $branch['branch_location'] ?>
+    <!-- Branch Navigation -->
+<div class="branches">
+    <?php while ($branch = $branches_result->fetch_assoc()): ?>
+        <a href="inventory.php?branch=<?= $branch['branch_id'] ?>" 
+           class="<?= ($branch['branch_id'] == $branch_id) ? 'active' : '' ?>">
+           <?= htmlspecialchars($branch['branch_name']) ?> - <?= htmlspecialchars($branch['branch_location']) ?>
         </a>
-      <?php endwhile; ?>
-    </div>
-
-    <div class="table">
-  <table>
-    <thead>
-      <tr>
-        <th>ID</th>
-        <th>PRODUCT</th>
-        <th>CATEGORY</th>
-        <th>PRICE</th>
-        <th>MARKUP PRICE</th>
-        <th>CEILING POINT</th>
-        <th>CRITICAL POINT</th>
-        <th>STOCKS</th>
-        <th>ACTION</th>
-      </tr>
-    </thead>
-    <tbody>
-  <?php if ($result->num_rows > 0): ?>  
-    <?php while ($row = $result->fetch_assoc()): ?>
-      <?php 
-        // determine if this row is critical
-        $isCritical = ($row['stock'] <= $row['critical_point']);
-        // choose a Bootstrap table class
-        $rowClass = $isCritical ? 'table-danger' : 'table-success';
-      ?>
-      <tr class="<?= $rowClass ?>">
-        <td><?= $row['product_id'] ?></td>
-        <td><?= htmlspecialchars($row['product_name']) ?></td>
-        <td><?= htmlspecialchars($row['category']) ?></td>
-        <td><?= number_format($row['price'], 2) ?></td>
-        <td><?= number_format($row['markup_price'], 2) ?></td>
-        <td><?= $row['ceiling_point'] ?></td>
-        <td><?= $row['critical_point'] ?></td>
-        <td><?= $row['stock'] ?></td>
-        <td>
-        <form method="POST" style="display:inline; " onsubmit="return confirm('Are you sure you want to delete this product?');">
-  <input type="hidden" name="delete_product_id" value="<?php echo $row['product_id']; ?>">
-  <button type="submit" name="delete_product" class="button-small">Delete</button>
-</form>
-          <button onclick="openEditModal(
-            <?= $row['product_id'] ?>,
-            '<?= htmlspecialchars($row['product_name'], ENT_QUOTES) ?>',
-            '<?= htmlspecialchars($row['category'], ENT_QUOTES) ?>',
-            <?= $row['price'] ?>,
-            <?= $row['stock'] ?>,
-            <?= $row['markup_price'] ?>,
-            <?= $row['ceiling_point'] ?>,
-            <?= $row['critical_point'] ?>
-          )" class="button-small-b">Edit</button>
-        </td>
-       
-      </tr>
     <?php endwhile; ?>
-  <?php else: ?>
-    <tr><td colspan="9">No products found for this branch.</td></tr>
-  <?php endif; ?>
-  
-</tbody>
-<button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addProductModal">
-  Add Product
-</button>
+</div>
 
-  </table>
+<!-- Product Table -->
+<div class="table mt-4">
+    <table class="table table-bordered table-striped">
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>PRODUCT</th>
+                <th>CATEGORY</th>
+                <th>PRICE</th>
+                <th>MARKUP (%)</th>
+                <th>RETAIL PRICE</th>
+                <th>CEILING POINT</th>
+                <th>CRITICAL POINT</th>
+                <th>STOCKS</th>
+                <th>ACTION</th>
+            </tr>
+        </thead>
+        <tbody>
+            <?php if ($result->num_rows > 0): ?>
+                <?php while ($row = $result->fetch_assoc()): ?>
+                    <?php 
+                        $isCritical = ($row['stock'] <= $row['critical_point']);
+                        $rowClass = $isCritical ? 'table-danger' : 'table-success';
+                        $retailPrice = $row['price'] + ($row['price'] * ($row['markup_price'] / 100));
+                    ?>
+                    <tr class="<?= $rowClass ?>">
+                        <td><?= $row['product_id'] ?></td>
+                        <td><?= htmlspecialchars($row['product_name']) ?></td>
+                        <td><?= htmlspecialchars($row['category']) ?></td>
+                        <td><?= number_format($row['price'], 2) ?></td>
+                        <td><?= number_format($row['markup_price'], 2) ?>%</td>
+                        <td><?= number_format($retailPrice, 2) ?></td>
+                        <td><?= $row['ceiling_point'] ?></td>
+                        <td><?= $row['critical_point'] ?></td>
+                        <td><?= $row['stock'] ?></td>
+                        <td>
+                            <!-- Archive Product Button -->
+                            <form method="POST" style="display:inline-block;" 
+                                  onsubmit="return confirm('Are you sure you want to archive this product?');">
+                                <input type="hidden" name="product_id" value="<?= $row['product_id'] ?>">
+                                <button type="submit" name="archive_product" class="btn btn-warning btn-sm">
+                                    Archive
+                                </button>
+                            </form>
+
+                            <!-- Edit Button -->
+                            <button onclick="openEditModal(
+                                <?= $row['product_id'] ?>,
+                                '<?= htmlspecialchars($row['product_name'], ENT_QUOTES) ?>',
+                                '<?= htmlspecialchars($row['category'], ENT_QUOTES) ?>',
+                                <?= $row['price'] ?>,
+                                <?= $row['stock'] ?>,
+                                <?= $row['markup_price'] ?>,
+                                <?= $row['ceiling_point'] ?>,
+                                <?= $row['critical_point'] ?>
+                            )" class="btn btn-primary btn-sm">Edit</button>
+                        </td>
+                    </tr>
+                <?php endwhile; ?>
+            <?php else: ?>
+                <tr><td colspan="10">No products found for this branch.</td></tr>
+            <?php endif; ?>
+        </tbody>
+    </table>
+
+    <!-- Add Product Modal Button -->
+    <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addProductModal">
+        Add Product
+    </button>
+</div>
+
+<!-- Branch Management (Admin Only) -->
+<?php if ($role === 'admin'): ?>
+<div class="mt-4">
   
-  <div class="actions">
-    <?php if ($role === 'admin'): ?>
+    <h3>Manage Branches</h3>
+    <table class="table table-bordered">
+        <thead>
+            <tr>
+                <th>Branch Name</th>
+                <th>Location</th>
+                <th>Email</th>
+                <th>Contact</th>
+                <th>Action</th>
+            </tr>
+        </thead>
+        <tbody>
+            <?php
+            $branch_query = $conn->query("SELECT * FROM branches WHERE archived = 0");
+            while ($branch = $branch_query->fetch_assoc()): ?>
+                <tr>
+                    <td><?= htmlspecialchars($branch['branch_name']) ?></td>
+                    <td><?= htmlspecialchars($branch['branch_location']) ?></td>
+                    <td><?= htmlspecialchars($branch['branch_email']) ?></td>
+                    <td><?= htmlspecialchars($branch['branch_contact']) ?></td>
+                    <td>
+                        <form method="POST" onsubmit="return confirm('Archive this branch?');" style="display:inline-block;">
+                            <input type="hidden" name="branch_id" value="<?= $branch['branch_id'] ?>">
+                            <button type="submit" name="archive_branch" class="btn btn-danger btn-sm">Archive</button>
+                        </form>
+                    </td>
+                </tr>
+            <?php endwhile; ?>
+        </tbody>
+    </table>
       <button class="btn btn-create" onclick="openCreateModal()">Create Branch</button>
-      <button class="btn btn-delete" onclick="openDeleteModal()">Delete Branch</button>
-      <?php endif; ?>
-    </div>
-  </div>
+</div>
+<?php endif; ?>
+
 <!-- Button to trigger modal -->
 </div><!-- Add Product Modal -->
 <div class="modal fade" id="addProductModal" tabindex="-1" aria-labelledby="addProductModalLabel" aria-hidden="true">
@@ -667,13 +302,19 @@ display: flex;
           <div class="row g-3">
 
             <div class="col-md-6">
-              <label for="brand" class="form-label">Brand</label>
-              <select name="brand_id" class="form-select" required>
-                <option value="">-- Select Brand --</option>
-                ADD BRAND
-                ?>
-              </select>
-            </div>
+            <label for="brand" class="form-label">Brand</label>
+            <select class="form-select" id="brand" name="brand_name" required>
+              <option value="">-- Select Brand --</option>
+              <?php while($brand = $brand_result->fetch_assoc()): ?>
+                <option value="<?= htmlspecialchars($brand['brand_name']) ?>">
+                  <?= htmlspecialchars($brand['brand_name']) ?>
+                </option>
+              <?php endwhile; ?>
+            </select>
+            <button type="button" class="btn btn-link p-0 mt-1" data-bs-toggle="modal" data-bs-target="#addBrandModal">
+              + Add New Brand
+            </button>
+          </div>
 
             <div class="col-md-6">
               <label for="productName" class="form-label">Product Name</label>
@@ -684,7 +325,7 @@ display: flex;
               <label for="category" class="form-label">Category</label>
               <select name="category" id="category" class="form-select" required>
                 <option value="">-- Select Category --</option>
-                <option value="Solid">Solid</option>
+                <option value="Solid">Tire</option>
                 <option value="Liquid">Liquid</option>
               </select>
             </div>
@@ -701,7 +342,7 @@ display: flex;
 
             <div class="col-md-6">
               <label for="retailPrice" class="form-label">Retail Price</label>
-              <input type="number" class="form-control" id="retailPrice" name="retail_price" step="0.01" required>
+              <input type="number" class="form-control" id="retailPrice" name="retail_price" class="form-control" readonly>
             </div>
 
             <div class="col-md-6">
@@ -757,64 +398,77 @@ display: flex;
 
  <!-- Edit Product Modal -->
 <div class="modal fade" id="editProductModal" tabindex="-1" aria-labelledby="editProductModalLabel" aria-hidden="true">
-  <div class="modal-dialog">
+  <div class="modal-dialog modal-lg">
     <div class="modal-content">
-      <form id="editProductForm" method="POST" action="update_product.php">
+      
+    <form id="editProductForm" method="POST" action="update_product.php" onsubmit="return validateEditForm()">
         <div class="modal-header">
           <h5 class="modal-title" id="editProductModalLabel">Edit Product</h5>
           <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
         </div>
+        
         <div class="modal-body">
-          <!-- Hidden field to store product ID -->
           <input type="hidden" name="product_id" id="edit_product_id">
 
-          <div class="mb-3">
-            <label for="edit_product_name" class="form-label">Product Name</label>
-            <input type="text" class="form-control" id="edit_product_name" name="product_name" required>
+          <div class="row g-3">
+            <div class="col-md-6">
+              <label class="form-label">Product Name</label>
+              <input type="text" class="form-control" id="edit_product_name" name="product_name" required>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">Category</label>
+              <select class="form-select" id="edit_category" name="category">
+                <option value="Solid">Solid</option>
+                <option value="Liquid">Liquid</option>
+              </select>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">Price</label>
+              <input type="number" step="0.01" class="form-control" id="edit_price" name="price" required>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">Markup (%)</label>
+              <input type="number" step="0.01" class="form-control" id="edit_markup" name="markup_price" required>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">Retail Price</label>
+              <input type="number" class="form-control" id="edit_retail_price" name="retail_price" readonly>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">Ceiling Point</label>
+              <input type="number" class="form-control" id="edit_ceiling_point" name="ceiling_point" required>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">Critical Point</label>
+              <input type="number" class="form-control" id="edit_critical_point" name="critical_point" required>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">Stock</label>
+              <input type="number" class="form-control" id="edit_stock" name="stock" required>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">VAT (%)</label>
+              <input type="number" step="0.01" class="form-control" id="edit_vat" name="vat" value="12">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">Expiration Date</label>
+              <input type="date" class="form-control" id="edit_expiration_date" name="expiration_date">
+              <small class="text-muted">Leave blank if none</small>
+            </div>
           </div>
-
-          <div class="mb-3">
-            <label for="edit_category" class="form-label">Category</label>
-            <input type="text" class="form-control" id="edit_category" name="category" required>
-          </div>
-
-          <div class="mb-3">
-            <label for="edit_price" class="form-label">Price</label>
-            <input type="number" step="0.01" class="form-control" id="edit_price" name="price" required>
-          </div>
-
-          <div class="mb-3">
-            <label for="edit_markup_price" class="form-label">Markup Price</label>
-            <input type="number" step="0.01" class="form-control" id="edit_markup_price" name="markup_price" required>
-          </div>
-
-          <div class="mb-3">
-            <label for="edit_ceiling_point" class="form-label">Ceiling Point</label>
-            <input type="number" class="form-control" id="edit_ceiling_point" name="ceiling_point" required>
-          </div>
-
-          <div class="mb-3">
-            <label for="edit_critical_point" class="form-label">Critical Point</label>
-            <input type="number" class="form-control" id="edit_critical_point" name="critical_point" required>
-          </div>
-
-          <div class="mb-3">
-            <label for="edit_stock" class="form-label">Stock</label>
-            <input type="number" class="form-control" id="edit_stock" name="stock" required>
-          </div>
-
         </div>
+
         <div class="modal-footer">
-          <button type="submit" class="btn btn-primary">Save Changes</button>
           <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save Changes</button>
         </div>
       </form>
+
     </div>
   </div>
 </div>
 
-  
-    
+
 </body>
 </html>
 <script>
@@ -834,8 +488,8 @@ display: flex;
     }
   }
 </script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
 
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js"></script>
 
   <!-- Modal for Creating Branch -->
   <div class="modal" id="createModal">
@@ -847,6 +501,7 @@ display: flex;
       <input type="text" name="branch_location" placeholder="Branch Location">
       <input type="email" name="branch_email" placeholder="Branch Email" required>
       <input type="text" name="branch_contact" placeholder="Branch Contact">
+      <input type="text" name="branch_contact_number" placeholder="Branch Contact number">
         <div class="modal-footer">
           <button type="button" onclick="closeModal()">Cancel</button>
           <button type="submit" name="create_branch">Create Branch</button>
@@ -875,6 +530,26 @@ display: flex;
     </form>
   </div>
 </div>
+<!-- MODAL FOR BRAND -->
+<div class="modal fade" id="addBrandModal" tabindex="-1" aria-labelledby="addBrandModalLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="addBrandModalLabel">Add New Brand</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <form method="POST" action="add_brand.php">
+        <div class="modal-body">
+          <input type="text" name="brand_name" class="form-control" placeholder="Brand Name" required>
+        </div>
+        <div class="modal-footer">
+          <button type="submit" class="btn btn-primary">Add Brand</button>
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
 
 
 <!-- Modal for Confirming Deletion -->
@@ -888,7 +563,48 @@ display: flex;
         </form>
     </div>
 </div>
+<script src="notifications.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+  const ceilingInput = document.getElementById('ceiling_point');
+  const criticalInput = document.getElementById('critical_point');
+  const form = document.getElementById('your-form-id'); // Replace with your actual form ID
 
+  if (form && ceilingInput && criticalInput) {
+    form.addEventListener('submit', function (e) {
+      const ceiling = parseFloat(ceilingInput.value);
+      const critical = parseFloat(criticalInput.value);
+
+      // Ensure both values are numbers
+      if (!isNaN(ceiling) && !isNaN(critical)) {
+        if (critical > ceiling) {
+          e.preventDefault();
+          alert("❌ Critical Point cannot be greater than Ceiling Point.");
+          criticalInput.focus();
+        }
+      }
+    });
+  }
+});
+</script>
+<!-- <script>
+document.addEventListener('DOMContentLoaded', function () {
+  const ceilingInput = document.getElementById('ceiling_point');
+  const criticalInput = document.getElementById('critical_point');
+  const form = document.getElementById('your-form-id'); // Replace with your form ID
+
+  form.addEventListener('submit', function (e) {
+    const ceiling = parseInt(ceilingInput.value);
+    const critical = parseInt(criticalInput.value);
+
+    if (critical > ceiling) {
+      e.preventDefault();
+      alert("Critical Point cannot be greater than Ceiling Point.");
+      criticalInput.focus();
+    }
+  });
+});
+</script> -->
   <script>
     function openCreateModal() {
       document.getElementById('createModal').style.display = 'flex';
@@ -903,32 +619,42 @@ display: flex;
       document.getElementById('deleteModal').style.display = 'none';
     }
   </script>
-  
 
-  <script>
+<script>
 function openEditModal(id, name, category, price, stock, markup_price, ceiling_point, critical_point) {
+  // Fill modal fields
   document.getElementById('edit_product_id').value = id;
   document.getElementById('edit_product_name').value = name;
   document.getElementById('edit_category').value = category;
   document.getElementById('edit_price').value = price;
-  document.getElementById('edit_markup_price').value = markup_price;
+  document.getElementById('edit_markup').value = markup_price;
+  document.getElementById('edit_retail_price').value = (parseFloat(price) + (parseFloat(price) * (parseFloat(markup_price) / 100))).toFixed(2);
   document.getElementById('edit_ceiling_point').value = ceiling_point;
   document.getElementById('edit_critical_point').value = critical_point;
   document.getElementById('edit_stock').value = stock;
 
-  
-  // Show the modal using Bootstrap 5
+  // Set form action with branch ID
+  const branchId = <?= json_encode($branch_id) ?>;
+  document.getElementById("editProductForm").action = `update_product.php?branch=${branchId}`;
+
+  // Show Bootstrap modal
   const editModal = new bootstrap.Modal(document.getElementById('editProductModal'));
   editModal.show();
-
-// Set the form action with the current branch_id to ensure correct update
-const branchId = <?= json_encode($branch_id) ?>;
-  const form = document.getElementById("editProductForm");
-  form.action = `update_product.php?branch=${branchId}`;
-
-  document.getElementById("editModal").style.display = "block";
 }
 </script>
+<script>
+function validateEditForm() {
+  const stock = parseInt(document.getElementById('edit_stock').value);
+  const ceiling = parseInt(document.getElementById('edit_ceiling_point').value);
+
+  if (stock > ceiling) {
+    alert('Stock cannot exceed Ceiling Point.');
+    return false; // prevent submission
+  }
+  return true; // allow submission
+}
+</script>
+
 
   <script>
     // Open the Delete Branch Modal
@@ -941,7 +667,7 @@ const branchId = <?= json_encode($branch_id) ?>;
         const checkboxes = document.querySelectorAll('input[name="branches_to_delete[]"]:checked');
         if (checkboxes.length > 0) {
             document.getElementById('deleteSelectionModal').style.display = 'none';
-a            document.getElementById('deleteConfirmationModal').style.display = 'block';
+            document.getElementById('deleteConfirmationModal').style.display = 'block';
         } else {
             alert('Please select at least one branch to delete.');
         }
@@ -953,5 +679,24 @@ a            document.getElementById('deleteConfirmationModal').style.display = 
         document.getElementById('deleteConfirmationModal').style.display = 'none';
     }
 </script>
+ <!-- calculate retail -->
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const priceInput = document.getElementById('price');
+    const markupInput = document.getElementById('markupPrice');
+    const retailInput = document.getElementById('retailPrice');
+
+    function calculateRetail() {
+        const price = parseFloat(priceInput.value) || 0;
+        const markup = parseFloat(markupInput.value) || 0;
+        const retail = price + (price * (markup / 100));
+        retailInput.value = retail.toFixed(2);
+    }
+
+    priceInput.addEventListener('input', calculateRetail);
+    markupInput.addEventListener('input', calculateRetail);
+});
+</script>
+
 </body>
 </html>

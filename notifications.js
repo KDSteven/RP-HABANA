@@ -1,12 +1,16 @@
 // ===============================
 // GLOBAL VARS
 // ===============================
+console.log("✅ notifications.js is loaded");
+
+
+
 let latestNotifications = [];
 let lastCount = parseInt(localStorage.getItem('lastNotifCount')) || 0;
 let lastPopupTime = parseInt(localStorage.getItem('lastPopupTime')) || 0;
 let modalOpen = false;
-const POLL_INTERVAL = 5000; // 5s
-const POPUP_INTERVAL = 30000; // 30s
+const POLL_INTERVAL = 5000;  // Check every 5s
+const POPUP_INTERVAL = 600000; // Show popup every 30s if items exist
 
 // Request desktop notification permission
 if (Notification.permission !== "granted") Notification.requestPermission();
@@ -14,22 +18,24 @@ if (Notification.permission !== "granted") Notification.requestPermission();
 // ===============================
 // FETCH NOTIFICATIONS
 // ===============================
-function fetchNotifications() {
+function fetchNotifications() {  console.log("⏳ Running fetchNotifications...");
     fetch('get_notifications.php')
         .then(r => r.json())
-        .then(data => {
+        .then(data => { console.log("DEBUG: API Response", data);
             updateBadge(data.count);
             latestNotifications = data.items;
 
             const now = Date.now();
-            const canPopup = !localStorage.getItem('popupInProgress') && !modalOpen;
+const newNotifications = data.count > lastCount; // Check if there are new ones
 
-            if ((data.count > lastCount || now - lastPopupTime >= POPUP_INTERVAL) && canPopup) {
-                openNotificationModal(data.items);
-                playSound();
-                showDesktopNotification("Stock Alert", "You have new stock alerts!");
-                broadcastPopup();
-            }
+if ((newNotifications || (data.count > 0 && now - lastPopupTime >= POPUP_INTERVAL)) && !modalOpen) {
+    console.log("✅ Triggering popup now...");
+    openNotificationModal(data.items);
+    playSound();
+    showDesktopNotification("Stock Alert", "You have new stock alerts!");
+    broadcastPopup();
+}
+
 
             lastCount = data.count;
             localStorage.setItem('lastNotifCount', lastCount);
@@ -38,7 +44,7 @@ function fetchNotifications() {
 }
 
 // ===============================
-// UPDATE BADGE + BELL ANIMATION
+// UPDATE BADGE
 // ===============================
 function updateBadge(count) {
     const badge = document.getElementById('notifCount');
@@ -48,8 +54,10 @@ function updateBadge(count) {
 
     if (count > lastCount) {
         const bell = document.getElementById('notifBell');
-        bell.classList.add('shake');
-        setTimeout(() => bell.classList.remove('shake'), 1000);
+        if (bell) {
+            bell.classList.add('shake');
+            setTimeout(() => bell.classList.remove('shake'), 1000);
+        }
     }
 }
 
@@ -71,7 +79,7 @@ function showDesktopNotification(title, body) {
 }
 
 // ===============================
-// MODAL WITH TABS
+// MODAL POPUP
 // ===============================
 function openNotificationModal(items) {
     modalOpen = true;
@@ -81,14 +89,17 @@ function openNotificationModal(items) {
     const overlay = document.createElement('div');
     overlay.id = 'notifModalOverlay';
 
-    const criticalItems = items.filter(i => i.stock <= i.critical_point);
-    const lowItems = items.filter(i => i.stock > i.critical_point);
+    // Categorize items
+    const outItems = items.filter(i => i.category === 'out');
+    const criticalItems = items.filter(i => i.category === 'critical');
+    const lowItems = items.filter(i => i.category === 'low');
 
     overlay.innerHTML = `
         <div class="notif-modal">
             <div class="notif-header">📢 Stock Alerts</div>
             <div class="notif-tabs">
-                <div class="notif-tab active" data-tab="critical">Critical (${criticalItems.length})</div>
+                <div class="notif-tab active" data-tab="out">Out (${outItems.length})</div>
+                <div class="notif-tab" data-tab="critical">Critical (${criticalItems.length})</div>
                 <div class="notif-tab" data-tab="low">Low (${lowItems.length})</div>
             </div>
             <div class="notif-content" id="notifContent"></div>
@@ -100,10 +111,9 @@ function openNotificationModal(items) {
     `;
     document.body.appendChild(overlay);
 
-    // Default show critical tab
-    renderTable('critical');
+    renderTable('out');
 
-    // Tab switching
+    // Switch Tabs
     document.querySelectorAll('.notif-tab').forEach(tab => {
         tab.addEventListener('click', () => {
             document.querySelectorAll('.notif-tab').forEach(t => t.classList.remove('active'));
@@ -112,12 +122,12 @@ function openNotificationModal(items) {
         });
     });
 
-    // Close actions
+    // Close Modal
     document.getElementById('closeModalBtn').onclick = closeModal;
     overlay.onclick = e => { if (e.target.id === 'notifModalOverlay') closeModal(); };
     document.addEventListener('keydown', escClose);
 
-    // Mark as seen
+    // Mark as Seen
     document.getElementById('markSeenBtn').addEventListener('click', () => {
         fetch('mark_seen.php', { method: 'POST' }).then(() => {
             closeModal();
@@ -130,14 +140,28 @@ function openNotificationModal(items) {
 
     function renderTable(type) {
         const content = document.getElementById('notifContent');
-        const rows = (type === 'critical' ? criticalItems : lowItems)
-            .map(item => `
-                <tr class="${type === 'critical' ? 'critical-row' : 'low-row'}">
-                    <td>${item.product_name}</td>
-                    <td style="text-align:center;">${item.stock}</td>
-                    <td>${item.branch}</td>
-                </tr>`).join('');
-        content.innerHTML = rows ? `<table class="notif-table">${rows}</table>` : `<p>No ${type} stock items.</p>`;
+        let rows = [];
+
+        if (type === 'out') {
+            rows = outItems;
+        } else if (type === 'critical') {
+            rows = criticalItems;
+        } else {
+            rows = lowItems;
+        }
+
+        const html = rows.length
+            ? `<table class="notif-table">
+                ${rows.map(item => `
+                    <tr class="${type}-row">
+                        <td>${item.product_name}</td>
+                        <td style="text-align:center;">${item.stock}</td>
+                        <td>${item.branch}</td>
+                    </tr>`).join('')}
+               </table>`
+            : `<p>No ${type} stock items.</p>`;
+
+        content.innerHTML = html;
     }
 
     function closeModal() {
@@ -152,7 +176,7 @@ function openNotificationModal(items) {
 }
 
 // ===============================
-// MULTI-TAB SYNC
+// SYNC BETWEEN TABS
 // ===============================
 function broadcastPopup() {
     const now = Date.now();
@@ -163,18 +187,20 @@ function broadcastPopup() {
 }
 
 // ===============================
-// START POLLING
+// INIT
 // ===============================
-setInterval(fetchNotifications, POLL_INTERVAL);
-fetchNotifications();
+document.addEventListener('DOMContentLoaded', () => {
+    setInterval(fetchNotifications, POLL_INTERVAL);
+    fetchNotifications();
 
-// ===============================
-// BELL ICON CLICK
-// ===============================
-document.getElementById('notifBell').addEventListener('click', () => {
-    if (latestNotifications.length > 0) {
-        openNotificationModal(latestNotifications);
-    } else {
-        alert('No new notifications.');
+    const bell = document.getElementById('notifBell');
+    if (bell) {
+        bell.addEventListener('click', () => {
+            if (latestNotifications.length > 0) {
+                openNotificationModal(latestNotifications);
+            } else {
+                alert('No new notifications.');
+            }
+        });
     }
 });

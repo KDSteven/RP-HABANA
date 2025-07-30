@@ -11,6 +11,17 @@ $branch_id = $_SESSION['branch_id'] ?? null;
 
 include 'config/db.php';
 
+// Month selector
+$selectedMonth = $_GET['month'] ?? date('Y-m'); // default: current month
+$startDate = $selectedMonth . "-01";
+$endDate = date("Y-m-t", strtotime($startDate)); // last day of the month
+
+$filterBranch = $_GET['branch_id'] ?? '';
+$branchCondition = '';
+if ($filterBranch !== '') {
+    $branchCondition = " AND s.branch_id = " . intval($filterBranch);
+}
+
 // Summary stats
 if ($role === 'staff') {
     $totalProducts = $conn->query("SELECT COUNT(*) AS count FROM inventory WHERE branch_id = $branch_id")->fetch_assoc()['count'];
@@ -59,12 +70,18 @@ SELECT p.product_name, SUM(si.quantity) AS total_qty
 FROM sales_items si
 JOIN products p ON si.product_id = p.product_id
 JOIN sales s ON si.sale_id = s.sale_id
+WHERE s.sale_date BETWEEN '$startDate' AND '$endDate'
 ";
 if ($role === 'staff') {
-    $fastMovingQuery .= " WHERE s.branch_id = $branch_id ";
+    $fastMovingQuery .= " AND s.branch_id = $branch_id ";
 }
 $fastMovingQuery .= " GROUP BY si.product_id ORDER BY total_qty DESC LIMIT 5";
+
+// Execute and check for errors
 $fastMovingResult = $conn->query($fastMovingQuery);
+if (!$fastMovingResult) {
+    die("Fast moving query error: " . $conn->error);
+}
 
 
 // Slow Moving Items (Bottom 5)
@@ -73,23 +90,33 @@ SELECT p.product_name, SUM(si.quantity) AS total_qty
 FROM sales_items si
 JOIN products p ON si.product_id = p.product_id
 JOIN sales s ON si.sale_id = s.sale_id
+WHERE s.sale_date BETWEEN '$startDate' AND '$endDate'
 ";
 if ($role === 'staff') {
-    $slowMovingQuery .= " WHERE s.branch_id = $branch_id ";
+    $slowMovingQuery .= " AND s.branch_id = $branch_id ";
 }
 $slowMovingQuery .= " GROUP BY si.product_id ORDER BY total_qty ASC LIMIT 5";
+
 $slowMovingResult = $conn->query($slowMovingQuery);
+if (!$slowMovingResult) {
+    die("Slow moving query error: " . $conn->error);
+}
+
 
 // Notifications (Pending Approvals)
 $pending = $conn->query("SELECT COUNT(*) AS pending FROM transfer_requests WHERE status='Pending'")->fetch_assoc()['pending'];
 
 // Recent Sales (last 5)
-$recentSalesQuery = "SELECT sale_id, sale_date, total FROM sales";
+$recentSalesQuery = "
+SELECT sale_id, sale_date, total FROM sales
+WHERE sale_date BETWEEN '$startDate' AND '$endDate'
+";
 if ($role === 'staff') {
-    $recentSalesQuery .= " WHERE branch_id = $branch_id";
+    $recentSalesQuery .= " AND branch_id = $branch_id";
 }
 $recentSalesQuery .= " ORDER BY sale_date DESC LIMIT 5";
 $recentSales = $conn->query($recentSalesQuery);
+
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -99,7 +126,7 @@ $recentSales = $conn->query($recentSalesQuery);
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
 <link rel="stylesheet" href="css/notifications.css">
 <link rel="stylesheet" href="css/dashboard.css">
-<audio id="notifSound" src="notif.mp3" preload="auto"></audio>
+<audio id="notifSound" src="img/notif.mp3" preload="auto"></audio>
 </head>
 <body>
 <div class="sidebar">
@@ -135,6 +162,24 @@ $recentSales = $conn->query($recentSalesQuery);
         <div class="card red"><h3>Out of Stocks</h3><p><?= $outOfStocks ?></p></div>
         <div class="card blue"><h3>Total Sales</h3><p>₱<?= number_format($totalSales,2) ?></p></div>
     </div>
+    
+    <form method="GET" style="margin-bottom:20px;">
+    <label for="month">Select Month:</label>
+    <input type="month" id="month" name="month" value="<?= htmlspecialchars($_GET['month'] ?? date('Y-m')) ?>">
+   <select id="branch" name="branch_id">
+    <option value="">All Branches</option>
+    <?php
+    $branches = $conn->query("SELECT branch_id, branch_name FROM branches");
+    while ($b = $branches->fetch_assoc()):
+    ?>
+        <option value="<?= $b['branch_id'] ?>" <?= (isset($_GET['branch_id']) && $_GET['branch_id'] == $b['branch_id']) ? 'selected' : '' ?>>
+            <?= htmlspecialchars($b['branch_name']) ?>
+        </option>
+    <?php endwhile; ?>
+</select>
+
+    <button type="submit">Filter</button>
+    </form>
 
    
     <!-- Fast & Slow Moving -->
@@ -193,10 +238,11 @@ $recentSales = $conn->query($recentSalesQuery);
             </ul>
         </section>
     </div>
-
+    <div style="display:flex; gap:20px; flex-wrap:wrap; padding-top:20px;s">
     <!-- Recent Sales -->
-    <section>
+    <section style="flex:1; min-width:300px;">
         <h2>Recent Sales</h2>
+        <ul>
         <table>
             <thead><tr><th>ID</th><th>Date</th><th>Total</th></tr></thead>
             <tbody>
@@ -209,18 +255,18 @@ $recentSales = $conn->query($recentSalesQuery);
                 <?php endwhile;?>
             </tbody>
         </table>
+        </ul>
     </section>
 
     <!-- Sales Chart -->
-    <section>
+    <section style="flex:1; min-width:300px;">
         <h2>Monthly Sales Overview</h2>
+        <ul>
         <canvas id="salesChart" height="120"></canvas>
-
+        </ul>
     </section>
+    </div>
 </div>
-
-
-
 <!-- NOTIFICATIONS -->
 <script src="notifications.js"></script>
 
