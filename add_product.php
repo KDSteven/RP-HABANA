@@ -8,6 +8,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $markupPrice = floatval($_POST['markup_price'] ?? 0);
     $ceilingPoint = intval($_POST['ceiling_point'] ?? 0);
     $criticalPoint = intval($_POST['critical_point'] ?? 0);
+    $brandName = trim($_POST['brand_name'] ?? '');
     $stocks = intval($_POST['stocks'] ?? 0);
     $branchId = intval($_POST['branch_id'] ?? 0);
 
@@ -28,12 +29,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     // ✅ Insert into products table
-    $stmt = $conn->prepare("INSERT INTO products (brand, product_name, category, price, markup_price, ceiling_point, critical_point) VALUES (?, ?, ?, ?, ?, ?, ?)");
-$stmt->bind_param("sssddii", $brand, $product_name, $category, $price, $markup_price, $ceiling_point, $critical_point);
+    $stmt = $conn->prepare("INSERT INTO products (product_name, category, price, markup_price, ceiling_point, critical_point, brand_name) VALUES (?, ?, ?, ?, ?, ?, ?)");
+$stmt->bind_param("ssddiis",  $productName, $category, $price, $markupPrice, $ceilingPoint, $criticalPoint, $brandNsame);
 
 
     if ($stmt->execute()) {
-        $productId = $stmt->insert_id;
+        $productId = $conn->insert_id;
         $stmt->close();
 
         // ✅ Insert into inventory table
@@ -50,5 +51,6 @@ $stmt->bind_param("sssddii", $brand, $product_name, $category, $price, $markup_p
     } else {
         echo "Error adding product: " . $stmt->error;
     }
+    $conn->close();
 }
 ?>
