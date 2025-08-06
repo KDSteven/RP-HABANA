@@ -44,6 +44,8 @@ $branches = $conn->query("SELECT * FROM branches");
 <meta charset="UTF-8">
 <title>Stock Transfer</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+<link rel="stylesheet" href="css/notifications.css">
+<audio id="notifSound" src="img/notif.mp3" preload="auto"></audio>
 <style>
 * { margin:0; padding:0; box-sizing:border-box; font-family:Arial, sans-serif; }
 body { display:flex; height:100vh; background:#f5f5f5; }
@@ -66,9 +68,16 @@ button:hover { background:#e67e00; }
 </head>
 <body>
 <div class="sidebar">
-    <h2><?= strtoupper($_SESSION['role']) ?></h2>
+   <h2>
+    <!-- <?= strtoupper($role) ?> -->
+    <span class="notif-wrapper">
+        <i class="fas fa-bell" id="notifBell"></i>
+        <span id="notifCount" <?= $pending > 0 ? '' : 'style="display:none;"' ?>>0</span>
+    </span>
+</h2>
+
     <a href="dashboard.php"><i class="fas fa-tv"></i> Dashboard</a>
-    <a href="inventory.php?branch=<?= $branch_id ?>"><i class="fas fa-box"></i> Inventory</a>
+    <a href="inventory.php"><i class="fas fa-tv"></i> Inventory</a>
     <a href="transfer.php" class="active"><i class="fas fa-exchange-alt"></i> Transfer</a>
     <a href="logout.php"><i class="fas fa-sign-out-alt"></i> Logout</a>
 </div>

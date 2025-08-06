@@ -37,6 +37,15 @@ if ($role === 'staff') {
 }
 $stmt->execute();
 $sales_result = $stmt->get_result();
+$pending = 0;
+if ($role === 'admin') {
+    $result = $conn->query("SELECT COUNT(*) AS pending FROM transfer_requests WHERE status='Pending'");
+    if ($result) {
+        $row = $result->fetch_assoc();
+        $pending = $row['pending'] ?? 0;
+    }
+}
+
 ?>
 
 <!DOCTYPE html>
@@ -45,6 +54,9 @@ $sales_result = $stmt->get_result();
   <meta charset="UTF-8" />
   <title>Sales History</title>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" />
+<link rel="stylesheet" href="css/notifications.css">
+<audio id="notifSound" src="img/notif.mp3" preload="auto"></audio>
+
   <style>
    * {
       margin: 0; padding: 0; box-sizing: border-box;
@@ -132,7 +144,14 @@ $sales_result = $stmt->get_result();
 </head>
 <body>
  <div class="sidebar">
-    <h2><?= strtoupper($role) ?></h2>
+    <h2>
+    <?= strtoupper($role) ?>
+    <span class="notif-wrapper">
+        <i class="fas fa-bell" id="notifBell"></i>
+        <span id="notifCount" <?= $pending > 0 ? '' : 'style="display:none;"' ?>>0</span>
+    </span>
+</h2>
+
 
     <a href="dashboard.php"><i class="fas fa-tv"></i> Dashboard</a>
 

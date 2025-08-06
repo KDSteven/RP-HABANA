@@ -1,380 +1,168 @@
- /* General Styles */
-    * {
-      margin: 0; padding: 0; box-sizing: border-box;
-      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-    }
+/* =========================
+   INVENTORY PAGE STYLES
+========================= */
 
-    body {
-      display: flex;
-      height: 140vh;
-      max-height: 200vh;
-      background: #f5f5f5;
-      color: #333;
-    }
+.inventory-page .content {
+    flex: 1;
+    padding: 30px;
+}
 
-    .sidebar {
-      width: 220px;
-      background-color: #f7931e;
-      padding: 30px 15px;
-      color: white;
-    }
+/* Search Bar */
+.inventory-page .search-box {
+    display: flex;
+    align-items: center;
+    margin-bottom: 20px;
+    gap: 10px;
+}
 
-    .sidebar h2 {
-      margin-bottom: 30px;
-      font-size: 22px;
-      text-align: center;
-    }
+.inventory-page .search-box input {
+    flex: 1;
+    padding: 10px;
+    border: 1px solid #ccc;
+    border-radius: 5px;
+}
 
-    .sidebar a {
-      display: flex;
-      align-items: center;
-      text-decoration: none;
-      color: white;
-      padding: 12px 15px;
-      margin: 6px 0;
-      border-radius: 8px;
-      transition: background 0.2s;
-    }
+/* Branch Selector */
+.inventory-page .branches {
+    background: white;
+    border-radius: 5px;
+    padding: 10px;
+    margin-bottom: 20px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+}
 
-    .sidebar a:hover, .sidebar a.active {
-      background-color: #e67e00;
-    }
+.inventory-page .branches a {
+    padding: 10px 15px;
+    background-color: #eee;
+    color: #000;
+    text-decoration: none;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    transition: 0.3s;
+}
 
-    .sidebar a i {
-      margin-right: 10px;
-      font-size: 16px;
-    }
+.inventory-page .branches a.active {
+    background-color: #4CAF50;
+    color: white;
+    font-weight: bold;
+}
 
+/* Table */
+.inventory-page .table {
+    background: white;
+    border-radius: 5px;
+    padding: 20px;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+}
 
-    .content {
-      flex: 1;
-      padding: 40px;
-    }
+.inventory-page table {
+    width: 100%;
+    border-collapse: collapse;
+}
 
-    input, select, button {
-      padding: 10px;
-      width: 250px;
-      margin-bottom: 15px;
-      border: 1px solid #aaa;
-      border-radius: 5px;
-    }
+.inventory-page th,
+.inventory-page td {
+    padding: 12px;
+    text-align: left;
+    border-bottom: 1px solid #ddd;
+}
 
-    button {
-      width: 250px;
-      background-color: #f7931e;
-      color: white;
-      font-weight: bold;
-      border: none;
-      cursor: pointer;
-    }
-    .button-small{
-      width: 150px;
-      background-color: red;
-    }
-    .button-small-b{
-      width: 150px;
-      background-color:#f7931e ;
-    }
-    button:hover {
-      background-color: #e67e00;
-    }
-    .content { flex: 1; padding: 30px; }
-    .search-box {
-      display: flex;
-      align-items: center;
-      margin-bottom: 20px;
-    }
-    .search-box input {
-      padding: 10px;
-      width: 100%;
-      border: 1px solid #ccc;
-      border-radius: 5px;
-    }
-    .branches {
-      background: white;
-      border-radius: 5px;
-      padding: 10px;
-      margin-bottom: 20px;
-      max-height: 5000px;
-    }
-    .branches a {
-      display: block;
-      padding: 15px;
-      border-bottom: 1px solid #ddd;
-      color: #333;
-      font-weight: bold;
-      text-decoration: none;
-    }
-    .branches a:hover, .branches a.active { background: #f2f2f2; }
-    .table {
-      background: white;
-      border-radius: 5px;
-      overflow: hidden;
-      padding: 20px;
-    }
-    table {
-      width: 100%;
-      border-collapse: collapse;
-    }
-    table thead { background: #eee; }
-    table th, table td {
-      padding: 10px;
-      text-align: left;
-      border-bottom: 1px solid #ddd;
-    }
-    .actions {
-      margin-top: 20px;
-      display: flex;
-      gap: 10px;
-    }
-    .btn {
-      padding: 10px 20px;
-      border: none;
-      border-radius: 5px;
-      color: white;
-      font-weight: bold;
-      cursor: pointer;
-    }
-    .btn-create { background: #28a745; }
-    .btn-delete { background: #dc3545; }
+.inventory-page th {
+    background: #f7931e;
+    color: white;
+}
+
+/* Buttons */
+.inventory-page button,
+.inventory-page .btn {
+    padding: 10px 20px;
+    border: none;
+    border-radius: 5px;
+    color: white;
+    font-weight: bold;
+    cursor: pointer;
+}
+
+.inventory-page .btn-create {
+    background: #28a745;
+}
+
+.inventory-page .btn-create:hover {
+    background: #218838;
+}
+
+.inventory-page .btn-delete {
+    background: #dc3545;
+}
+
+.inventory-page .btn-delete:hover {
+    background: #b02a37;
+}
+
+/* MODALS */
+.modal {
+    display: none;
+    position: fixed;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    background: rgba(0, 0, 0, 0.5);
+    justify-content: center;
+    align-items: center;
+    z-index: 9999;
+}
+
+.modal.active {
+    display: flex;
+}
 
 .modal-content {
-  background-color: #f9f9f9;
-  padding: 25px 30px;
-  border-radius: 12px;
-  width: 100%;
-  max-width: 800px;
-  text-align: left;
-  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.2);
+    background: #fff;
+    padding: 25px 30px;
+    border-radius: 12px;
+    width: 95%;
+    max-width: 800px;
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.2);
 }
 
 .modal-header {
-  font-size: 22px;
-  font-weight: bold;
-  margin-bottom: 10px;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
+    font-size: 22px;
+    font-weight: bold;
+    margin-bottom: 15px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
 }
 
-.modal-body form {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 20px;
+.modal-body {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 20px;
 }
 
 .modal-body input,
-.modal-body select,
-.modal-body label {
-  font-size: 14px;
-}
-
-.modal-body input[type="text"],
-.modal-body input[type="number"],
-.modal-body input[type="email"],
-.modal-body input[type="date"],
 .modal-body select {
-  width: 100%;
-  padding: 10px;
-  border-radius: 6px;
-  border: 1px solid #ccc;
-  background-color: #f1f1f1;
+    width: 100%;
+    padding: 10px;
+    border-radius: 6px;
+    border: 1px solid #ccc;
+    background-color: #f1f1f1;
 }
 
 .modal-footer {
-  display: flex;
-  justify-content: flex-end;
-  gap: 10px;
-  margin-top: 20px;
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    margin-top: 20px;
 }
 
 .modal-footer button {
-  background-color: #28a745;
-  color: white;
-  padding: 10px 16px;
-  font-size: 15px;
-  font-weight: bold;
-  border: none;
-  border-radius: 6px;
-  cursor: pointer;
+    background-color: #28a745;
+    color: white;
 }
 
-.modal-footer button:hover {
-  background-color: #218838;
+.modal-footer button.cancel {
+    background-color: #ccc;
+    color: black;
 }
-
-.modal-footer .cancel {
-  background-color: #c4c4c4;
-  color: black;
-}
-
-.modal-footer .cancel:hover {
-  background-color: #aaa;
-}
-
-
-/* Danger Modal (Delete Confirmation) */
-#deleteConfirmationModal{
-    display: none;
-  position: fixed;
-  padding-top: 250px;
- padding-left: 650px;
-  z-index: 999;
-  top: 0; left: 0;
-  width: 100%; height: 100%;
-  background-color: rgba(0, 0, 0, 0.5);
-  justify-content: center;
-  align-items: center;
-  font-family: Arial, sans-serif;
-}
-
-#deleteConfirmationModal .modal-content {
-  background-color: #fff;
-  padding: 35px;
-  border-radius: 12px;
-  width: 500px;
-  max-width: 90%;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
-  text-align: center;
-  border-top: 6px solid #d32f2f;
-}
-
-#deleteConfirmationModal .modal-header {
-  font-size: 24px;
-  font-weight: bold;
-  color: #d32f2f;
-  margin-bottom: 15px;
-}
-
-#deleteConfirmationModal p {
-  font-size: 16px;
-  color: #333;
-  margin-bottom: 25px;
-  line-height: 1.6;
-}
-
-#deleteConfirmationModal form {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-#deleteConfirmationModal button {
-  padding: 14px;
-  font-size: 16px;
-  font-weight: bold;
-  border: none;
-  border-radius: 10px;
-  cursor: pointer;
-  transition: background-color 0.2s;
-}
-
-#deleteConfirmationModal button[name="confirm_delete"] {
-  background-color: #d32f2f;
-  color: white;
-}
-
-#deleteConfirmationModal button[name="confirm_delete"]:hover {
-  background-color: #b71c1c;
-}
-
-#deleteConfirmationModal button[type="button"] {
-  background-color: #f0f0f0;
-  color: #333;
-}
-
-#deleteConfirmationModal button[type="button"]:hover {
-  background-color: #ddd;
-}
-
-
-/* Delete Selection Modal */
-#deleteSelectionModal{
-display: flex;
-  z-index: 999;
-  top: 0; left: 0;
- padding-top: 250px;
- padding-left: 650px;
-  background-color: rgba(0, 0, 0, 0.5);
-  justify-content: center;
-  align-items: center;
-  font-family: Arial, sans-serif;
-}
-
-#deleteSelectionModal .modal-content {
-  background-color: #fff8f7;
-  padding: 30px 24px;
-  border-radius: 10px;
-  max-width: 90%;
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
-    
-}
-
-#deleteSelectionModal .modal-header {
-  font-size: 22px;
-  font-weight: bold;
-  color: #d32f2f;
-  margin-bottom: 20px;
-  text-align: center;
-}
-
-#deleteSelectionModal label {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 10px;
-  font-size: 15px;
-  color: #444;
-}
-
-#deleteSelectionModal button {
-  width: 100%;
-  padding: 14px;
-  margin-top: 20px;
-  background-color: #d32f2f;
-  color: white;
-  font-weight: bold;
-  font-size: 15px;
-  border: none;
-  border-radius: 8px;
-  cursor: pointer;
-  transition: background 0.3s;
-}
-
-#deleteSelectionModal button:hover {
-  background-color: #b71c1c;
-}
-.branches a {
-  display: inline-block;
-  margin: 5px;
-  padding: 10px 15px;
-  background-color: #eee;
-  color: #000;
-  text-decoration: none;
-  border: 1px solid #ccc;
-  border-radius: 4px;
-}
-
-.branches a.active {
-  background-color: #4CAF50;
-  color: white;
-  font-weight: bold;  
-}
-.branches a {
-  display: flex;
-  margin: 5px;
-  padding: 10px 15px;
-  background-color: #eee;
-  color: #000;
-  text-decoration: none;
-  border: 1px solid #ccc;
-  border-radius: 4px;
-}
-
-.branches a.active {
-  background-color: #4CAF50;
-  color: white;
-  font-weight: bold;
-}
-
-    

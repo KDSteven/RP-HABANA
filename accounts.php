@@ -51,6 +51,18 @@ if (isset($_POST['update_user'])) {
 
 // Fetch branches
 $branches = $conn->query("SELECT * FROM branches");
+
+
+// Notifications (Pending Approvals)
+$pending = 0;
+if ($role === 'admin') {
+    $result = $conn->query("SELECT COUNT(*) AS pending FROM transfer_requests WHERE status='Pending'");
+    if ($result) {
+        $row = $result->fetch_assoc();
+        $pending = $row['pending'] ?? 0;
+    }
+}
+
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -64,34 +76,53 @@ $branches = $conn->query("SELECT * FROM branches");
   <audio id="notifSound" src="notif.mp3" preload="auto"></audio>
 </head>
 <body class="accounts-page">
-  <div class="sidebar">
-    <h2><?= strtoupper($role) ?>
-      <i class="fas fa-bell" id="notifBell" style="font-size:24px; cursor:pointer;"></i>
-      <span id="notifCount" style="
-          background:red; color:white; border-radius:50%; padding:2px 8px;
-          font-size:12px; position:absolute; display:none;">
-      0</span>
-    </h2>
+<div class="sidebar">
+    <h2>
+    <?= strtoupper($role) ?>
+    <span class="notif-wrapper">
+        <i class="fas fa-bell" id="notifBell"></i>
+        <span id="notifCount" <?= $pending > 0 ? '' : 'style="display:none;"' ?>>0</span>
+    </span>
+</h2>
 
-    <!-- Sidebar Links -->
-    <a href="dashboard.php"><i class="fas fa-tv"></i> Dashboard</a>
+
+    <!-- Common -->
+    <a href="dashboard.php" class="active"><i class="fas fa-tv"></i> Dashboard</a>
+
+    <!-- Admin Links -->
     <?php if ($role === 'admin'): ?>
-      <a href="inventory.php"><i class="fas fa-box"></i> Inventory</a>
-      <a href="approvals.php"><i class="fas fa-check-circle"></i> Approvals</a>
-      <a href="accounts.php" class="active"><i class="fas fa-users"></i> Accounts</a>
-      <a href="archive.php"><i class="fas fa-archive"></i> Archive</a>
-      <a href="logs.php"><i class="fas fa-file-alt"></i> Logs</a>
+        <a href="inventory.php"><i class="fas fa-box"></i> Inventory</a>
+        <a href="approvals.php"><i class="fas fa-check-circle"></i> Approvals
+            <?php if ($pending > 0): ?>
+                <span style="background:red;color:white;border-radius:50%;padding:3px 7px;font-size:12px;">
+                    <?= $pending ?>
+                </span>
+            <?php endif; ?>
+        </a>
+        <a href="accounts.php"><i class="fas fa-users"></i> Accounts</a>
+        <a href="archive.php"><i class="fas fa-archive"></i> Archive</a>
+        <a href="logs.php"><i class="fas fa-file-alt"></i> Logs</a>
     <?php endif; ?>
-    <?php if ($role === 'stockman'): ?>
-      <a href="transfer.php"><i class="fas fa-exchange-alt"></i> Transfer Request</a>
-    <?php endif; ?>
-    <?php if ($role === 'staff'): ?>
-      <a href="pos.php"><i class="fas fa-cash-register"></i> Point of Sale</a>
-      <a href="history.php"><i class="fas fa-history"></i> Sales History</a>
-    <?php endif; ?>
-    <a href="logout.php"><i class="fas fa-sign-out-alt"></i> Logout</a>
-  </div>
 
+    <!-- Stockman Links -->
+    <?php if ($role === 'stockman'): ?>
+        <a href="transfer.php"><i class="fas fa-exchange-alt"></i> Transfer
+            <?php if ($transferNotif > 0): ?>
+                <span style="background:red;color:white;border-radius:50%;padding:3px 7px;font-size:12px;">
+                    <?= $transferNotif ?>
+                </span>
+            <?php endif; ?>
+        </a>
+    <?php endif; ?>
+
+    <!-- Staff Links -->
+    <?php if ($role === 'staff'): ?>
+        <a href="pos.php"><i class="fas fa-cash-register"></i> POS</a>
+        <a href="history.php"><i class="fas fa-history"></i> Sales History</a>
+    <?php endif; ?>
+
+    <a href="logout.php"><i class="fas fa-sign-out-alt"></i> Logout</a>
+</div>
   <div class="content">
     <!-- Create Account -->
     <div class="card">

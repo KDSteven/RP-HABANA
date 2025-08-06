@@ -10,7 +10,7 @@ let lastCount = parseInt(localStorage.getItem('lastNotifCount')) || 0;
 let lastPopupTime = parseInt(localStorage.getItem('lastPopupTime')) || 0;
 let modalOpen = false;
 const POLL_INTERVAL = 5000;  // Check every 5s
-const POPUP_INTERVAL = 10000; // Show popup every 30s if items exist
+const POPUP_INTERVAL = 6000000; // Show popup every 30s if items exist
 
 // Request desktop notification permission
 if (Notification.permission !== "granted") Notification.requestPermission();

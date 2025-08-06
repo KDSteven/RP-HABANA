@@ -13,6 +13,16 @@ $user_id = $_SESSION['user_id'];
 $role = $_SESSION['role'];
 $branch_id = $_SESSION['branch_id'] ?? null;
 
+
+$pending = 0;
+if ($role === 'admin') {
+    $result = $conn->query("SELECT COUNT(*) AS pending FROM transfer_requests WHERE status='Pending'");
+    if ($result) {
+        $row = $result->fetch_assoc();
+        $pending = $row['pending'] ?? 0;
+    }
+}
+
 // Handle current branch selection (from query string or session)
 if (isset($_GET['branch'])) {
     $current_branch_id = intval($_GET['branch']);
@@ -30,10 +40,12 @@ if ($search) {
 }// Build base query
 $sql = "
     SELECT p.product_id, p.product_name, p.category, p.price, p.markup_price,
-           p.ceiling_point, p.critical_point, IFNULL(i.stock, 0) AS stock
+           p.ceiling_point, p.critical_point, IFNULL(i.stock, 0) AS stock,
+           i.branch_id
     FROM products p
     LEFT JOIN inventory i ON p.product_id = i.product_id
 ";
+
 
 // Add conditions
 $conditions = ["p.archived = 0"];
@@ -109,6 +121,8 @@ if (isset($_POST['archive_product'])) {
     $stmt->execute();
     header("Location: inventory.php?archived=success");
 }
+
+
 ?>
 
 <!DOCTYPE html>
@@ -117,47 +131,64 @@ if (isset($_POST['archive_product'])) {
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Branch Inventory</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" >
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" >
+ <link rel="stylesheet" href="css/sidebar.css">
   <link rel="stylesheet" href="css/notifications.css">
+  
   <link rel="stylesheet" href="css/inventory.css">
 <audio id="notifSound" src="notif.mp3" preload="auto"></audio>
 
 
 </head>
-<body>
+<body class="inventory-page">
 <div class="sidebar">
-    <h2><?= strtoupper($role) ?><i class="fas fa-bell" id="notifBell" style="font-size: 24px; cursor: pointer;"></i>
-<span id="notifCount" style="
-    background:red; color:white; border-radius:50%; padding:2px 8px;
-    font-size:12px;  position:absolute;display:none;">
-0</span>
-
+   <h2>
+    <?= strtoupper($role) ?>
+    <span class="notif-wrapper">
+        <i class="fas fa-bell" id="notifBell"></i>
+        <span id="notifCount" <?= $pending > 0 ? '' : 'style="display:none;"' ?>>0</span>
+    </span>
 </h2>
 
-    <!-- Common for all -->
-    <a href="dashboard.php"><i class="fas fa-tv"></i> Dashboard</a>
 
+    <!-- Common -->
+    <a href="dashboard.php" class="active"><i class="fas fa-tv"></i> Dashboard</a>
+
+    <!-- Admin Links -->
     <?php if ($role === 'admin'): ?>
         <a href="inventory.php"><i class="fas fa-box"></i> Inventory</a>
-        <a href="approvals.php"><i class="fas fa-check-circle"></i> Approvals</a>
+        <a href="approvals.php"><i class="fas fa-check-circle"></i> Approvals
+            <?php if ($pending > 0): ?>
+                <span style="background:red;color:white;border-radius:50%;padding:3px 7px;font-size:12px;">
+                    <?= $pending ?>
+                </span>
+            <?php endif; ?>
+        </a>
         <a href="accounts.php"><i class="fas fa-users"></i> Accounts</a>
         <a href="archive.php"><i class="fas fa-archive"></i> Archive</a>
         <a href="logs.php"><i class="fas fa-file-alt"></i> Logs</a>
     <?php endif; ?>
 
+    <!-- Stockman Links -->
     <?php if ($role === 'stockman'): ?>
-        <a href="transfer.php"><i class="fas fa-exchange-alt"></i> Transfer Request</a>
+        <a href="transfer.php"><i class="fas fa-exchange-alt"></i> Transfer
+            <?php if ($transferNotif > 0): ?>
+                <span style="background:red;color:white;border-radius:50%;padding:3px 7px;font-size:12px;">
+                    <?= $transferNotif ?>
+                </span>
+            <?php endif; ?>
+        </a>
     <?php endif; ?>
 
+    <!-- Staff Links -->
     <?php if ($role === 'staff'): ?>
-        <a href="pos.php"><i class="fas fa-cash-register"></i> Point of Sale</a>
+        <a href="pos.php"><i class="fas fa-cash-register"></i> POS</a>
         <a href="history.php"><i class="fas fa-history"></i> Sales History</a>
     <?php endif; ?>
 
     <a href="logout.php"><i class="fas fa-sign-out-alt"></i> Logout</a>
 </div>
-
 
   <!-- Content -->
   <div class="content">
@@ -224,16 +255,18 @@ if (isset($_POST['archive_product'])) {
                             </form>
 
                             <!-- Edit Button -->
-                            <button onclick="openEditModal(
-                                <?= $row['product_id'] ?>,
-                                '<?= htmlspecialchars($row['product_name'], ENT_QUOTES) ?>',
-                                '<?= htmlspecialchars($row['category'], ENT_QUOTES) ?>',
-                                <?= $row['price'] ?>,
-                                <?= $row['stock'] ?>,
-                                <?= $row['markup_price'] ?>,
-                                <?= $row['ceiling_point'] ?>,
-                                <?= $row['critical_point'] ?>
-                            )" class="btn btn-primary btn-sm">Edit</button>
+                            <button onclick='openEditModal(
+    <?= json_encode($row["product_id"]) ?>,
+    <?= json_encode($row["product_name"]) ?>,
+    <?= json_encode($row["category"]) ?>,
+    <?= json_encode($row["price"]) ?>,
+    <?= json_encode($row["stock"]) ?>,
+    <?= json_encode($row["markup_price"]) ?>,
+    <?= json_encode($row["ceiling_point"]) ?>,
+    <?= json_encode($row["critical_point"]) ?>,
+    <?= isset($row["branch_id"]) ? json_encode($row["branch_id"]) : "null" ?>
+)' class="btn btn-primary btn-sm">Edit</button>
+
                         </td>
                     </tr>
                 <?php endwhile; ?>
@@ -297,6 +330,8 @@ if (isset($_POST['archive_product'])) {
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
 
+
+      
       <form id="addProductForm" method="POST" action="add_product.php">
         <div class="modal-body">
           <div class="row g-3">
@@ -401,59 +436,109 @@ if (isset($_POST['archive_product'])) {
   <div class="modal-dialog modal-lg">
     <div class="modal-content">
       
-    <form id="editProductForm" method="POST" action="update_product.php" onsubmit="return validateEditForm()">
+      <form id="editProductForm" method="POST" action="update_product.php" onsubmit="return validateEditForm()">
         <div class="modal-header">
           <h5 class="modal-title" id="editProductModalLabel">Edit Product</h5>
           <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
         </div>
         
         <div class="modal-body">
+          <!-- Hidden Fields -->
           <input type="hidden" name="product_id" id="edit_product_id">
-
+          <input type="hidden" name="branch_id" id="edit_branch_id">
+          
           <div class="row g-3">
+            <!-- Brand (Disabled) -->
+            <div class="col-md-6">
+              <label for="edit_brand" class="form-label">Brand</label>
+              <select class="form-select" id="edit_brand" name="brand_name" disabled>
+                <option value="">-- Select Brand --</option>
+                <?php
+                  $brands = $conn->query("SELECT brand_name FROM brands");
+                  while ($brand = $brands->fetch_assoc()) {
+                    echo "<option value='" . htmlspecialchars($brand['brand_name']) . "'>" . htmlspecialchars($brand['brand_name']) . "</option>";
+                  }
+                ?>
+              </select>
+            </div>
+
+            <!-- Product Name -->
             <div class="col-md-6">
               <label class="form-label">Product Name</label>
               <input type="text" class="form-control" id="edit_product_name" name="product_name" required>
             </div>
+
+            <!-- Category -->
             <div class="col-md-6">
               <label class="form-label">Category</label>
-              <select class="form-select" id="edit_category" name="category">
-                <option value="Solid">Solid</option>
+              <select class="form-select" id="edit_category" name="category" required>
+                <option value="">-- Select Category --</option>
+                <option value="Solid">Tire</option>
                 <option value="Liquid">Liquid</option>
               </select>
             </div>
+
+            <!-- Price -->
             <div class="col-md-6">
               <label class="form-label">Price</label>
               <input type="number" step="0.01" class="form-control" id="edit_price" name="price" required>
             </div>
+
+            <!-- Markup -->
             <div class="col-md-6">
               <label class="form-label">Markup (%)</label>
               <input type="number" step="0.01" class="form-control" id="edit_markup" name="markup_price" required>
             </div>
+
+            <!-- Retail Price (Readonly) -->
             <div class="col-md-6">
               <label class="form-label">Retail Price</label>
               <input type="number" class="form-control" id="edit_retail_price" name="retail_price" readonly>
             </div>
+
+            <!-- Ceiling Point -->
             <div class="col-md-6">
               <label class="form-label">Ceiling Point</label>
               <input type="number" class="form-control" id="edit_ceiling_point" name="ceiling_point" required>
             </div>
+
+            <!-- Critical Point -->
             <div class="col-md-6">
               <label class="form-label">Critical Point</label>
               <input type="number" class="form-control" id="edit_critical_point" name="critical_point" required>
             </div>
+
+            <!-- Stock -->
             <div class="col-md-6">
               <label class="form-label">Stock</label>
               <input type="number" class="form-control" id="edit_stock" name="stock" required>
             </div>
+
+            <!-- VAT -->
             <div class="col-md-6">
               <label class="form-label">VAT (%)</label>
-              <input type="number" step="0.01" class="form-control" id="edit_vat" name="vat" value="12">
+              <input type="number" step="0.01" class="form-control" id="edit_vat" name="vat" required>
             </div>
+
+            <!-- Expiration Date -->
             <div class="col-md-6">
               <label class="form-label">Expiration Date</label>
               <input type="date" class="form-control" id="edit_expiration_date" name="expiration_date">
-              <small class="text-muted">Leave blank if none</small>
+              <div class="form-text">Leave blank if none</div>
+            </div>
+
+            <!-- Branch (Disabled) -->
+            <div class="col-md-6">
+              <label for="edit_branch" class="forms-label">Branch</label>
+              <select name="disabled_branch" id="edit_branch" class="form-select" disabled>
+                <option value="">-- Select Branch --</option>
+                <?php
+                  $branches = $conn->query("SELECT branch_id, branch_name FROM branches");
+                  while ($row = $branches->fetch_assoc()) {
+                    echo "<option value='{$row['branch_id']}'>{$row['branch_name']}</option>";
+                  }
+                ?>
+              </select>
             </div>
           </div>
         </div>
@@ -467,7 +552,6 @@ if (isset($_POST['archive_product'])) {
     </div>
   </div>
 </div>
-
 
 </body>
 </html>
@@ -619,10 +703,9 @@ document.addEventListener('DOMContentLoaded', function () {
       document.getElementById('deleteModal').style.display = 'none';
     }
   </script>
-
+ 
 <script>
-function openEditModal(id, name, category, price, stock, markup_price, ceiling_point, critical_point) {
-  // Fill modal fields
+  function openEditModal(id, name, category, price, stock, markup_price, ceiling_point, critical_point, branch_id) {
   document.getElementById('edit_product_id').value = id;
   document.getElementById('edit_product_name').value = name;
   document.getElementById('edit_category').value = category;
@@ -633,14 +716,20 @@ function openEditModal(id, name, category, price, stock, markup_price, ceiling_p
   document.getElementById('edit_critical_point').value = critical_point;
   document.getElementById('edit_stock').value = stock;
 
-  // Set form action with branch ID
-  const branchId = <?= json_encode($branch_id) ?>;
-  document.getElementById("editProductForm").action = `update_product.php?branch=${branchId}`;
+  // ✅ Set branch_id correctly
+  document.getElementById('edit_branch_id').value = branch_id;
 
-  // Show Bootstrap modal
+  // ✅ Set the branch dropdown visually too (even if it's disabled)
+  const branchDropdown = document.getElementById('edit_branch');
+  if (branchDropdown) {
+    branchDropdown.value = branch_id;
+  }
+
+  // Show the modal
   const editModal = new bootstrap.Modal(document.getElementById('editProductModal'));
   editModal.show();
 }
+
 </script>
 <script>
 function validateEditForm() {
