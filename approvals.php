@@ -5,6 +5,7 @@ include 'config/db.php';
 
 if (!isset($_SESSION['user_id'])) {
     header('Location: index.html');
+    
     exit;
 }
 
@@ -92,7 +93,9 @@ if ($role === 'admin') {
 <head>
     <meta charset="UTF-8">
     <title>Approvals - Admin</title>
+   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    
     <link rel="stylesheet" href="css/notifications.css">
     <link rel="stylesheet" href="css/approvals.css">
     <link rel="stylesheet" href="css/sidebar.css">
@@ -112,12 +115,13 @@ if ($role === 'admin') {
 
 
     <!-- Common -->
-    <a href="dashboard.php" class="active"><i class="fas fa-tv"></i> Dashboard</a>
+    <a href="dashboard.php" ><i class="fas fa-tv"></i> Dashboard</a>
 
     <!-- Admin Links -->
     <?php if ($role === 'admin'): ?>
         <a href="inventory.php"><i class="fas fa-box"></i> Inventory</a>
-        <a href="approvals.php"><i class="fas fa-check-circle"></i> Approvals
+        <a href="sales.php"><i class="fas fa-receipt"></i> Sales</a>
+        <a href="approvals.php" class="active"><i class="fas fa-check-circle"></i> Approvals
             <?php if ($pending > 0): ?>
                 <span style="background:red;color:white;border-radius:50%;padding:3px 7px;font-size:12px;">
                     <?= $pending ?>

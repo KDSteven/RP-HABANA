@@ -11,7 +11,7 @@ if (isset($_POST['checkout'])) {
     $payment = isset($_POST['payment']) ? (float)$_POST['payment'] : 0;
     $total = 0;
 
-    // Calculate total price first
+    // Calculate total price first (using retail price)
     foreach ($_SESSION['cart'] as $item) {
         $product_id = $item['product_id'];
         $quantity = $item['quantity'];
@@ -19,8 +19,10 @@ if (isset($_POST['checkout'])) {
         $product = $conn->query("SELECT * FROM products WHERE id = $product_id")->fetch_assoc();
         if (!$product) continue;
 
-        $price = $product['price'];
-        $subtotal = $price * $quantity;
+        // ✅ Compute retail price with markup
+        $retailPrice = $product['price'] * (1 + ($product['markup'] / 100));
+
+        $subtotal = $retailPrice * $quantity;
         $total += $subtotal;
     }
 
@@ -37,13 +39,17 @@ if (isset($_POST['checkout'])) {
         $quantity = $item['quantity'];
 
         $product = $conn->query("SELECT * FROM products WHERE id = $product_id")->fetch_assoc();
-        $price = $product['price'];
-        $subtotal = $price * $quantity;
 
+        // ✅ Use retail price again
+        $retailPrice = $product['price'] * (1 + ($product['markup'] / 100));
+        $subtotal = $retailPrice * $quantity;
+
+        // Insert into sales table
         $stmt = $conn->prepare("INSERT INTO sales (product_id, quantity, total) VALUES (?, ?, ?)");
         $stmt->bind_param("iid", $product_id, $quantity, $subtotal);
         $stmt->execute();
 
+        // Update product stock
         $conn->query("UPDATE products SET quantity = quantity - $quantity WHERE id = $product_id");
     }
 

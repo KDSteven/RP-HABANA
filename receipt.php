@@ -44,151 +44,162 @@ $items_result = $item_stmt->get_result();
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
+   <meta charset="UTF-8">
   <title>Receipt - Sale #<?= $sale_id ?></title>
   <style>
     body {
-      font-family: 'Segoe UI', sans-serif;
-      max-width: 750px;
-      margin: 30px auto;
-      padding: 30px;
-      background-color: #f9f9f9;
-      border-radius: 8px;
-      border: 1px solid #ddd;
-      box-shadow: 0 0 10px rgba(0,0,0,0.05);
+      font-family: monospace, 'Courier New', sans-serif;
+      max-width: 350px;
+      margin: 0 auto;
+      padding: 10px;
+      background: #fff;
+      color: #000;
     }
-    h1 {
+
+    .receipt {
+      border: 1px dashed #000;
+      padding: 15px;
+    }
+
+    .header {
       text-align: center;
-      color: #f7931e;
-      margin-bottom: 5px;
+      margin-bottom: 15px;
     }
-    .info, .branch-info {
-      margin-bottom: 20px;
+
+    .header h2 {
+      margin: 0;
+      font-size: 18px;
+      text-transform: uppercase;
     }
-    .info p, .branch-info p {
-      margin: 4px 0;
+
+    .header p {
+      margin: 2px 0;
+      font-size: 12px;
     }
+
+    .info {
+      font-size: 12px;
+      margin-bottom: 10px;
+    }
+
+    .info p {
+      margin: 2px 0;
+    }
+
     table {
       width: 100%;
       border-collapse: collapse;
-      margin-top: 10px;
+      margin-bottom: 10px;
+      font-size: 12px;
     }
+
     th, td {
-      border: 1px solid #ddd;
-      padding: 12px;
+      padding: 4px;
       text-align: left;
     }
+
     th {
-      background-color: #f7931e;
-      color: white;
+      border-bottom: 1px dashed #000;
+      font-size: 12px;
     }
-    tr:nth-child(even) {
-      background-color: #fff4e8;
-    }
-    .total {
-      text-align: right;
+
+    tfoot td {
+      border-top: 1px dashed #000;
       font-weight: bold;
-      font-size: 18px;
-      margin-top: 20px;
+      font-size: 13px;
     }
-    .print-btn {
-      margin-top: 30px;
-      display: block;
-      width: 100%;
-      padding: 14px;
-      background-color: #f7931e;
-      color: white;
-      border: none;
-      border-radius: 5px;
-      font-size: 16px;
-      cursor: pointer;
-      transition: background-color 0.3s ease;
-    }
-    .print-btn:hover {
-      background-color: #e67e00;
-    }
-    .back-link {
-      text-align: center;
-      margin-top: 20px;
-    }
-    .back-link a {
-      color: #555;
-      text-decoration: none;
-    }
-    .back-link a:hover {
-      text-decoration: underline;
-    }
+
     .thank-you {
       text-align: center;
-      margin-top: 30px;
+      margin-top: 15px;
+      font-size: 12px;
       font-style: italic;
-      color: #666;
     }
+
+    .print-btn, .back-link {
+      margin-top: 15px;
+      display: block;
+      text-align: center;
+    }
+
+    .print-btn button {
+      padding: 8px 12px;
+      font-size: 14px;
+      cursor: pointer;
+    }
+
     @media print {
       .print-btn, .back-link {
         display: none;
       }
       body {
         margin: 0;
-        box-shadow: none;
+        padding: 0;
+      }
+      .receipt {
+        border: none;
       }
     }
   </style>
 </head>
 <body>
+  <div class="receipt">
+    <div class="header">
+      <h2><?= htmlspecialchars($sale['branch_name']) ?></h2>
+      <p><?= htmlspecialchars($sale['branch_location']) ?></p>
+      <p>📞 <?= htmlspecialchars($sale['branch_contact']) ?></p>
+      <p><?= htmlspecialchars($sale['branch_email']) ?></p>
+      <p>Sale #: <?= $sale_id ?> | Date: <?= date("Y-m-d H:i", strtotime($sale['sale_date'])) ?></p>
+    </div>
 
-  <h1>Receipt - Sale #<?= $sale_id ?></h1>
+    <div class="info">
+      <p><strong>Cashier:</strong> <?= htmlspecialchars($sale['staff_name'] ?? 'N/A') ?></p>
+      <p><strong>Payment:</strong> ₱<?= number_format($sale['payment'], 2) ?></p>
+      <p><strong>Change:</strong> ₱<?= number_format($sale['change_given'], 2) ?></p>
+    </div>
 
-  <div class="branch-info">
-    <p><strong>Branch:</strong> <?= htmlspecialchars($sale['branch_name']) ?></p>
-    <p><strong>Location:</strong> <?= htmlspecialchars($sale['branch_location']) ?></p>
-    <p><strong>Contact:</strong> <?= htmlspecialchars($sale['branch_contact']) ?></p>
-    <p><strong>Email:</strong> <?= htmlspecialchars($sale['branch_email']) ?></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Item</th>
+          <th>Qty</th>
+          <th>Price</th>
+          <th>Sub</th>
+        </tr>
+      </thead>
+      <tbody>
+        <?php if ($items_result->num_rows > 0): ?>
+          <?php while ($item = $items_result->fetch_assoc()): ?>
+          <tr>
+            <td><?= htmlspecialchars($item['product_name']) ?></td>
+            <td><?= (int)$item['quantity'] ?></td>
+            <td><?= number_format($item['price'], 2) ?></td>
+            <td><?= number_format($item['price'] * $item['quantity'], 2) ?></td>
+          </tr>
+          <?php endwhile; ?>
+        <?php else: ?>
+          <tr>
+            <td colspan="4" style="text-align:center;">No items</td>
+          </tr>
+        <?php endif; ?>
+      </tbody>
+      <tfoot>
+        <tr>
+          <td colspan="3">TOTAL</td>
+          <td>₱<?= number_format($sale['total'], 2) ?></td>
+        </tr>
+      </tfoot>
+    </table>
+
+    <p class="thank-you">*** Thank you for your purchase! ***</p>
   </div>
 
-  <div class="info">
-    <p><strong>Processed By:</strong> <?= htmlspecialchars($sale['staff_name'] ?? 'N/A') ?></p>
-<p><strong>Payment Received:</strong> ₱<?= number_format($sale['payment'], 2) ?></p>
-<p><strong>Change Given:</strong> ₱<?= number_format($sale['change_given'], 2) ?></p>
-
+  <div class="print-btn">
+    <button onclick="window.print()">🖨️ Print Receipt</button>
   </div>
-
-  <table>
-    <thead>
-      <tr>
-        <th>Product</th>
-        <th>Qty</th>
-        <th>Price (₱)</th>
-        <th>Subtotal (₱)</th>
-      </tr>
-    </thead>
-    <tbody>
-      <?php if ($items_result->num_rows > 0): ?>
-        <?php while ($item = $items_result->fetch_assoc()): ?>
-        <tr>
-          <td><?= htmlspecialchars($item['product_name']) ?></td>
-          <td><?= (int)$item['quantity'] ?></td>
-          <td><?= number_format($item['price'], 2) ?></td>
-          <td><?= number_format($item['price'] * $item['quantity'], 2) ?></td>
-        </tr>
-        <?php endwhile; ?>
-      <?php else: ?>
-        <tr>
-          <td colspan="4" style="text-align:center;">No items found for this sale.</td>
-        </tr>
-      <?php endif; ?>
-    </tbody>
-  </table>
-
-  <p class="total">Total Amount: ₱<?= number_format($sale['total'], 2) ?></p>
-
-  <button class="print-btn" onclick="window.print()">🖨️ Print Receipt</button>
 
   <div class="back-link">
-    <p><a href="pos.php">← Back to POS</a></p>
+    <a href="pos.php">← Back to POS</a>
   </div>
-
-  <p class="thank-you">Thank you for your purchase!</p>
-
 </body>
 </html>

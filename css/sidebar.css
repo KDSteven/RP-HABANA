@@ -23,6 +23,7 @@ body {
     padding: 30px 15px;
     color: white;
     flex-shrink: 0;
+    
 }
 .sidebar h2 {
     position: relative; /* Make this the positioning reference */

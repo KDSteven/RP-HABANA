@@ -1,158 +1,241 @@
 /* =========================
-   DASHBOARD PAGE STYLES
+   MODERN DASHBOARD STYLES
 ========================= */
+.dashboard-page {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    color: #333;
+    background: #f5f6fa;
+}
+
+/* CARDS */
 .dashboard-page .cards {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-    gap: 20px;
-    margin-bottom: 20px;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 16px;
+    margin-bottom: 24px;
 }
 
 .dashboard-page .card {
-    padding: 20px;
-    border-radius: 10px;
-    color: white;
+    background: #fff;
+    padding: 16px;
+    border-radius: 12px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.08);
     text-align: center;
-    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
-}
-.dashboard-page .card:hover {
-    transform: translateY(-5px);
-    transition: transform 0.2s ease;
-}
- :root {
-    --green: #28a745;
-    --orange: #fd7e14;
-    --red: #dc3545;
-    --blue: #007bff;
-    --card-padding: 20px;
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    cursor: default;
 }
 
-.dashboard-page .green { background: var(--green); }
-.dashboard-page .orange { background: var(--orange); }
-.dashboard-page .red { background: var(--red); }
-.dashboard-page .blue { background: var(--blue); }
-.dashboard-page .card {
-    padding: var(--card-padding);
+.dashboard-page .card:hover {
+    transform: translateY(-6px);
+    box-shadow: 0 10px 25px rgba(0,0,0,0.12);
 }
 
 .dashboard-page .card h3 {
-    margin-bottom: 10px;
-    font-size: 16px;
-    font-weight: 600; /* Make headings slightly bolder */
+    font-size: 14px;
+    font-weight: 600;
+    color: #666;
+    margin-bottom: 6px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
 }
 
 .dashboard-page .card p {
-    font-size: 22px;
-    font-weight: bold;
+    font-size: 20px;
+    font-weight: 700;
+    color: #222;
 }
 
-/* Sections */
+/* Gradient Colors for Cards */
+.dashboard-page .card.green { background: linear-gradient(135deg, #4caf50, #81c784); color: #fff; }
+.dashboard-page .card.orange { background: linear-gradient(135deg, #ff9800, #ffb74d); color: #fff; }
+.dashboard-page .card.red { background: linear-gradient(135deg, #f44336, #e57373); color: #fff; }
+.dashboard-page .card.blue { background: linear-gradient(135deg, #2196f3, #64b5f6); color: #fff; }
+
+/* SECTIONS */
 .dashboard-page .flex-sections {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
     gap: 20px;
-    margin-bottom: 20px;
+    margin-bottom: 24px;
 }
 
+/* Add more spacing between sections */
 .dashboard-page section {
     background: #fff;
+    border-radius: 12px;
     padding: 20px;
-    border-radius: 10px;
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+    box-shadow: 0 4px 15px rgba(0,0,0,0.08);
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    margin-bottom: 30px; /* increase gap between sections */
+}
+
+
+.dashboard-page section:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 8px 20px rgba(0,0,0,0.12);
 }
 
 .dashboard-page section h2 {
-    margin-bottom: 10px;
     font-size: 18px;
-    color: #333;
     font-weight: 600;
+    margin-bottom: 12px;
+    color: #333;
 }
 
-/* Lists */
-.dashboard-page ul {
+/* REPORT FILTER FORM */
+.Report {
+    background: #fff;
+    padding: 16px 20px;
+    border-radius: 12px;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.08);
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 20px;
+}
+
+.Report label {
+    font-weight: 600;
+    color: #333;
+    font-size: 0.95rem;
+}
+
+.Report input[type="month"],
+.Report select {
+    padding: 8px 12px;
+    border: 1px solid #ccc;
+    border-radius: 6px;
+    font-size: 0.95rem;
+    background: #f9f9f9;
+    color: #333;
+    transition: border 0.2s ease, box-shadow 0.2s ease;
+}
+
+.Report input[type="month"]:focus,
+.Report select:focus {
+    outline: none;
+    border-color: #f7931e;
+    box-shadow: 0 0 6px rgba(247, 147, 30, 0.3);
+}
+
+.Report button {
+    padding: 8px 16px;
+    border: none;
+    border-radius: 6px;
+    background-color: #f7931e;
+    color: white;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background-color 0.2s ease, transform 0.2s ease;
+}
+
+.Report button:hover {
+    background-color: #e67e00;
+    transform: translateY(-1px);
+}
+
+/* SCROLLABLE LISTS */
+.scrollable-list {
+    max-height: 300px;
+    overflow-y: auto;
+    padding-right: 6px;
+}
+
+.scrollable-list ul {
     list-style: none;
-    padding-left: 0;
+    padding: 0;
+    margin: 0;
 }
 
-.dashboard-page ul li {
-    padding: 10px 0;
-    border-bottom: 1px solid #eee;
+.scrollable-list li.item-card {
+    background: #f8f9fa;
+    padding: 12px 14px;
+    margin-bottom: 10px;
+    border-radius: 10px;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.05);
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
 }
 
-.dashboard-page ul li:last-child {
-    border-bottom: none;
+.scrollable-list li.item-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
 }
 
-/* Item Rows */
-.dashboard-page .item-row {
+.item-row {
     display: flex;
     justify-content: space-between;
-    font-size: 14px;
-    margin-bottom: 6px;
+    font-weight: 500;
+    font-size: 0.95rem;
+    margin-bottom: 8px;
+    color: #333;
 }
 
-/* Progress Bar */
-.dashboard-page .progress-bar {
-    background: #e9ecef;
-    height: 8px;
-    border-radius: 4px;
-    overflow: hidden;
-}
+.item-row span.name { font-weight: 600; }
 
-.dashboard-page .progress {
-    height: 100%;
-    border-radius: 4px;
-}
-
-/* Tables */
-.dashboard-page table {
-    width: 100%;
-    border-collapse: collapse;
-}
-
-.dashboard-page th,
-.dashboard-page td {
-    padding: 8px 12px;
-    border-bottom: 1px solid #ddd;
-    font-size: 14px;
-    text-align: left;
-}
-.dashboard-page .chart-container {
-    width: 100%;
-    max-width: 400px;
-    margin: 0 auto;
-}
 .progress-bar {
     background: #e9ecef;
-    height: 8px;
-    border-radius: 4px;
+    height: 10px;
+    border-radius: 6px;
     overflow: hidden;
-    margin-top: 5px;
+    margin-top: 6px;
 }
 
 .progress {
     height: 100%;
-    border-radius: 4px;
+    border-radius: 6px;
+    transition: width 0.5s ease;
 }
 
-.dashboard-page th {
-    background: #f7f7f7;
-    font-weight: 600;
+/* Color-coded progress bars */
+.progress.fast { background: #28a745; }
+.progress.slow { background: #ffc107; }
+.progress.none { background: #dc3545; }
+
+/* FLEXIBLE BOTTOM SECTIONS */
+.bottom.flex-sections {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 20px;
+    margin-bottom: 24px;
 }
 
-.dashboard-page .scrollable-list {
-    max-height: 200px; /* adjust height as needed */
-    overflow-y: auto;
-    padding-right: 10px;
+/* CHARTS */
+.chart-container {
+    width: 100%;
+    max-width: 450px;
+    margin: 0 auto;
+}
+
+/* SCROLLBAR */
+.scrollable-list::-webkit-scrollbar { width: 6px; }
+.scrollable-list::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.2); border-radius: 3px; }
+.scrollable-list::-webkit-scrollbar-track { background: transparent; }
+
+/* RESPONSIVE */
+@media (max-width: 992px) {
+    .dashboard-page .cards,
+    .dashboard-page .flex-sections,
+    .bottom.flex-sections {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 600px) {
+    .Report {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .Report button {
+        width: 100%;
+    }
 }
 
 @media (max-width: 480px) {
-    .dashboard-page .cards,
-    .dashboard-page .flex-sections {
-        grid-template-columns: 1fr; /* Stack vertically */
-    }
-
-    .dashboard-page .card p {
-        font-size: 18px;
-    }
+    .dashboard-page .card h3 { font-size: 13px; }
+    .dashboard-page .card p { font-size: 16px; }
 }

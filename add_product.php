@@ -1,5 +1,21 @@
 <?php
+session_start();
 include 'config/db.php';
+
+// Logging function
+function logAction($conn, $action, $details, $user_id = null, $branch_id = null) {
+    if (!$user_id && isset($_SESSION['user_id'])) {
+        $user_id = $_SESSION['user_id'];
+    }
+    if (!$branch_id && isset($_SESSION['branch_id'])) {
+        $branch_id = $_SESSION['branch_id'];
+    }
+
+    $stmt = $conn->prepare("INSERT INTO logs (user_id, action, details, timestamp, branch_id) VALUES (?, ?, ?, NOW(), ?)");
+    $stmt->bind_param("issi", $user_id, $action, $details, $branch_id);
+    $stmt->execute();
+    $stmt->close();
+}
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $productName = trim($_POST['product_name'] ?? '');
@@ -12,36 +28,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $stocks = intval($_POST['stocks'] ?? 0);
     $branchId = intval($_POST['branch_id'] ?? 0);
 
-    // ✅ Validation Rules
+    // Validation
     if ($criticalPoint > $ceilingPoint) {
         echo "<script>alert('Critical Point cannot be greater than Ceiling Point.');history.back();</script>";
         exit;
     }
-
     if ($stocks > $ceilingPoint) {
         echo "<script>alert('Stocks cannot be greater than Ceiling Point.');history.back();</script>";
         exit;
     }
-
     if ($stocks < 0 || $price < 0) {
         echo "<script>alert('Invalid values for stock or price.');history.back();</script>";
         exit;
     }
 
-    // ✅ Insert into products table
+    // Insert into products
     $stmt = $conn->prepare("INSERT INTO products (product_name, category, price, markup_price, ceiling_point, critical_point, brand_name) VALUES (?, ?, ?, ?, ?, ?, ?)");
-$stmt->bind_param("ssddiis",  $productName, $category, $price, $markupPrice, $ceilingPoint, $criticalPoint, $brandName);
-
+    $stmt->bind_param("ssddiis", $productName, $category, $price, $markupPrice, $ceilingPoint, $criticalPoint, $brandName);
 
     if ($stmt->execute()) {
         $productId = $conn->insert_id;
         $stmt->close();
 
-        // ✅ Insert into inventory table
+        // Insert into inventory
         $stmt2 = $conn->prepare("INSERT INTO inventory (product_id, branch_id, stock) VALUES (?, ?, ?)");
         $stmt2->bind_param("iii", $productId, $branchId, $stocks);
 
         if ($stmt2->execute()) {
+            // Logging
+            logAction($conn, "Add Product", "Added product '$productName' (ID: $productId) with stock $stocks to branch ID $branchId");
+
             header("Location: inventory.php?success=1");
             exit();
         } else {
@@ -51,6 +67,7 @@ $stmt->bind_param("ssddiis",  $productName, $category, $price, $markupPrice, $ce
     } else {
         echo "Error adding product: " . $stmt->error;
     }
+
     $conn->close();
 }
 ?>

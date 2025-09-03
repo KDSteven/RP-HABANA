@@ -1,179 +1,207 @@
-/* =======================
-   ACCOUNTS PAGE STYLES
-========================= */
-.accounts-page  {
-    margin: 0;
-    padding: 0;
-    box-sizing: border-box;
-    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-}
-
-/* Layout */
-.accounts-page {
-    display: flex;
-    min-height: 100vh;
-    background: #f5f5f5;
-    color: #333;
-}
-
-
-/* Content */
-.accounts-page .content {
-    flex: 1;
-    padding: 40px;
-    overflow-y: auto;
-}
-
-/* Cards */
-.accounts-page .card {
-    background: white;
-    padding: 30px;
-    border-radius: 10px;
-    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
-    margin-bottom: 30px;
-}
-
-.accounts-page .card h2 {
-    margin-bottom: 20px;
-    font-size: 22px;
-    color: #333;
-}
-
-/* Forms */
-.accounts-page form input,
-.accounts-page form select {
-    width: 100%;
-    padding: 10px;
-    margin: 8px 0 15px;
-    border: 1px solid #ccc;
-    border-radius: 5px;
-}
-
-.accounts-page .radio-group {
-    margin-bottom: 20px;
-}
-
-.accounts-page .radio-group label {
-    display: block;
-    margin-bottom: 5px;
-}
-
-/* Buttons */
-.accounts-page button {
-    background-color: #f7931e;
-    color: white;
-    padding: 10px 20px;
-    font-weight: bold;
-    border: none;
-    border-radius: 5px;
-    cursor: pointer;
-}
-
-.accounts-page button:hover {
-    background-color: #e67e00;
-}
-
-/* Table */
-.accounts-page table {
-    width: 100%;
-    border-collapse: collapse;
-    margin-top: 15px;
-}
-
-.accounts-page table,
-.accounts-page th,
-.accounts-page td {
-    border: 1px solid #ccc;
-}
-
-.accounts-page th,
-.accounts-page td {
-    padding: 12px;
-    text-align: left;
-}
-
-.accounts-page th {
-    background-color: #f7931e;
-    color: white;
-}
-
-.accounts-page tr:nth-child(even) {
-    background-color: #f9f9f9;
-}
-
-/* Action Buttons */
-.btn-edit {
-    background: #007bff;
-    color: white;
-    padding: 6px 10px;
-    font-size: 13px;
-    border-radius: 4px;
-    margin-right: 5px;
-}
-
-.btn-edit:hover {
-    background: #0056b3;
-}
-
-.btn-archive {
-    background: #dc3545;
-    color: white;
-    padding: 6px 10px;
-    font-size: 13px;
-    border-radius: 4px;
-}
-
-.btn-archive:hover {
-    background: #b02a37;
-}
-
-/* Modal */
+/* ---------------- Modal overlay ---------------- */
+.accounts-page .modal,
 .accounts-page .edit-modal {
     display: none;
     position: fixed;
     top: 0; left: 0;
     width: 100%; height: 100%;
-    background: rgba(0, 0, 0, 0.5);
+    background: rgba(0,0,0,0.6);
+    z-index: 9999;
+    overflow-y: auto;
+    padding: 40px 20px;
+    backdrop-filter: blur(3px);
     justify-content: center;
     align-items: center;
-    z-index: 9999;
+    animation: fadeIn 0.3s ease;
 }
 
+/* Show modal */
+.accounts-page .modal.active,
 .accounts-page .edit-modal.active {
     display: flex;
 }
 
+/* ---------------- Modal content box ---------------- */
+.accounts-page .modal-content,
 .accounts-page .edit-modal-content {
     background: #fff;
-    padding: 25px 30px;
-    border-radius: 12px;
-    width: 95%;
-    max-width: 500px;
-    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.2);
-}
-
-.accounts-page .edit-modal-content h2 {
-    margin-bottom: 15px;
-    font-size: 20px;
+    border-radius: 15px;
+    width: 100%;
+    max-width: 480px;
+    margin: auto;
+    padding: 30px 25px;
+    box-shadow: 0 15px 35px rgba(0,0,0,0.3);
+    position: relative;
+    max-height: 90vh;
+    overflow-y: auto;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
     color: #333;
 }
 
-.accounts-page .edit-modal-close {
-    float: right;
-    font-size: 20px;
-    cursor: pointer;
+/* Pop-in animation */
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(-20px); }
+    to { opacity: 1; transform: translateY(0); }
 }
 
-/* Responsive */
-@media (max-width: 768px) {
-    .accounts-page {
-        flex-direction: column;
-    }
-    .accounts-page .sidebar {
-        width: 100%;
-        text-align: center;
-    }
-    .accounts-page .content {
-        padding: 15px;
-    }
+/* ---------------- Modal close button ---------------- */
+.accounts-page .close {
+    position: absolute;
+    top: 12px;
+    right: 16px;
+    font-size: 22px;
+    font-weight: bold;
+    color: #aaa;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+.accounts-page .close:hover {
+    color: #f7931e;
+    transform: scale(1.2);
+}
+
+/* ---------------- Step content ---------------- */
+.accounts-page .step { display: none; animation: fadeIn 0.3s ease; }
+.accounts-page .step.active { display: block; }
+
+/* ---------------- Inputs & selects ---------------- */
+.accounts-page input[type="text"],
+.accounts-page input[type="password"],
+.accounts-page select {
+    width: 100%;
+    padding: 12px 15px;
+    margin-bottom: 18px;
+    border-radius: 10px;
+    border: 1px solid #ccc;
+    font-size: 15px;
+    transition: all 0.2s ease;
+}
+.accounts-page input[type="text"]:focus,
+.accounts-page input[type="password"]:focus,
+.accounts-page select:focus {
+    border-color: #f7931e;
+    box-shadow: 0 0 8px rgba(247,147,30,0.3);
+    outline: none;
+}
+
+/* ---------------- Buttons ---------------- */
+.accounts-page button {
+    background: linear-gradient(90deg, #f7931e, #ffb347);
+    color: #fff;
+    padding: 12px 22px;
+    font-weight: 600;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    margin-top: 10px;
+    transition: all 0.2s ease;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.15);
+}
+.accounts-page button:hover {
+    background: linear-gradient(90deg, #e67e00, #ffa500);
+    transform: translateY(-2px);
+    box-shadow: 0 6px 15px rgba(0,0,0,0.25);
+}
+/* Flex container for action buttons */
+.action-buttons {
+    display: flex;
+    justify-content: center; /* center buttons horizontally */
+    gap: 5px;                /* spacing between buttons */
+    align-items: center;     /* vertical alignment */
+}
+
+/* Specific gradient style for archive buttons */
+button.btn-archive-unique {
+    background: linear-gradient(90deg, #ff4d4d, #cc0000);
+    color: #fff !important;
+    border: none !important;
+    border-radius: 8px;
+    padding: 12px 22px;
+    font-weight: 600;
+    cursor: pointer;
+    margin-top: 10px;
+    transition: all 0.2s ease;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.15);
+}
+
+button.btn-archive-unique:hover {
+    background: linear-gradient(135deg, #cc0000, #ff1a1a);
+    color: #fff;
+}
+
+
+/* ---------------- Step indicators ---------------- */
+.accounts-page .step-indicator {
+    display: flex;
+    justify-content: center;
+    margin-bottom: 25px;
+    gap: 10px;
+}
+.accounts-page .step-indicator .step-dot {
+    width: 14px; height: 14px;
+    background: #ddd; border-radius: 50%;
+    flex-shrink: 0; transition: all 0.3s;
+}
+.accounts-page .step-indicator .step-dot.active {
+    background: #f7931e; transform: scale(1.4);
+}
+
+/* ---------------- Branch radio buttons ---------------- */
+.accounts-page label input[type="radio"] { margin-right: 10px; accent-color: #f7931e; }
+
+/* ---------------- Responsive ---------------- */
+@media (max-width: 480px) {
+    .accounts-page .modal-content { max-width: 95%; padding: 20px 15px; }
+}
+/* ---------------- Accounts Page Tables ---------------- */
+.accounts-page .table-responsive {
+    max-height: 500px;       /* make table scrollable if tall */
+    overflow-y: auto;
+    border-radius: 12px;
+    border: 1px solid #eee;
+    background: #fff;
+    margin-top: 20px;
+}
+
+/* Table base style */
+.accounts-page table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    font-size: 14px;
+}
+
+/* Table head */
+.accounts-page th {
+    position: sticky;
+    top: 0;
+    background: linear-gradient(135deg, #f7931e, #ffb84d);
+    color: #fff;
+    font-weight: 600;
+    text-align: left;
+    padding: 12px 15px;
+    z-index: 5;
+}
+
+/* Table body cells */
+.accounts-page td {
+    padding: 12px 15px;
+    border-bottom: 1px solid #eee;
+    vertical-align: middle;
+}
+
+/* Zebra stripe & hover effect */
+.accounts-page tbody tr:nth-child(even) {
+    background-color: #fafafa;
+}
+
+.accounts-page tbody tr:hover {
+    background-color: #f1f3f5;
+    transition: background-color 0.2s ease;
+}
+
+/* Empty table message */
+.accounts-page .table tbody tr td.text-center {
+    font-style: italic;
+    color: #888;
 }

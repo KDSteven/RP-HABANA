@@ -1,6 +1,7 @@
 <?php
 session_start();
 include 'config/db.php';
+include 'functions.php';
 
 // Check login
 if (!isset($_SESSION['role'])) {
@@ -49,7 +50,6 @@ $stmt = $conn->prepare($query);
 $stmt->bind_param($types, ...$params);
 $stmt->execute();
 $products_result = $stmt->get_result();
-
 // ✅ Add Product to Cart
 if (isset($_POST['add'])) {
     $product_id = (int)($_POST['product_id'] ?? 0);
@@ -57,18 +57,17 @@ if (isset($_POST['add'])) {
     if ($quantity < 1) $quantity = 1;
 
     // Check stock
-    $stock_stmt = $conn->prepare("SELECT stock FROM inventory WHERE product_id = ? AND branch_id = ?");
+    $stock_stmt = $conn->prepare("SELECT stock, product_name FROM inventory JOIN products USING(product_id) WHERE product_id = ? AND branch_id = ?");
     $stock_stmt->bind_param("ii", $product_id, $branch_id);
     $stock_stmt->execute();
     $stock_row = $stock_stmt->get_result()->fetch_assoc();
     $available_stock = $stock_row['stock'] ?? 0;
-error_log("Redirecting due to out of stock: $available_stock");
+    $product_name = $stock_row['product_name'] ?? 'Unknown';
 
     if ($available_stock <= 0 || $quantity > $available_stock) {
-    header("Location: pos.php?error=outofstock&search=" . urlencode($search) . "&category=" . urlencode($category_filter));
-    exit;
-}
-
+        header("Location: pos.php?error=outofstock&search=" . urlencode($search) . "&category=" . urlencode($category_filter));
+        exit;
+    }
 
     // Check existing in cart
     $current_quantity = 0;
@@ -101,18 +100,23 @@ error_log("Redirecting due to out of stock: $available_stock");
         }
     }
 
-    header("Location: pos.php?added=true&search=" . urlencode($search) . "&category=" . urlencode($category_filter));
-exit;
+    // ✅ Log action **before redirect**
+    logAction($conn, "Add Product to Cart", "Added $quantity of $product_name to cart", null, $branch_id);
 
+    // Redirect
+    header("Location: pos.php?added=true&search=" . urlencode($search) . "&category=" . urlencode($category_filter));
+    exit;
 }
 
 // ✅ Add Service
 if (isset($_POST['add_service'])) {
     $service_id = (int)($_POST['service_id'] ?? 0);
+
     $service_stmt = $conn->prepare("SELECT service_name, price FROM services WHERE service_id = ?");
     $service_stmt->bind_param("i", $service_id);
     $service_stmt->execute();
     $service = $service_stmt->get_result()->fetch_assoc();
+    $service_stmt->close();
 
     if ($service) {
         $_SESSION['cart'][] = [
@@ -122,7 +126,17 @@ if (isset($_POST['add_service'])) {
             'price' => $service['price'],
             'stock' => 1
         ];
+
+        // ✅ Log action (fixed: use correct variables)
+        logAction(
+            $conn,
+            "Add Service to Cart",
+            "Added 1 service: {$service['service_name']} (ID: $service_id) to cart",
+            null,
+            $branch_id
+        );
     }
+
     header("Location: pos.php");
     exit;
 }
@@ -168,7 +182,7 @@ foreach ($_SESSION['cart'] as $item) {
         $product = $price_result->fetch_assoc();
 
         if ($product) {
-            $full_price = $product['price'] + $product['markup_price'];
+           $full_price = $product['price'] * (1 + ($product['markup_price'] / 100));
             $subtotal = $full_price * $quantity;
             $total_check += $subtotal;
         }
@@ -200,11 +214,14 @@ if (isset($_POST['checkout'])) {
 
         foreach ($_SESSION['cart'] as $item) {
             if ($item['type'] === 'product') {
-                $price_stmt = $conn->prepare("SELECT price FROM products WHERE product_id = ?");
+                $price_stmt = $conn->prepare("SELECT price, markup_price FROM products WHERE product_id = ?");
                 $price_stmt->bind_param("i", $item['product_id']);
                 $price_stmt->execute();
                 $product = $price_stmt->get_result()->fetch_assoc();
-                $price = $product['price'];
+
+                // ✅ Use retail price with markup
+                $price = $product['price'] * (1 + ($product['markup_price'] / 100));
+
                 $conn->query("UPDATE inventory SET stock = stock - {$item['stock']} WHERE product_id = {$item['product_id']} AND branch_id = $branch_id");
                 $item_stmt = $conn->prepare("INSERT INTO sales_items (sale_id, product_id, quantity, price) VALUES (?, ?, ?, ?)");
                 $item_stmt->bind_param("iiid", $sale_id, $item['product_id'], $item['stock'], $price);
@@ -218,8 +235,10 @@ if (isset($_POST['checkout'])) {
 
         $conn->commit();
         $_SESSION['cart'] = [];
-        header("Location: receipt.php?sale_id=$sale_id");
-        exit;
+
+        // Instead of redirect, show modal
+        $showReceiptModal = true;
+        $lastSaleId = $sale_id;
     } catch (Exception $e) {
         $conn->rollback();
         echo "Checkout failed: " . htmlspecialchars($e->getMessage());
@@ -233,22 +252,25 @@ if (isset($_POST['checkout'])) {
 <head>
   <meta charset="UTF-8" />
   <title>Point of Sale - Staff</title>
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" />
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
-
+ <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" >
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
   <link rel="stylesheet" href="css/notifications.css">
-  <link rel="stylesheet" href="css/pos.css">
+  <link rel="stylesheet" href="css/pos.css?>v2">
+  <link rel="stylesheet" href="css/sidebar.css">
 <audio id="notifSound" src="img/notif.mp3" preload="auto"></audio>
 
 </head>
 <body>
  <div class="sidebar"> 
   <h2>
+    <h2>
     <?= strtoupper($role) ?>
-    
+    <span class="notif-wrapper">
+        <i class="fas fa-bell" id="notifBell"></i>
+        <span id="notifCount" <?= $pending > 0 ? '' : 'style="display:none;"' ?>>0</span>
+    </span>
 </h2>
-
+</h2>
 
     <a href="dashboard.php"><i class="fas fa-tv"></i> Dashboard</a>
 
@@ -307,7 +329,8 @@ if (isset($_POST['checkout'])) {
                 
                 <div class="product-card">
     <div class="product-name"><?= htmlspecialchars($row['product_name']) ?></div>
-    <div class="product-price">₱<?= number_format($row['price'] + $row['markup_price'], 2) ?></div>
+    <div class="product-price">₱<?=$row['price'] + ($row['price'] * ($row['markup_price'] / 100))
+ ?></div>
     <small style="color:gray;">Orig: ₱<?= number_format($row['price'], 2) ?></small>
     <div class="product-stock">Stock: <?= (int)$available_stock ?></div>
     <form class="add-to-cart-form" method="POST" action="pos.php?search=<?= urlencode($search) ?>&category=<?= urlencode($category_filter) ?>">
@@ -327,13 +350,15 @@ if (isset($_POST['checkout'])) {
     </div>
 
     <!-- ✅ Cart Section -->
-    <div class="cart-section">
-        <div class="cart-box">
-            <h3>Cart</h3>
+   <!-- ✅ Cart Section -->
+<div class="cart-section">
+    <div class="cart-box">
+        <h3>Cart</h3>
 
-            <?php if (empty($_SESSION['cart'])): ?>
-                <p>Your cart is empty.</p>
-            <?php else: ?>
+        <?php if (empty($_SESSION['cart'])): ?>
+            <p>Your cart is empty.</p>
+        <?php else: ?>
+            <div class="table-wrapper"><!-- NEW WRAPPER -->
                 <table>
                     <thead>
                         <tr>
@@ -353,7 +378,7 @@ if (isset($_POST['checkout'])) {
                                 $product_stmt->bind_param("i", $item['product_id']);
                                 $product_stmt->execute();
                                 $product_data = $product_stmt->get_result()->fetch_assoc();
-                                $price = $product_data['price'] + $product_data['markup_price'];
+                                $price = $product_data['price'] + ($product_data['price'] * ($product_data['markup_price'] / 100));
                                 $name = $product_data['product_name'];
                             } else {
                                 $price = $item['price'];
@@ -385,35 +410,37 @@ if (isset($_POST['checkout'])) {
                         </tr>
                     </tfoot>
                 </table>
-            <?php endif; ?>
+            </div><!-- END TABLE WRAPPER -->
+        <?php endif; ?>
 
-         <!-- ✅ Add Service Dropdown -->
-<form method="POST">
-    <label for="service_id"><strong>Add Service:</strong></label>
-    <select name="service_id" id="service_id" required>
-        <option value="">Select a service</option>
-        <?php
-        $services_result = $conn->query("SELECT * FROM services");
-        while ($service = $services_result->fetch_assoc()):
-        ?>
-            <option value="<?= $service['service_id'] ?>"><?= htmlspecialchars($service['service_name']) ?> - ₱<?= number_format($service['price'], 2) ?></option>
-        <?php endwhile; ?>
-    </select>
-    <button type="submit" name="add_service">Add</button>
-</form>
+        <!-- Add Service Dropdown -->
+        <form method="POST">
+            <label for="service_id"><strong>Add Service:</strong></label>
+            <select name="service_id" id="service_id" required>
+                <option value="">Select a service</option>
+                <?php
+                $services_result = $conn->query("SELECT * FROM services");
+                while ($service = $services_result->fetch_assoc()):
+                ?>
+                    <option value="<?= $service['service_id'] ?>"><?= htmlspecialchars($service['service_name']) ?> - ₱<?= number_format($service['price'], 2) ?></option>
+                <?php endwhile; ?>
+            </select>
+            <button type="submit" name="add_service">Add</button>
+        </form>
 
-<!-- ✅ Payment and Checkout -->
-<form method="POST">
-    <label for="payment"><strong>Payment (₱):</strong></label>
-    <input id="payment" type="number" name="payment" step="0.01" min="0" required>
-    <button type="submit" name="checkout">Checkout</button>
-</form>
-            <form method="POST">
-                <button type="submit" name="cancel_order">Cancel Entire Order</button>
-            </form>
-        </div>
+        <!-- Payment and Checkout -->
+        <form method="POST">
+            <label for="payment"><strong>Payment (₱):</strong></label>
+            <input id="payment" type="number" name="payment" step="0.01" min="0" required>
+            <button type="submit" name="checkout">Checkout</button>
+        </form>
+
+        <form method="POST">
+            <button type="submit" name="cancel_order">Cancel Entire Order</button>
+        </form>
     </div>
 </div>
+
 <!-- ✅ Toast Container (Top Right) -->
 <div class="toast-container position-fixed top-0 end-0 p-3" style="z-index: 9999;">
     <!-- Success Toast -->
@@ -433,37 +460,82 @@ if (isset($_POST['checkout'])) {
     </div>
 </div>
 
+<!-- Receipt Modal -->
+<div class="modal fade" id="receiptModal" tabindex="-1">
+  <div class="modal-dialog modal-md modal-dialog-centered">
+    <div class="modal-content border-0 shadow-lg" style="border-radius:15px;">
+     <div class="receipt-header d-flex justify-content-between align-items-center" 
+     style="background-color: #f7931e; color: white; padding:10px; border-radius:5px;">
+  <h5 class="modal-title m-0">🧾 Receipt</h5>
+  <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+</div>
+
+      <hr>
+      <div class="modal-body p-3" style="background-color:#fff7e6;">
+        <!-- Load receipt.php inside -->
+        <iframe id="receiptFrame" src="" style="width:100%; height:400px; border:none; border-radius:10px;"></iframe>
+      </div>
+      <div class="modal-footer" style="background-color:#fff3cd;">
+        <button class="btn btn-outline-warning" onclick="printReceipt()">🖨️ Print</button>
+        <button class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+
   <script src="notifications.js"></script>
-  
+<!-- receipt popup -->
+<?php if (!empty($showReceiptModal) && !empty($lastSaleId)): ?>
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+    var modal = new bootstrap.Modal(document.getElementById('receiptModal'));
+    document.getElementById('receiptFrame').src = "receipt.php?sale_id=<?= $lastSaleId ?>";
+    modal.show();
+});
+
+function printReceipt() {
+    var frame = document.getElementById('receiptFrame').contentWindow;
+    frame.focus();
+    frame.print();
+}
+</script>
+<?php endif; ?>
+
   
 <script>
-document.addEventListener('DOMContentLoaded', function () {
-    const params = new URLSearchParams(window.location.search);
+const serviceJobData = <?= json_encode($serviceJobData) ?>;
 
-    // ✅ Check if item added
-    if (params.has('added')) {
-        const toast = new bootstrap.Toast(document.getElementById('successToast'), { delay: 2000 });
-        toast.show();
-        playNotifSound();
-    }
-    // ✅ Remove query params after showing toast
-    if (params.has('added') || params.has('error')) {
-        window.history.replaceState({}, document.title, window.location.pathname);
-    }
+const ctx = document.getElementById('serviceJobChart').getContext('2d');
+ctx.canvas.height = serviceJobData.length * 50; // dynamic height
 
-    function playNotifSound() {
-        const audio = document.getElementById('notifSound');
-        if (audio) audio.play();
+const labels = serviceJobData.map(item => item.service_name);
+const data = serviceJobData.map(item => item.count);
+
+const colors = labels.map(() => `hsl(${Math.floor(Math.random() * 360)}, 70%, 60%)`);
+
+new Chart(ctx, {
+    type: 'bar',
+    data: {
+        labels: labels,
+        datasets: [{
+            label: 'Services Sold',
+            data: data,
+            backgroundColor: colors
+        }]
+    },
+    options: {
+        indexAxis: 'y',
+        responsive: true,
+        plugins: { legend: { display: false } },
+        scales: {
+            x: { beginAtZero: true },
+            y: { ticks: { autoSkip: false } }
+        }
     }
 });
-</script>
-<script>
-function showOutOfStockToast() {
-    const toast = new bootstrap.Toast(document.getElementById('errorToast'), { delay: 2500 });
-    toast.show();
-    const audio = document.getElementById('notifSound');
-    if (audio) audio.play();
-}
+
 </script>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>

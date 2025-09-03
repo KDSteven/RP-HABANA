@@ -8,6 +8,7 @@ if (!isset($_SESSION['user_id'])) {
 }
 
 include 'config/db.php';
+include 'functions.php';
 
 $user_id = $_SESSION['user_id'];
 $role = $_SESSION['role'];
@@ -30,63 +31,72 @@ if (isset($_GET['branch'])) {
 } else {
     $current_branch_id = $_SESSION['current_branch_id'] ?? $branch_id;
 }
+// Get filters
+$branchId = $_GET['branch_id'] ?? null;
+$search   = $_GET['search'] ?? '';
+$category = $_GET['category'] ?? '';
 
-// Search filter
-$search = $_GET['search'] ?? '';
-$searchQuery = '';
-if ($search) {
-    $searchQuery = " AND (p.product_name LIKE '%" . $conn->real_escape_string($search) . "%' 
-                     OR p.category LIKE '%" . $conn->real_escape_string($search) . "%')";
-}// Build base query
 $sql = "
-    SELECT p.product_id, p.product_name, p.category, p.price, p.markup_price,
-           p.ceiling_point, p.critical_point, IFNULL(i.stock, 0) AS stock,
-           i.branch_id
-    FROM products p
-    LEFT JOIN inventory i ON p.product_id = i.product_id
+  SELECT i.inventory_id, p.product_id, p.product_name, p.category, 
+         p.price, p.markup_price, 
+         p.ceiling_point, p.critical_point,
+         IFNULL(i.stock, 0) AS stock, i.branch_id
+  FROM products p
+  LEFT JOIN inventory i 
+    ON p.product_id = i.product_id 
 ";
 
 
-// Add conditions
-$conditions = ["p.archived = 0"];
+$params = [];
+$types  = [];
+$conditions = ["i.archived = 0"];
 
+// Role-based branch filtering
 if ($role === 'staff') {
-    $conditions[] = "i.branch_id = " . (int)$branch_id;
-} elseif ($current_branch_id) {
-    $conditions[] = "i.branch_id = " . (int)$current_branch_id;
+    // Staff always locked to their branch
+    $conditions[] = "i.branch_id = ?";
+    $params[] = $branch_id; // staff’s session branch_id
+    $types[] = "i";
+} elseif (!empty($branchId)) {
+    // Admin clicked a branch in dropdown/filter
+    $conditions[] = "i.branch_id = ?";
+    $params[] = $branchId;
+    $types[] = "i";
+} elseif (!empty($current_branch_id)) {
+    // fallback to current branch (like when admin dashboard sets one)
+    $conditions[] = "i.branch_id = ?";
+    $params[] = $current_branch_id;
+    $types[] = "i";
 }
 
-if (!empty($searchQuery)) {
-    $conditions[] = $searchQuery;
+// Category filter
+if (!empty($category)) {
+    $conditions[] = "p.category = ?";
+    $params[] = $category;
+    $types[] = "s";
 }
 
-// Combine conditions
-if (count($conditions) > 0) {
+// Search filter
+if (!empty($search)) {
+    $conditions[] = "p.product_name LIKE ?";
+    $params[] = "%$search%";
+    $types[] = "s";
+}
+
+// Finalize query
+if ($conditions) {
     $sql .= " WHERE " . implode(" AND ", $conditions);
 }
 
-$result = $conn->query($sql);
+$stmt = $conn->prepare($sql);
 
-// Handle Create Branch
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['create_branch'])) {
-    $branch_number   = $_POST['branch_number'];
-    $branch_name     = $_POST['branch_name'];
-    $branch_location = $_POST['branch_location'];
-    $branch_email    = $_POST['branch_email'];
-    $branch_contact  = $_POST['branch_contact'];
-
-    $stmt = $conn->prepare("INSERT INTO branches (branch_id, branch_name, branch_location, branch_email, branch_contact) VALUES (?, ?, ?, ?, ?)");
-    $stmt->bind_param("issss", $branch_number, $branch_name, $branch_location, $branch_email, $branch_contact);
-
-    if ($stmt->execute()) {
-        header("Location: inventory.php?success=branch_created");
-        exit;
-    } else {
-        header("Location: inventory.php?error=branch_creation_failed");
-        exit;
-    }
-    $stmt->close();
+// Bind params only if not empty
+if (!empty($params)) {
+    $stmt->bind_param(implode("", $types), ...$params);
 }
+
+$stmt->execute();
+$result = $stmt->get_result();
 
 // Handle Delete Branch
 if (isset($_POST['archive_branch'])) {
@@ -97,7 +107,6 @@ if (isset($_POST['archive_branch'])) {
     header("Location: inventory.php?archived=branch");
     exit;
 }
-
 
 // Fetch branches
 if ($role === 'staff') {
@@ -112,18 +121,77 @@ if ($role === 'staff') {
 
 // Fetch brands
 $brand_result = $conn->query("SELECT brand_id, brand_name FROM brands ORDER BY brand_name ASC");
-
-// Archive product
+// Archive product for specific branch
 if (isset($_POST['archive_product'])) {
-    $product_id = (int) $_POST['product_id'];
-    $stmt = $conn->prepare("UPDATE products SET archived = 1 WHERE product_id = ?");
-    $stmt->bind_param("i", $product_id);
+    $inventory_id = (int) $_POST['inventory_id'];
+
+    // Fetch product name and branch_id from inventory
+    $stmt = $conn->prepare("
+        SELECT i.inventory_id, p.product_name, i.branch_id
+        FROM inventory i
+        JOIN products p ON i.product_id = p.product_id
+        WHERE i.inventory_id = ?
+        LIMIT 1
+    ");
+    $stmt->bind_param("i", $inventory_id);
     $stmt->execute();
+    $stmt->bind_result($inv_id, $product_name, $branch_id);
+    
+    if ($stmt->fetch()) {
+        $stmt->close();
+
+        // Archive this inventory row only
+        $stmt = $conn->prepare("UPDATE inventory SET archived = 1 WHERE inventory_id = ?");
+        $stmt->bind_param("i", $inventory_id);
+        $stmt->execute();
+        $stmt->close();
+
+        // Log action
+        logAction($conn, "Archive Product", "Archived product: $product_name (Inventory ID: $inventory_id)", null, $branch_id);
+
+        header("Location: inventory.php?archived=success");
+        exit;
+    } else {
+        $stmt->close();
+        echo "Inventory not found!";
+    }
+}
+
+// Archive service
+if (isset($_POST['archive_service'])) {
+    $service_id = (int) $_POST['service_id'];
+
+    // Fetch service name and branch_id
+    $stmt = $conn->prepare("SELECT service_name, branch_id FROM services WHERE service_id = ?");
+    $stmt->bind_param("i", $service_id);
+    $stmt->execute();
+    $stmt->bind_result($service_name, $service_branch_id);
+    $stmt->fetch();
+    $stmt->close();
+
+    // Archive service
+    $stmt = $conn->prepare("UPDATE services SET archived = 1 WHERE service_id = ?");
+    $stmt->bind_param("i", $service_id);
+    $stmt->execute();
+
+    // Log with the service's branch_id
+    logAction($conn, "Archive Service", "Archived service: $service_name (ID: $service_id)", null, $service_branch_id);
+
     header("Location: inventory.php?archived=success");
+    exit;
 }
 
 
+// Set branch_id for current session or GET parameter
+$branch_id = $_GET['branch'] ?? $_SESSION['branch_id'] ?? 0;
+
+// Fetch services for this branch
+$services_stmt = $conn->prepare("SELECT * FROM services WHERE branch_id = ? AND archived = 0");
+$services_stmt->bind_param("i", $branch_id);
+$services_stmt->execute();
+$services_result = $services_stmt->get_result();
 ?>
+
 
 <!DOCTYPE html>
 <html lang="en">
@@ -135,8 +203,7 @@ if (isset($_POST['archive_product'])) {
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
  <link rel="stylesheet" href="css/sidebar.css">
   <link rel="stylesheet" href="css/notifications.css">
-  
-  <link rel="stylesheet" href="css/inventory.css">
+  <link rel="stylesheet" href="css/inventory.css?>v2">
 <audio id="notifSound" src="notif.mp3" preload="auto"></audio>
 
 
@@ -153,11 +220,12 @@ if (isset($_POST['archive_product'])) {
 
 
     <!-- Common -->
-    <a href="dashboard.php" class="active"><i class="fas fa-tv"></i> Dashboard</a>
+    <a href="dashboard.php" ><i class="fas fa-tv"></i> Dashboard</a>
 
     <!-- Admin Links -->
     <?php if ($role === 'admin'): ?>
-        <a href="inventory.php"><i class="fas fa-box"></i> Inventory</a>
+        <a href="inventory.php" class="active"><i class="fas fa-box"></i> Inventory</a>
+        <a href="sales.php"><i class="fas fa-receipt"></i> Sales</a>
         <a href="approvals.php"><i class="fas fa-check-circle"></i> Approvals
             <?php if ($pending > 0): ?>
                 <span style="background:red;color:white;border-radius:50%;padding:3px 7px;font-size:12px;">
@@ -190,135 +258,260 @@ if (isset($_POST['archive_product'])) {
     <a href="logout.php"><i class="fas fa-sign-out-alt"></i> Logout</a>
 </div>
 
-  <!-- Content -->
-  <div class="content">
-  <div class="search-box">
-  <i class="fas fa-search" style="margin-right: 10px;"></i>
-  <form method="GET" action="inventory.php">
-    <input type="text" name="search" value="<?= htmlspecialchars($_GET['search'] ?? '') ?>" placeholder="SEARCH ITEM">
+<!-- Branch Navigation -->
+<div class="content">
+
+  <div class="branches modern-tabs">
+  <?php while ($branch = $branches_result->fetch_assoc()): ?>
+    <a href="inventory.php?branch=<?= $branch['branch_id'] ?>" 
+       class="<?= ($branch['branch_id'] == $branch_id) ? 'active' : '' ?>">
+       <?= htmlspecialchars($branch['branch_name']) ?> 
+       <small class="text-muted"><?= htmlspecialchars($branch['branch_location']) ?></small>
+    </a>
+  <?php endwhile; ?>
+</div>
+<div class="search-box modern-search">
+  <form method="GET" action="inventory.php" class="search-form d-flex align-items-center gap-2">
+    <input type="hidden" name="branch" value="<?= htmlspecialchars($_GET['branch'] ?? '') ?>">
+
+    <div class="search-input">
+      <i class="fas fa-search"></i>
+      <input type="text" name="search" value="<?= htmlspecialchars($_GET['search'] ?? '') ?>" placeholder="Search items...">
+    </div>
+
+    <select name="category" onchange="this.form.submit()">
+      <option value="">All Categories</option>
+      <?php
+      $cat_result = $conn->query("SELECT DISTINCT category FROM products WHERE archived = 0 ORDER BY category ASC");
+      while ($cat = $cat_result->fetch_assoc()):
+          $selected = ($_GET['category'] ?? '') === $cat['category'] ? 'selected' : '';
+      ?>
+      <option value="<?= htmlspecialchars($cat['category']) ?>" <?= $selected ?>>
+          <?= htmlspecialchars($cat['category']) ?>
+      </option>
+      <?php endwhile; ?>
+    </select>
+
+    <button type="submit" class="btn btn-primary">Search</button>
   </form>
-</div>
 
-    <!-- Branch Navigation -->
-<div class="branches">
-    <?php while ($branch = $branches_result->fetch_assoc()): ?>
-        <a href="inventory.php?branch=<?= $branch['branch_id'] ?>" 
-           class="<?= ($branch['branch_id'] == $branch_id) ? 'active' : '' ?>">
-           <?= htmlspecialchars($branch['branch_name']) ?> - <?= htmlspecialchars($branch['branch_location']) ?>
-        </a>
-    <?php endwhile; ?>
+  <div class="legend mt-2">
+    <span class="badge critical">Critical Stocks</span>
+    <span class="badge sufficient">Sufficient Stocks</span>
+  </div>
 </div>
+<!-- Manage Products -->
+<div class="card shadow-sm mb-4">
+  <div class="card-body">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+      <h2 class="mb-0"><i class="fas fa-box me-2"></i> Manage Products</h2>
+      <div class="d-flex gap-2">
+        <button type="button" class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#addProductModal">
+          <i class="fas fa-plus"></i> Add Product
+        </button>
+        <button type="button" class="btn btn-success btn-sm" data-bs-toggle="modal" data-bs-target="#addStockModal">
+          <i class="fas fa-boxes"></i> Add Stock
+        </button>
+      </div>
+    </div>
 
-<!-- Product Table -->
-<div class="table mt-4">
-    <table class="table table-bordered table-striped">
-        <thead>
+    <?php if ($result->num_rows > 0): ?>
+      <div class="table-container">
+
+        <!-- Header Table -->
+        <table class="table table-header">
+          <thead>
             <tr>
-                <th>ID</th>
-                <th>PRODUCT</th>
-                <th>CATEGORY</th>
-                <th>PRICE</th>
-                <th>MARKUP (%)</th>
-                <th>RETAIL PRICE</th>
-                <th>CEILING POINT</th>
-                <th>CRITICAL POINT</th>
-                <th>STOCKS</th>
-                <th>ACTION</th>
+              <th>ID</th>
+              <th>PRODUCT</th>
+              <th>CATEGORY</th>
+              <th>PRICE</th>
+              <th>MARKUP (%)</th>
+              <th>RETAIL PRICE</th>
+              <th>CEILING POINT</th>
+              <th>CRITICAL POINT</th>
+              <th>STOCKS</th>
+              <th>ACTION</th>
             </tr>
-        </thead>
-        <tbody>
-            <?php if ($result->num_rows > 0): ?>
-                <?php while ($row = $result->fetch_assoc()): ?>
-                    <?php 
-                        $isCritical = ($row['stock'] <= $row['critical_point']);
-                        $rowClass = $isCritical ? 'table-danger' : 'table-success';
-                        $retailPrice = $row['price'] + ($row['price'] * ($row['markup_price'] / 100));
-                    ?>
-                    <tr class="<?= $rowClass ?>">
-                        <td><?= $row['product_id'] ?></td>
-                        <td><?= htmlspecialchars($row['product_name']) ?></td>
-                        <td><?= htmlspecialchars($row['category']) ?></td>
-                        <td><?= number_format($row['price'], 2) ?></td>
-                        <td><?= number_format($row['markup_price'], 2) ?>%</td>
-                        <td><?= number_format($retailPrice, 2) ?></td>
-                        <td><?= $row['ceiling_point'] ?></td>
-                        <td><?= $row['critical_point'] ?></td>
-                        <td><?= $row['stock'] ?></td>
-                        <td>
-                            <!-- Archive Product Button -->
-                            <form method="POST" style="display:inline-block;" 
-                                  onsubmit="return confirm('Are you sure you want to archive this product?');">
-                                <input type="hidden" name="product_id" value="<?= $row['product_id'] ?>">
-                                <button type="submit" name="archive_product" class="btn btn-warning btn-sm">
-                                    Archive
-                                </button>
-                            </form>
+          </thead>
+        </table>
 
-                            <!-- Edit Button -->
-                            <button onclick='openEditModal(
-    <?= json_encode($row["product_id"]) ?>,
-    <?= json_encode($row["product_name"]) ?>,
-    <?= json_encode($row["category"]) ?>,
-    <?= json_encode($row["price"]) ?>,
-    <?= json_encode($row["stock"]) ?>,
-    <?= json_encode($row["markup_price"]) ?>,
-    <?= json_encode($row["ceiling_point"]) ?>,
-    <?= json_encode($row["critical_point"]) ?>,
-    <?= isset($row["branch_id"]) ? json_encode($row["branch_id"]) : "null" ?>
-)' class="btn btn-primary btn-sm">Edit</button>
+        <!-- Scrollable Body -->
+        <div class="table-body scrollable-list">
+          <table class="table table-body-table">
+            <tbody>
+              <?php while ($row = $result->fetch_assoc()): ?>
+                <?php
+                  $inventory_id = $row['inventory_id'] ?? 0;
+                  $isCritical = ($row['stock'] <= $row['critical_point']);
+                  $rowClass = $isCritical ? 'table-danger' : 'table-success';
+                  $retailPrice = $row['price'] + ($row['price'] * ($row['markup_price'] / 100));
+                ?>
+                <tr class="<?= $rowClass ?>">
+                  <td><?= $row['product_id'] ?></td>
+                  <td><?= htmlspecialchars($row['product_name']) ?></td>
+                  <td><?= htmlspecialchars($row['category']) ?></td>
+                  <td><?= number_format($row['price'], 2) ?></td>
+                  <td><?= number_format($row['markup_price'], 2) ?>%</td>
+                  <td><?= number_format($retailPrice, 2) ?></td>
+                  <td><?= $row['ceiling_point'] ?></td>
+                  <td><?= $row['critical_point'] ?></td>
+                  <td><?= $row['stock'] ?></td>
+                  <td class="text-center">
+                    <div class="action-buttons">
+                      <button onclick='openEditModal(
+                        <?= json_encode($row["product_id"]) ?>,
+                        <?= json_encode($row["product_name"]) ?>,
+                        <?= json_encode($row["category"]) ?>,
+                        <?= json_encode($row["price"]) ?>,
+                        <?= json_encode($row["stock"]) ?>,
+                        <?= json_encode($row["markup_price"]) ?>,
+                        <?= json_encode($row["ceiling_point"]) ?>,
+                        <?= json_encode($row["critical_point"]) ?>,
+                        <?= json_encode($row["branch_id"] ?? null) ?>
+                      )' class="btn-edit">
+                        <i class="fas fa-edit"></i>
+                      </button>
 
-                        </td>
-                    </tr>
-                <?php endwhile; ?>
-            <?php else: ?>
-                <tr><td colspan="10">No products found for this branch.</td></tr>
-            <?php endif; ?>
-        </tbody>
-    </table>
-
-    <!-- Add Product Modal Button -->
-    <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addProductModal">
-        Add Product
+                      <?php if ($inventory_id): ?>
+                       <form method="POST" onsubmit="return confirm('Are you sure you want to archive this product?');" style="display:inline-block;">
+    <input type="hidden" name="inventory_id" value="<?= $inventory_id ?>">
+    <button type="submit" name="archive_product" class="btn-archive-unique">
+        <i class="fas fa-archive"></i>
     </button>
+</form>
+
+                      <?php else: ?>
+                        <span class="text-muted">No Inventory</span>
+                      <?php endif; ?>
+                    </div>
+                  </td>
+                </tr>
+              <?php endwhile; ?>
+            </tbody>
+          </table>
+        </div>
+
+      </div>
+    <?php else: ?>
+      <div class="text-center text-muted py-4">
+        <i class="bi bi-info-circle fs-4 mb-2"></i>
+        No products found for this branch.
+      </div>
+    <?php endif; ?>
+
+  </div>
 </div>
 
-<!-- Branch Management (Admin Only) -->
-<?php if ($role === 'admin'): ?>
-<div class="mt-4">
-  
-    <h3>Manage Branches</h3>
-    <table class="table table-bordered">
-        <thead>
+<!-- Manage Services -->
+<div class="card shadow-sm mb-4">
+  <div class="card-body">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+      <h2 class="mb-0"><i class="fa fa-wrench" aria-hidden="true"></i> Manage Services</h2>
+      <button class="btn btn-create btn-sm" data-bs-toggle="modal" data-bs-target="#addServiceModal">
+        <i class="fa fa-wrench" aria-hidden="true"></i> Add Service
+      </button>
+    </div>
+
+    <?php if (isset($services_result) && $services_result->num_rows > 0): ?>
+      <div class="table-container">
+
+        <!-- Header Table -->
+        <table class="table table-header">
+          <thead>
             <tr>
-                <th>Branch Name</th>
-                <th>Location</th>
-                <th>Email</th>
-                <th>Contact</th>
-                <th>Action</th>
+              <th>ID</th>
+              <th>Service Name</th>
+              <th>Price (₱)</th>
+              <th>Description</th>
+              <th>Action</th>
             </tr>
-        </thead>
-        <tbody>
-            <?php
-            $branch_query = $conn->query("SELECT * FROM branches WHERE archived = 0");
-            while ($branch = $branch_query->fetch_assoc()): ?>
+          </thead>
+        </table>
+
+        <!-- Scrollable Body -->
+        <div class="table-body scrollable-list">
+          <table class="table table-body-table">
+            <tbody>
+              <?php while ($service = $services_result->fetch_assoc()): ?>
                 <tr>
-                    <td><?= htmlspecialchars($branch['branch_name']) ?></td>
-                    <td><?= htmlspecialchars($branch['branch_location']) ?></td>
-                    <td><?= htmlspecialchars($branch['branch_email']) ?></td>
-                    <td><?= htmlspecialchars($branch['branch_contact']) ?></td>
-                    <td>
-                        <form method="POST" onsubmit="return confirm('Archive this branch?');" style="display:inline-block;">
-                            <input type="hidden" name="branch_id" value="<?= $branch['branch_id'] ?>">
-                            <button type="submit" name="archive_branch" class="btn btn-danger btn-sm">Archive</button>
-                        </form>
-                    </td>
+                  <td><?= htmlspecialchars($service['service_id']) ?></td>
+                  <td><?= htmlspecialchars($service['service_name']) ?></td>
+                  <td><?= number_format($service['price'], 2) ?></td>
+                  <td><?= htmlspecialchars($service['description']) ?: '<em>No description</em>' ?></td>
+                  <td class="text-center">
+                    <div class="action-buttons">
+                      <button onclick='openEditServiceModal(<?= json_encode($service) ?>)' class="btn-edit">
+                        <i class="fas fa-edit"></i>
+                      </button>
+                     <form method="POST" onsubmit="return confirm('Are you sure you want to archive this service?');" style="display:inline-block;">
+    <input type="hidden" name="service_id" value="<?= $service['service_id'] ?>">
+    <button type="submit" name="archive_service" class="btn-archive-unique">
+        <i class="fas fa-archive"></i>
+    </button>
+</form>
+
+                    </div>
+                  </td>
                 </tr>
-            <?php endwhile; ?>
-        </tbody>
-    </table>
-      <button class="btn btn-create" onclick="openCreateModal()">Create Branch</button>
+              <?php endwhile; ?>
+            </tbody>
+          </table>
+        </div>
+
+      </div>
+    <?php else: ?>
+      <div class="text-center text-muted py-4">
+        <i class="bi bi-info-circle fs-4 mb-2"></i>
+        No services available for this branch.
+      </div>
+    <?php endif; ?>
+  </div>
 </div>
-<?php endif; ?>
+
+<!-- Add Service Modal -->
+<div class="modal fade" id="addServiceModal" tabindex="-1" aria-labelledby="addServiceModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow-lg">
+            <form action="add_service.php" method="POST">
+                <div class="modal-header bg-primary text-white">
+                    <h5 class="modal-title fw-bold" id="addServiceModalLabel">
+                        <i class="bi bi-plus-circle me-2"></i> Add New Service
+                    </h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <input type="hidden" name="branch_id" value="<?= htmlspecialchars($branch_id) ?>">
+
+                <div class="modal-body p-4">
+                    <div class="mb-3">
+                        <label for="serviceName" class="form-label fw-semibold">Service Name</label>
+                        <input type="text" name="service_name" id="serviceName" class="form-control" placeholder="Enter service name" required>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="servicePrice" class="form-label fw-semibold">Price (₱)</label>
+                        <input type="number" step="0.01" name="price" id="servicePrice" class="form-control" placeholder="Enter price" required>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="serviceDescription" class="form-label fw-semibold">Description</label>
+                        <textarea name="description" id="serviceDescription" class="form-control" rows="3" placeholder="Optional"></textarea>
+                    </div>
+
+                    <input type="hidden" name="branch_id" value="<?= htmlspecialchars($branch_id) ?>">
+                </div>
+
+                <div class="modal-footer border-top-0">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-success fw-semibold">
+                        <i class="bi bi-save me-1"></i> Save Service
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
 
 <!-- Button to trigger modal -->
 </div><!-- Add Product Modal -->
@@ -330,8 +523,6 @@ if (isset($_POST['archive_product'])) {
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
 
-
-      
       <form id="addProductForm" method="POST" action="add_product.php">
         <div class="modal-body">
           <div class="row g-3">
@@ -429,7 +620,43 @@ if (isset($_POST['archive_product'])) {
     </div>
   </div>
 </div>
+<!-- Add Stock Modal -->
+<!-- Shared Add Stock Modal -->
+<div class="modal fade" id="addStockModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <form method="post" action="add_stock.php">
+        <div class="modal-header">
+          <h5 class="modal-title">Add Stock</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <!-- Dropdown of all products -->
+          <label>Select Product</label>
+          <select name="product_id" class="form-control" required>
+            <option value="">-- Choose Product --</option>
+            <?php
+              $prodRes = $conn->query("SELECT p.product_id, p.product_name, IFNULL(i.stock,0) stock FROM products p LEFT JOIN inventory i ON p.product_id=i.product_id");
+              while ($p = $prodRes->fetch_assoc()):
+            ?>
+              <option value="<?= $p['product_id'] ?>">
+                <?= htmlspecialchars($p['product_name']) ?> (Stock: <?= $p['stock'] ?>)
+              </option>
+            <?php endwhile; ?>
+          </select>
 
+          <!-- Stock Amount -->
+          <label class="mt-2">Stock Amount</label>
+          <input type="number" class="form-control" name="stock_amount" min="1" required>
+        </div>
+        <div class="modal-footer">
+          <button type="submit" class="btn btn-success">Add</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+</div>
 
  <!-- Edit Product Modal -->
 <div class="modal fade" id="editProductModal" tabindex="-1" aria-labelledby="editProductModalLabel" aria-hidden="true">
@@ -575,24 +802,6 @@ if (isset($_POST['archive_product'])) {
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
 
 
-  <!-- Modal for Creating Branch -->
-  <div class="modal" id="createModal">
-    <div class="modal-content">
-      <div class="modal-header">Create Branch</div>
-      <form method="POST">
-      <input type="text" name="branch_number" placeholder="Branch Number" required pattern="\d+" title="Branch Number must be numeric">
-      <input type="text" name="branch_name" placeholder="Branch Name" required pattern="^[A-Za-z0-9\s\-']+$" title="Branch name must only contain letters, numbers, spaces, hyphens, or apostrophes">
-      <input type="text" name="branch_location" placeholder="Branch Location">
-      <input type="email" name="branch_email" placeholder="Branch Email" required>
-      <input type="text" name="branch_contact" placeholder="Branch Contact">
-      <input type="text" name="branch_contact_number" placeholder="Branch Contact number">
-        <div class="modal-footer">
-          <button type="button" onclick="closeModal()">Cancel</button>
-          <button type="submit" name="create_branch">Create Branch</button>
-        </div>
-      </form>
-    </div>
-  </div>
 <!-- Modal for Deleting Branches -->
 <div class="modal" id="deleteSelectionModal" style="display: none;">
   <div class="modal-content">
@@ -635,18 +844,6 @@ if (isset($_POST['archive_product'])) {
   </div>
 </div>
 
-
-<!-- Modal for Confirming Deletion -->
-<div class="modal" id="deleteConfirmationModal" style="display: none;">
-    <div class="modal-content">
-        <div class="modal-header">Confirm Deletion</div>
-        <form method="POST">
-            <p>Are you sure you want to proceed with deleting this branch? This action cannot be undone and may impact related records.</p>
-            <button type="submit" name="confirm_delete" value="yes">Yes, Delete</button>
-            <button type="button" onclick="closeModals()">Cancel</button>
-        </form>
-    </div>
-</div>
 <script src="notifications.js"></script>
 <script>
 document.addEventListener('DOMContentLoaded', function () {
@@ -689,20 +886,6 @@ document.addEventListener('DOMContentLoaded', function () {
   });
 });
 </script> -->
-  <script>
-    function openCreateModal() {
-      document.getElementById('createModal').style.display = 'flex';
-    }
-
-    function openDeleteModal() {
-      document.getElementById('deleteModal').style.display = 'flex';
-    }
-
-    function closeModal() {
-      document.getElementById('createModal').style.display = 'none';
-      document.getElementById('deleteModal').style.display = 'none';
-    }
-  </script>
  
 <script>
   function openEditModal(id, name, category, price, stock, markup_price, ceiling_point, critical_point, branch_id) {
@@ -745,29 +928,6 @@ function validateEditForm() {
 </script>
 
 
-  <script>
-    // Open the Delete Branch Modal
-    function openDeleteModal() {
-        document.getElementById('deleteSelectionModal').style.display = 'block';
-    }
-
-    // Open the confirmation modal after selecting branches to delete
-    function openDeleteConfirmationModal() {
-        const checkboxes = document.querySelectorAll('input[name="branches_to_delete[]"]:checked');
-        if (checkboxes.length > 0) {
-            document.getElementById('deleteSelectionModal').style.display = 'none';
-            document.getElementById('deleteConfirmationModal').style.display = 'block';
-        } else {
-            alert('Please select at least one branch to delete.');
-        }
-    }
-
-    // Close all modals
-    function closeModals() {
-        document.getElementById('deleteSelectionModal').style.display = 'none';
-        document.getElementById('deleteConfirmationModal').style.display = 'none';
-    }
-</script>
  <!-- calculate retail -->
 <script>
 document.addEventListener('DOMContentLoaded', function () {

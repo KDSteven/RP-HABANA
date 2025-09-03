@@ -1,168 +1,311 @@
 /* =========================
    INVENTORY PAGE STYLES
 ========================= */
-
 .inventory-page .content {
     flex: 1;
     padding: 30px;
+    background: #f9fafb;
+    font-family: 'Segoe UI', Tahoma, sans-serif;
+    color: #333;
 }
 
-/* Search Bar */
-.inventory-page .search-box {
+/* =========================
+   SEARCH BAR + LEGEND HEADER
+========================= */
+.search-box {
     display: flex;
     align-items: center;
-    margin-bottom: 20px;
+    justify-content: space-between;
+    gap: 25px;
+    margin: 20px 0 30px;
+    padding: 12px 18px;
+    background: #fff;
+    border-radius: 12px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+    flex-wrap: wrap;
+}
+
+.search-form {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.search-input {
+    position: relative;
+}
+
+.search-input i {
+    position: absolute;
+    left: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: #888;
+    font-size: 14px;
+}
+
+.search-input input {
+    padding: 10px 14px 10px 36px; /* slightly bigger padding */
+    border: 1px solid #007bff; /* highlight border */
+    border-radius: 10px;
+    font-size: 16px; /* bigger font */
+    width: 600px; /* wider */
+    transition: border 0.2s, box-shadow 0.2s, background 0.2s;
+    background: #fffbe6; /* subtle highlight background */
+    box-shadow: 0 2px 8px rgba(0, 123, 255, 0.15); /* subtle glow */
+}
+
+.search-input input:focus {
+    border-color: #0056b3;
+    box-shadow: 0 0 10px rgba(0, 123, 255, 0.3);
+    outline: none;
+    background: #fff; /* remove highlight on focus */
+}
+
+.search-form select {
+    padding: 8px 12px;
+    border: 1px solid #ccc;
+    border-radius: 8px;
+    font-size: 14px;
+    background: #fafafa;
+}
+
+.search-form button {
+    padding: 8px 14px;
+    background: #007bff;
+    color: #fff;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 500;
+    border: none;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+.search-form button:hover {
+    background: #0056b3;
+}
+
+/* Legend Styling */
+.legend {
+    display: flex;
+    align-items: center;
     gap: 10px;
 }
 
-.inventory-page .search-box input {
-    flex: 1;
-    padding: 10px;
-    border: 1px solid #ccc;
-    border-radius: 5px;
+.legend h6 {
+    margin: 0;
+    font-size: 14px;
+    font-weight: 600;
+    color: #444;
 }
 
+.legend .badge {
+    padding: 5px 10px;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 500;
+    color: #fff;
+    display: inline-block;
+}
+
+.badge.critical { background: #d34251; }
+.badge.sufficient { background: #32e05b; }
+
 /* Branch Selector */
-.inventory-page .branches {
-    background: white;
-    border-radius: 5px;
-    padding: 10px;
-    margin-bottom: 20px;
+.inventory-page .branches.modern-tabs {
     display: flex;
     flex-wrap: wrap;
     gap: 10px;
+    margin-bottom: 20px;
 }
-
-.inventory-page .branches a {
-    padding: 10px 15px;
-    background-color: #eee;
-    color: #000;
+.inventory-page .branches.modern-tabs a {
+    padding: 8px 16px;
+    border-radius: 20px;
+    background: #f1f3f5;
+    color: #333;
     text-decoration: none;
-    border: 1px solid #ccc;
-    border-radius: 4px;
+    font-weight: 500;
+    font-size: 0.9rem;
     transition: 0.3s;
 }
-
-.inventory-page .branches a.active {
-    background-color: #4CAF50;
-    color: white;
-    font-weight: bold;
+.branches.modern-tabs a:hover { background: #dfe4ea; }
+.branches.modern-tabs a.active {
+    background: linear-gradient(135deg, #f2d0a7, #f0bc7c);
+    color: #0a0326;
 }
 
-/* Table */
-.inventory-page .table {
-    background: white;
-    border-radius: 5px;
-    padding: 20px;
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+/* =========================
+   TABLES (Products & Services)
+========================= */
+/* Table container */
+/* Force equal column widths but allow ID to be smaller */
+.table-header th,
+.table-body td {
+    padding: 12px 10px; /* slightly smaller padding */
+    border-bottom: 1px solid #eee;
+    text-align: left;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
-.inventory-page table {
+/* Set specific widths */
+.table-header th:first-child,
+.table-body td:first-child {
+    width: 60px; /* ID column fixed width */
+    min-width: 60px;
+    max-width: 60px;
+    text-align: center; /* optional */
+}
+
+.table-container {
+    margin-bottom: 25px;
+    border-radius: 12px;
+    overflow-x: auto;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+}
+
+/* Force equal column widths */
+.table-header, .table-body-table {
     width: 100%;
     border-collapse: collapse;
+    table-layout: fixed; /* ensures header and body align */
 }
 
-.inventory-page th,
-.inventory-page td {
-    padding: 12px;
+.table-header th, .table-body td {
+    padding: 12px 15px;
+    border-bottom: 1px solid #eee;
     text-align: left;
-    border-bottom: 1px solid #ddd;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
-.inventory-page th {
+/* Sticky header */
+.table-header th {
+    background: linear-gradient(135deg, #f7931e, #ffb84d);
+    color: white;
+    font-weight: 600;
+}
+
+/* Scrollable body */
+.table-body {
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+.table-body td:first-child {
+    position: sticky;
+    left: 0;
     background: #f7931e;
-    color: white;
+    color: #fff;
+    font-weight: 600;
+    border-right: 1px solid #ccc;
+    z-index: 5;
 }
 
-/* Buttons */
-.inventory-page button,
-.inventory-page .btn {
-    padding: 10px 20px;
+/* Row coloring for stock/service levels */
+.table-success td:first-child { background-color: #28a745 !important; }
+.table-danger td:first-child { background-color: #dc3545 !important; }
+.table-success { background-color: rgba(40, 167, 69, 0.15) !important; }
+.table-danger { background-color: rgba(220, 53, 69, 0.15) !important; }
+
+
+/* Hover effect */
+.table-body tr:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.12);
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+
+/* Scrollbar Styling */
+.table-body::-webkit-scrollbar {
+    width: 8px;
+}
+.table-body::-webkit-scrollbar-track {
+    background: #f1f3f5;
+    border-radius: 8px;
+}
+.table-body::-webkit-scrollbar-thumb {
+    background: #ccc;
+    border-radius: 8px;
+}
+.table-body::-webkit-scrollbar-thumb:hover { background: #999; }
+
+/* =========================
+   ACTION BUTTONS
+========================= */
+.action-buttons {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 6px;
+}
+.action-buttons button {
     border: none;
-    border-radius: 5px;
-    color: white;
-    font-weight: bold;
+    border-radius: 8px;
+    padding: 6px 14px;
+    font-weight: 500;
+    color: #fff;
     cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    transition: transform 0.2s, box-shadow 0.2s, background 0.3s;
 }
 
-.inventory-page .btn-create {
-    background: #28a745;
-}
+.btn-create { background: linear-gradient(135deg, #28a745, #1e7e34); }
+.btn-create:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
 
-.inventory-page .btn-create:hover {
-    background: #218838;
-}
+.btn-edit { background: linear-gradient(135deg, #f7b733, #fc4a1a); }
+.btn-edit:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
 
-.inventory-page .btn-delete {
-    background: #dc3545;
-}
+.btn-archive-unique { background: linear-gradient(135deg, #ff4d4d, #cc0000); }
+.btn-archive-unique:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
 
-.inventory-page .btn-delete:hover {
-    background: #b02a37;
-}
-
-/* MODALS */
+/* =========================
+   MODALS
+========================= */
 .modal {
     display: none;
     position: fixed;
     top: 0; left: 0;
     width: 100%; height: 100%;
-    background: rgba(0, 0, 0, 0.5);
+    background: rgba(0,0,0,0.4);
     justify-content: center;
     align-items: center;
     z-index: 9999;
 }
-
-.modal.active {
-    display: flex;
-}
+.modal.active { display: flex; }
 
 .modal-content {
-    background: #fff;
+    border-radius: 16px;
     padding: 25px 30px;
-    border-radius: 12px;
     width: 95%;
-    max-width: 800px;
-    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.2);
+    max-width: 700px;
+    background: #fff;
+    box-shadow: 0 12px 40px rgba(0,0,0,0.25);
+    animation: slideFade 0.3s ease forwards;
 }
 
-.modal-header {
-    font-size: 22px;
-    font-weight: bold;
-    margin-bottom: 15px;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-}
-
-.modal-body {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 20px;
-}
-
-.modal-body input,
-.modal-body select {
+.modal-header { font-size: 20px; font-weight: 600; margin-bottom: 15px; display: flex; justify-content: space-between; }
+.modal-body { display: flex; flex-wrap: wrap; gap: 20px; }
+.modal-body input, .modal-body select {
     width: 100%;
-    padding: 10px;
-    border-radius: 6px;
-    border: 1px solid #ccc;
-    background-color: #f1f1f1;
+    padding: 12px;
+    border-radius: 10px;
+    border: 1px solid #ddd;
+    margin-bottom: 12px;
+    background: #fafafa;
+    transition: 0.2s;
 }
+.modal-body input:focus, .modal-body select:focus { border-color: #4e73df; box-shadow: 0 0 8px rgba(78,115,223,0.2); outline: none; }
 
-.modal-footer {
-    display: flex;
-    justify-content: flex-end;
-    gap: 10px;
-    margin-top: 20px;
-}
+.modal-footer { display: flex; justify-content: flex-end; gap: 12px; margin-top: 20px; }
+.modal-footer button { background-color: #28a745; color: white; border-radius: 8px; }
+.modal-footer button.cancel { background-color: #e0e0e0; color: #333; }
 
-.modal-footer button {
-    background-color: #28a745;
-    color: white;
-}
-
-.modal-footer button.cancel {
-    background-color: #ccc;
-    color: black;
-}
+/* Animation */
+@keyframes slideFade { 0% { opacity: 0; transform: translateY(-15px); } 100% { opacity: 1; transform: translateY(0); } }

@@ -1,60 +1,120 @@
-* {
-  margin: 0; padding: 0; box-sizing: border-box;
-  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+/* archive.css */
+
+/* Container & content */
+.content {
+    flex: 1;
+    padding: 30px;
+    background: #f9fafb;
+    font-family: 'Segoe UI', Tahoma, sans-serif;
+    color: #333;
 }
-h1 {
-  margin-bottom: 25px;
-  color: #333;
-  font-size: 28px;
-}
+
+/* Card styling */
 .card {
-  background: #fff;
-  border-radius: 10px;
-  padding: 20px;
-  box-shadow: 0 4px 10px rgba(0,0,0,0.08);
-  margin-bottom: 30px;
+    background: #fff;
+    border-radius: 12px;
+    padding: 20px;
+    margin-bottom: 25px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.08);
 }
+
 .card h2 {
-  font-size: 22px;
-  margin-bottom: 15px;
-  color: #f7931e;
+    margin-bottom: 15px;
+    font-size: 18px;
+    font-weight: 600;
+    color: #333;
 }
-table {
-  width: 100%;
-  border-collapse: collapse;
-  border-radius: 8px;
-  overflow: hidden;
+
+/* Scrollable table container */
+.table-container {
+    max-height: 400px;
+    overflow-y: auto;
+    overflow-x: auto;
+    border-radius: 12px;
+    border: 1px solid #eee;
+    background: #fff;
 }
-th, td {
-  padding: 12px;
-  text-align: left;
-  border-bottom: 1px solid #ddd;
+
+.table-container table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    font-size: 14px;
 }
-th {
-  background-color: #f7931e;
-  color: white;
-  font-weight: bold;
+
+.table-container th, .table-container td {
+    padding: 12px 15px;
+    border-bottom: 1px solid #eee;
+    text-align: left;
 }
-tr:hover {
-  background: #f9f9f9;
+
+/* Sticky header */
+.table-container th {
+    background: linear-gradient(135deg, #f7931e, #ffb84d);
+    color: white;
+    font-weight: 600;
+    position: sticky;
+    top: 0;
+    z-index: 10;
 }
-.btn {
-  padding: 8px 14px;
-  border: none;
-  border-radius: 6px;
-  color: #fff;
-  font-size: 14px;
-  font-weight: 600;
-  cursor: pointer;
-  margin: 2px;
-  transition: background 0.3s ease;
+
+/* Buttons */
+.btn-restore {
+    background: #28a745;
+    color: #fff;
+    border: none;
+    padding: 6px 12px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-weight: 500;
+    transition: transform 0.2s, box-shadow 0.2s;
 }
-.btn-restore { background: #28a745; }
-.btn-restore:hover { background: #218838; }
-.btn-delete { background: #dc3545; }
-.btn-delete:hover { background: #c82333; }
-p.empty-msg {
-  font-size: 15px;
-  color: #777;
-  font-style: italic;
+
+.btn-restore:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+}
+
+.btn-delete {
+    background: #dc3545;
+    color: #fff;
+    border: none;
+    padding: 6px 12px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-weight: 500;
+    transition: transform 0.2s, box-shadow 0.2s;
+    margin-left: 5px;
+}
+
+.btn-delete:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+}
+
+/* Empty message */
+.empty-msg {
+    font-style: italic;
+    color: #888;
+    padding: 15px 0;
+    text-align: center;
+}
+
+/* Scrollbar styling */
+.table-container::-webkit-scrollbar {
+    width: 8px;
+}
+
+.table-container::-webkit-scrollbar-track {
+    background: #f1f3f5;
+    border-radius: 8px;
+}
+
+.table-container::-webkit-scrollbar-thumb {
+    background: #ccc;
+    border-radius: 8px;
+}
+
+.table-container::-webkit-scrollbar-thumb:hover {
+    background: #999;
 }
