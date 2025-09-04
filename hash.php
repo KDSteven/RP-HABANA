@@ -1,3 +1,4 @@
 <?php
-echo password_hash("staff001", PASSWORD_DEFAULT);
+echo password_hash('IMS_RESET@Habana2k25', PASSWORD_DEFAULT);
+
 ?>

@@ -76,3 +76,9 @@
         .btn-reject { background: #dc3545; color: #fff; }
         .btn-approve:hover { background: #218838; }
         .btn-reject:hover { background: #c82333; }
+
+h1 {
+  font-family: 'Montserrat', sans-serif;
+  font-weight: 700; /* Try 800 or 900 for a much thicker look */
+  color: black;
+}

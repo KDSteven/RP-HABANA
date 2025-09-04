@@ -67,7 +67,8 @@
     background: #fff;
     border-radius: 12px;
     padding: 20px;
-    box-shadow: 0 4px 15px rgba(0,0,0,0.08);
+    border: #0000005b solid 1px;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.20);
     transition: transform 0.2s ease, box-shadow 0.2s ease;
     margin-bottom: 30px; /* increase gap between sections */
 }
@@ -90,7 +91,8 @@
     background: #fff;
     padding: 16px 20px;
     border-radius: 12px;
-    box-shadow: 0 4px 15px rgba(0,0,0,0.08);
+    border: #0000005b solid 1px;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.274);
     display: flex;
     flex-wrap: wrap;
     align-items: center;

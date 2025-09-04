@@ -162,7 +162,7 @@ $resetRequests = $conn->query("
     <title>Approvals - Admin</title>
    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
-    
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@800;900&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="css/notifications.css">
     <link rel="stylesheet" href="css/approvals.css">
     <link rel="stylesheet" href="css/sidebar.css">
@@ -220,7 +220,7 @@ $resetRequests = $conn->query("
     <a href="logout.php"><i class="fas fa-sign-out-alt"></i> Logout</a>
 </div>
 <div class="content">
-    <h1>Pending Transfer Requests</h1>
+    <h1>PENDING TRANSFER REQUESTS</h1>
 
     <?php if ($requests->num_rows > 0): ?>
         <!-- Show transfer requests -->
@@ -233,7 +233,7 @@ $resetRequests = $conn->query("
         <div class="alert alert-info"><?= $_SESSION['flash']; unset($_SESSION['flash']); ?></div>
     <?php endif; ?>
 
-    <h1>Pending Password Reset Requests</h1>
+    <h1>PENDING PASSWORD REQUESTS</h1>
 
     <?php if ($role !== 'admin'): ?>
         <p>Only Admin can view and process password reset requests.</p>
