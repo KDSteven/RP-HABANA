@@ -11,7 +11,8 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
     if (empty($username) || empty($password)) {
         $error = "Username and password are required.";
     } else {
-        $sql = "SELECT id, username, password, role, branch_id FROM users WHERE username = ?";
+        // ✅ Added must_change_password to query
+        $sql = "SELECT id, username, password, role, branch_id, must_change_password FROM users WHERE username = ?";
         $stmt = $conn->prepare($sql);
 
         if ($stmt) {
@@ -29,6 +30,13 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                     $_SESSION['role'] = $user['role'];
                     $_SESSION['branch_id'] = $user['branch_id']; // Only meaningful for staff
 
+                    // ✅ Step 5: check if user must change password
+                    if ((int)$user['must_change_password'] === 1) {
+                        header("Location: change_password.php");
+                        exit();
+                    }
+
+                    // Normal redirect
                     header("Location: dashboard.php");
                     exit();
                 } else {
@@ -47,6 +55,8 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
 
 $conn->close();
 ?>
+
+
 
 <!DOCTYPE html>
 <html lang="en">
