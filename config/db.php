@@ -2,7 +2,7 @@
 $servername = "localhost";  
 $username = "root";         
 $password = "";            
-$dbname = "rp habana";  
+$dbname = "rp_habana";  
 
 // Create connection
 $conn = new mysqli($servername, $username, $password, $dbname);
