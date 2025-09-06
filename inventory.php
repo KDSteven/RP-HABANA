@@ -797,7 +797,7 @@ $services_result = $services_stmt->get_result();
         </div>
         <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
-          
+          <form id="transferForm" autocomplete="off">
           <!-- Source Branch -->
           <div class="mb-3 px-3">
             <label for="source_branch" class="form-label fw-semibold">Source Branch</label>
