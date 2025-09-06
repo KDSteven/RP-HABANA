@@ -78,7 +78,6 @@ button:hover { background:#e67e00; }
 
     <a href="dashboard.php"><i class="fas fa-tv"></i> Dashboard</a>
     <a href="inventory.php"><i class="fas fa-tv"></i> Inventory</a>
-    <a href="transfer.php" class="active"><i class="fas fa-exchange-alt"></i> Transfer</a>
     <a href="logout.php"><i class="fas fa-sign-out-alt"></i> Logout</a>
 </div>
 

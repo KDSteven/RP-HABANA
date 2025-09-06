@@ -239,8 +239,11 @@ $services_result = $services_stmt->get_result();
     <?php endif; ?>
 
     <!-- Stockman Links -->
+     <?php
+      $transferNotif = $transferNotif ?? 0; // if not set, default to 0
+      ?>
     <?php if ($role === 'stockman'): ?>
-        <a href="transfer.php"><i class="fas fa-exchange-alt"></i> Transfer
+        <a href="inventory.php"><i class="fas fa-box"></i> Inventory
             <?php if ($transferNotif > 0): ?>
                 <span style="background:red;color:white;border-radius:50%;padding:3px 7px;font-size:12px;">
                     <?= $transferNotif ?>
@@ -311,6 +314,9 @@ $services_result = $services_stmt->get_result();
         </button>
         <button type="button" class="btn btn-success btn-sm" data-bs-toggle="modal" data-bs-target="#addStockModal">
           <i class="fas fa-boxes"></i> Add Stock
+        </button>
+        <button class="btn btn-warning" data-bs-toggle="modal" data-bs-target="#transferModal">
+          <i class="fas fa-exchange-alt me-1"></i> Request Transfer
         </button>
       </div>
     </div>
@@ -780,6 +786,80 @@ $services_result = $services_stmt->get_result();
   </div>
 </div>
 
+<!-- Stock Transfer Request Modal -->
+<div class="modal fade" id="transferModal" tabindex="-1" aria-labelledby="transferLabel" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-md">
+    <div class="modal-content fp-card">
+      <div class="modal-header fp-header">
+        <div class="d-flex align-items-center gap-2">
+          <i class="fas fa-exchange-alt"></i>
+          <h5 class="modal-title mb-0" id="forgotPasswordLabel">Password Recovery</h5>
+        </div>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+          
+          <!-- Source Branch -->
+          <div class="mb-3 px-3">
+            <label for="source_branch" class="form-label fw-semibold">Source Branch</label>
+            <div class="input-group">
+              <span class="input-group-text"><i class="fas fa-warehouse"></i></span>
+              <select class="form-select" id="source_branch" name="source_branch" required>
+                <option value="">Select source branch</option>
+              </select>
+            </div>
+            <div class="invalid-feedback">Please select a source branch.</div>
+          </div>
+
+          <!-- Product -->
+          <div class="mb-3 px-3">
+            <label for="product_id" class="form-label fw-semibold">Product</label>
+            <div class="input-group">
+              <span class="input-group-text"><i class="fas fa-box"></i></span>
+              <select class="form-select" id="product_id" name="product_id" required disabled>
+                <option value="">Select a branch first</option>
+              </select>
+            </div>
+            <div class="form-text">Select a source branch to load available products.</div>
+            <div class="invalid-feedback">Please select a product.</div>
+          </div>
+
+          <!-- Destination Branch -->
+          <div class="mb-3 px-3">
+            <label for="destination_branch" class="form-label fw-semibold">Destination Branch</label>
+            <div class="input-group">
+              <span class="input-group-text"><i class="fas fa-truck"></i></span>
+              <select class="form-select" id="destination_branch" name="destination_branch" required>
+                <option value="">Select destination branch</option>
+              </select>
+            </div>
+            <div class="invalid-feedback">Please select a destination branch.</div>
+          </div>
+
+          <!-- Quantity -->
+          <div class="mb-3 px-3">
+            <label for="quantity" class="form-label fw-semibold">Quantity</label>
+            <div class="input-group">
+              <span class="input-group-text"><i class="fas fa-sort-numeric-up"></i></span>
+              <input type="number" class="form-control" id="quantity" name="quantity" min="1" required placeholder="Enter quantity">
+            </div>
+            <div class="invalid-feedback">Please enter a valid quantity.</div>
+          </div>
+
+          <!-- Message / Feedback -->
+          <div id="transferMsg" class="mt-3 "></div>
+
+          <!-- Submit -->
+          <button type="submit" class="btn btn w-100 py-3" id="transferSubmit">
+            <span class="btn-label">Submit Request</span>
+            <span class="btn-spinner spinner-border spinner-border-sm ms-2 d-none" role="status" aria-hidden="true"></span>
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
+
 </body>
 </html>
 <script>
@@ -945,6 +1025,141 @@ document.addEventListener('DOMContentLoaded', function () {
     priceInput.addEventListener('input', calculateRetail);
     markupInput.addEventListener('input', calculateRetail);
 });
+//tranfer request
+(() => {
+  const modalEl   = document.getElementById('transferModal');
+  const form      = document.getElementById('transferForm');
+  const msg       = document.getElementById('transferMsg');
+  const btn       = document.getElementById('transferSubmit');
+  const spin      = btn.querySelector('.btn-spinner');
+  const label     = btn.querySelector('.btn-label');
+
+  const srcSel    = document.getElementById('source_branch');
+  const dstSel    = document.getElementById('destination_branch');
+  const prodSel   = document.getElementById('product_id');
+
+  let branchesLoaded = false;
+
+  // Load branches once when modal opens
+  modalEl.addEventListener('shown.bs.modal', () => {
+    if (branchesLoaded) return;
+
+    fetch('get_branches.php')
+      .then(r => r.json())
+      .then(list => {
+        srcSel.innerHTML = '<option value="">Select Branch</option>';
+        dstSel.innerHTML = '<option value="">Select Branch</option>';
+        (list || []).forEach(b => {
+          const o1 = new Option(b.branch_name, b.branch_id);
+          const o2 = new Option(b.branch_name, b.branch_id);
+          srcSel.add(o1);
+          dstSel.add(o2);
+        });
+        branchesLoaded = true;
+      })
+      .catch(() => {
+        srcSel.innerHTML = '<option value="">Failed to load</option>';
+        dstSel.innerHTML = '<option value="">Failed to load</option>';
+      });
+  });
+
+  // Prevent same source/destination & load products
+  srcSel.addEventListener('change', () => {
+    const branchId = srcSel.value;
+
+    // Disable same branch in destination
+    const selectedSrc = parseInt(branchId || 0, 10);
+    Array.from(dstSel.options).forEach(opt => {
+      if (!opt.value) return;
+      opt.disabled = parseInt(opt.value, 10) === selectedSrc;
+    });
+
+    // Reset product select
+    prodSel.disabled = true;
+    prodSel.size = 1;
+    prodSel.innerHTML = '<option value="">Select a branch first</option>';
+    if (!branchId) return;
+
+    fetch('get_products_by_branch.php?branch_id=' + encodeURIComponent(branchId))
+      .then(r => r.json())
+      .then(data => {
+        prodSel.disabled = false;
+        prodSel.innerHTML = '';
+        if (!Array.isArray(data) || !data.length) {
+          prodSel.innerHTML = '<option value="">No products available</option>';
+          return;
+        }
+        data.forEach(p => {
+          const opt = document.createElement('option');
+          opt.value = p.product_id; // must post product_id
+          opt.textContent = `${p.product_name} (Stock: ${p.stock})`;
+          prodSel.appendChild(opt);
+        });
+      })
+      .catch(() => {
+        prodSel.disabled = true;
+        prodSel.innerHTML = '<option value="">Failed to load products</option>';
+      });
+  });
+
+// Expand product select (no overlay)
+(() => {
+  const prodSel = document.getElementById('product_id');
+  if (!prodSel) return;
+  const expand = () => { const n = Math.min(6, prodSel.options.length || 6); if (n>1) prodSel.size = n; };
+  const collapse = () => { prodSel.size = 1; };
+  prodSel.addEventListener('focus', expand);
+  prodSel.addEventListener('blur', collapse);
+  prodSel.addEventListener('change', collapse);
+})();
+
+  // Submit via AJAX
+  form.addEventListener('submit', (e) => {
+    e.preventDefault();
+    msg.innerHTML = '';
+    spin.classList.remove('d-none');
+    btn.disabled = true; label.textContent = 'Submitting...';
+
+    fetch('transfer_request_create.php', {
+      method: 'POST',
+      body: new FormData(form)
+    })
+    .then(r => r.json())
+    .then(d => {
+      const cls = d.status === 'success' ? 'alert alert-success' : 'alert alert-danger';
+      msg.innerHTML = `<div class="${cls}" style="border-radius:12px;">${d.message}</div>`;
+      if (d.status === 'success') {
+        form.reset();
+        prodSel.disabled = true;
+        prodSel.innerHTML = '<option value="">Select a branch first</option>';
+        setTimeout(() => {
+          const m = bootstrap.Modal.getInstance(modalEl);
+          m?.hide();
+          msg.innerHTML = '';
+          // TODO: refresh your inventory table here if needed
+        }, 900);
+      }
+    })
+    .catch(() => {
+      msg.innerHTML = `<div class="alert alert-danger" style="border-radius:12px;">Something went wrong. Please try again.</div>`;
+    })
+    .finally(() => {
+      spin.classList.add('d-none');
+      btn.disabled = false; label.textContent = 'Submit Request';
+    });
+  });
+
+  // Hard reset on close
+  modalEl.addEventListener('hidden.bs.modal', () => {
+    form.reset();
+    msg.innerHTML = '';
+    prodSel.disabled = true;
+    prodSel.size = 1;
+    prodSel.innerHTML = '<option value="">Select a branch first</option>';
+    // re-enable all dest options
+    Array.from(dstSel.options).forEach(opt => opt.disabled = false);
+  });
+})();
 </script>
 
 </body>

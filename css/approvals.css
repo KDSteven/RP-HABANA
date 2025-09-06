@@ -1,84 +1,98 @@
-  * {
-      margin: 0; padding: 0; box-sizing: border-box;
-      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-    }
-        body {
-      display: flex;
-      height: 100vh;
-      background: #f5f5f5;
-      color: #333;
-    }
+/* Content fills space to the right of the sidebar */
+.content{
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 24px;             /* match your other pages */
+  box-sizing: border-box;
+  background: #f5f5f5;
+}
 
-    .sidebar {
-      width: 220px;
-      background-color: #f7931e;
-      padding: 30px 15px;
-      color: white;
-    }
+/* FULL-WIDTH approvals: no max-width cap */
+.approvals-wrap{
+  width: 100%;
+  max-width: none;           /* <= remove the old 980px cap */
+  margin: 0;                 /* no centering */
+  padding: 10px 10px;                /* optional: or keep padding if you want */
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  box-sizing: border-box;
+}
 
-    .sidebar h2 {
-      margin-bottom: 30px;
-      font-size: 22px;
-      text-align: center;
-    }
+/* Cards fill the wrapper */
+.approval-section{
+  width: 100%;
+  background: #fff;
+  border: 1px solid #0000003b;
+  border-radius: 12px;
+  padding: 20px 22px;
+  box-sizing: border-box;
+}
 
-    .sidebar a {
-      display: flex;
-      align-items: center;
-      text-decoration: none;
-      color: white;
-      padding: 12px 15px;
-      margin: 6px 0;
-      border-radius: 8px;
-      transition: background 0.2s;
-    }
+/* Tables inside cards should stretch too */
+.approval-section table{
+  width: 100%;
+  border-collapse: collapse;
+}
+.approval-section th, .approval-section td{
+  padding: 12px 14px;
+  border-bottom: 1px solid #eee;
+}
+.approval-section th{
+  background: #f7931e;
+  color: #fff;
+}
+/* Only style the table header cells */
+.approval-section table thead th {
+  background: linear-gradient(90deg, #f7931e, #ffb347);
+  color: #fff;
+  font-weight: 600;
+  border: none;
+}
 
-    .sidebar a:hover, .sidebar a.active {
-      background-color: #e67e00;
-    }
+/* Restore your custom buttons */
+.btn-approve { background: #28a745; color: #fff; }
+.btn-reject  { background: #dc3545; color: #fff; }
 
-    .sidebar a i {
-      margin-right: 10px;
-      font-size: 16px;
-    }
+.btn-approve:hover { background: #218838; }
+.btn-reject:hover  { background: #c82333; }
 
-    .content {
-      flex: 1;
-      padding: 40px;
-      overflow-y: auto;
-    }
 
-    .card {
-      background: white;
-      padding: 30px;
-      border-radius: 10px;
-      box-shadow: 0 4px 10px rgba(0,0,0,0.1);
-      margin-bottom: 30px;
-    }
 
-    .card h2 {
-      margin-bottom: 20px;
-      font-size: 22px;
-      color: #333;
-    }
-        table {
-            width: 100%; border-collapse: collapse; background: #fff; border-radius: 8px; overflow: hidden;
-            box-shadow: 0 3px 8px rgba(0,0,0,0.1);
-        }
-        th, td { padding: 12px; text-align: left; border-bottom: 1px solid #ddd; }
-        th { background: #f7931e; color: #fff; }
-        tr:hover { background: #f9f9f9; }
+.approval-section td {
+  border: none;               /* remove default borders */
+  background-color: #e7e7e7;
+}
 
-        .btn {
-            padding: 6px 12px; border: none; border-radius: 5px; cursor: pointer; font-weight: bold;
-        }
-        .btn-approve { background: #28a745; color: #fff; }
-        .btn-reject { background: #dc3545; color: #fff; }
-        .btn-approve:hover { background: #218838; }
-        .btn-reject:hover { background: #c82333; }
+/* optional: keep corners rounded on the header */
+.approval-section table thead th:first-child {
+  border-top-left-radius: 8px;
+}
+.approval-section table thead th:last-child {
+  border-top-right-radius: 8px;
+}
 
-h1 {
-  font-family: 'Montserrat', sans-serif;
-  font-weight: 700; /* Try 800 or 900 for a much thicker look */
-  color: black;
+/* Make all toasts rounded and bigger */
+.toast {
+  border-radius: 12px;
+  min-width: 300px;
+  font-size: 0.95rem;
+}
+
+/* Customize the info style */
+.toast.bg-info {
+  background: linear-gradient(90deg, #17a2b8, #20c997);
+  color: #fff;
+}
+
+/* Success */
+.toast.bg-success {
+  background: linear-gradient(90deg, #28a745, #34ce57);
+  color: #fff;
+}
+
+/* Danger */
+.toast.bg-danger {
+  background: linear-gradient(90deg, #dc3545, #e4606d);
+  color: #fff;
 }

@@ -282,8 +282,11 @@ if (empty($serviceJobData)) {
     <?php endif; ?>
 
     <!-- Stockman Links -->
+     <?php
+        $transferNotif = $transferNotif ?? 0; // if not set, default to 0
+        ?>
     <?php if ($role === 'stockman'): ?>
-        <a href="transfer.php"><i class="fas fa-exchange-alt"></i> Transfer
+        <a href="inventory.php"><i class="fas fa-box"></i> Inventory
             <?php if ($transferNotif > 0): ?>
                 <span style="background:red;color:white;border-radius:50%;padding:3px 7px;font-size:12px;">
                     <?= $transferNotif ?>

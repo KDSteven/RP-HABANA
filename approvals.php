@@ -70,7 +70,19 @@ if (isset($_POST['action']) && isset($_POST['request_id'])) {
 
     header("Location: approvals.php?success=approved");
     exit;
-}
+}   elseif ($action === 'rejected') {
+        // Simply mark as rejected, record who decided
+        $stmt = $conn->prepare("
+            UPDATE transfer_requests 
+            SET status = 'rejected', decision_date = NOW(), decided_by = ? 
+            WHERE request_id = ?
+        ");
+        $stmt->bind_param("ii", $_SESSION['user_id'], $request_id);
+        $stmt->execute();
+
+        header("Location: approvals.php?success=rejected");
+        exit;
+    }
     }
 }
 
@@ -219,62 +231,172 @@ $resetRequests = $conn->query("
 
     <a href="logout.php"><i class="fas fa-sign-out-alt"></i> Logout</a>
 </div>
-<div class="content">
-    <h1>PENDING TRANSFER REQUESTS</h1>
+
+<!-- ===== Transfer Approvals (box #1) ===== -->
+<div class="approvals-wrap">
+    <div class="approval-section">
+        <div class="section-title">
+            <h2><i class="fas fa-exchange-alt fa-xs text-warning"></i> Pending Transfer Requests</h2>
+        </div>
 
     <?php if ($requests->num_rows > 0): ?>
-        <!-- Show transfer requests -->
-        <table> ... </table>
+        <table class="table table-striped table-hover align-middle">
+        <thead class="table-dark">
+            <tr>
+            <th>Product</th>
+            <th>Qty</th>
+            <th>Source</th>
+            <th>Destination</th>
+            <th>Requested By</th>
+            <th>Requested At</th>
+            <th style="width:220px;">Action</th>
+            </tr>
+        </thead>
+        <tbody>
+            <?php while ($row = $requests->fetch_assoc()): ?>
+            <tr>
+                <td><?= htmlspecialchars($row['product_name']) ?></td>
+                <td><?= (int)$row['quantity'] ?></td>
+                <td><?= htmlspecialchars($row['source_name']) ?></td>
+                <td><?= htmlspecialchars($row['dest_name']) ?></td>
+                <td><?= htmlspecialchars($row['requested_by_user']) ?></td>
+                <td><?= date('Y-m-d H:i', strtotime($row['request_date'])) ?></td>
+                <td>
+                <form method="POST" class="d-inline">
+                    <input type="hidden" name="request_id" value="<?= (int)$row['request_id'] ?>">
+                    <button type="submit" name="action" value="approved" class="btn btn-sm btn-success">
+                    <i class="fas fa-check"></i> Approve
+                    </button>
+                </form>
+                <form method="POST" class="d-inline ms-1">
+                    <input type="hidden" name="request_id" value="<?= (int)$row['request_id'] ?>">
+                    <button type="submit" name="action" value="rejected" class="btn btn-sm btn-danger">
+                    <i class="fas fa-times"></i> Reject
+                    </button>
+                </form>
+                </td>
+            </tr>
+            <?php endwhile; ?>
+        </tbody>
+        </table>
     <?php else: ?>
         <p>No pending transfer requests.</p>
     <?php endif; ?>
+</div>
 
     <?php if (!empty($_SESSION['flash'])): ?>
-        <div class="alert alert-info"><?= $_SESSION['flash']; unset($_SESSION['flash']); ?></div>
+        <div id="flashMessage" data-message="<?= htmlentities($_SESSION['flash'], ENT_QUOTES, 'UTF-8') ?>"></div>
+        <?php unset($_SESSION['flash']); ?>
     <?php endif; ?>
 
-    <h1>PENDING PASSWORD REQUESTS</h1>
+
+    <!-- ===== Password Reset Approvals (box #2) ===== -->
+    <div class="approval-section">
+        <div class="section-title">
+            <h2><i class="fas fa-key fa-xs text-primary"></i> Pending Password Reset Requests</h2>
+        </div>
 
     <?php if ($role !== 'admin'): ?>
         <p>Only Admin can view and process password reset requests.</p>
     <?php else: ?>
         <?php if ($resetRequests && $resetRequests->num_rows > 0): ?>
-            <table>
-                <thead>
-                    <tr>
-                        <th>Username</th>
-                        <th>Role</th>
-                        <th>Requested At</th>
-                        <th>Action</th>
-                    </tr>
-                </thead>
-                <tbody>
-                <?php while ($r = $resetRequests->fetch_assoc()): ?>
-                    <tr>
-                        <td><?= htmlspecialchars($r['username']) ?></td>
-                        <td><?= htmlspecialchars($r['role']) ?></td>
-                        <td><?= date('Y-m-d H:i', strtotime($r['requested_at'])) ?></td>
-                        <td>
-                            <form method="POST" style="display:inline-block;">
-                                <input type="hidden" name="reset_id" value="<?= (int)$r['reset_id'] ?>">
-                                <button type="submit" name="reset_action" value="approve" class="btn btn-approve">
-                                    Approve & Generate Temp Password
-                                </button>
-                                <button type="submit" name="reset_action" value="reject" class="btn btn-reject">
-                                    Reject
-                                </button>
-                            </form>
-                        </td>
-                    </tr>
-                <?php endwhile; ?>
-                </tbody>
-            </table>
+        <table class="table table-striped table-hover align-middle">
+            <thead class="table-dark">
+            <tr>
+                <th>Username</th>
+                <th>Role</th>
+                <th>Requested At</th>
+                <th>Action</th>
+            </tr>
+            </thead>
+            <tbody>
+            <?php while ($r = $resetRequests->fetch_assoc()): ?>
+            <tr>
+                <td><?= htmlspecialchars($r['username']) ?></td>
+                <td><?= htmlspecialchars($r['role']) ?></td>
+                <td><?= date('Y-m-d H:i', strtotime($r['requested_at'])) ?></td>
+                <td>
+                <form method="POST" class="d-inline">
+                    <input type="hidden" name="reset_id" value="<?= (int)$r['reset_id'] ?>">
+                    <button type="submit" name="reset_action" value="approve" class="btn btn-approve">
+                    Approve & Generate Temp Password
+                    </button>
+                    <button type="submit" name="reset_action" value="reject" class="btn btn-reject ms-1">
+                    Reject
+                    </button>
+                </form>
+                </td>
+            </tr>
+            <?php endwhile; ?>
+            </tbody>
+        </table>
         <?php else: ?>
-            <p>No pending password reset requests.</p>
+        <p>No pending password reset requests.</p>
         <?php endif; ?>
     <?php endif; ?>
+    </div>
 </div>
 
+<!-- Toast container -->
+<div class="toast-container position-fixed top-0 end-0 p-3" style="z-index:1100">
+  <div id="appToast" class="toast border-0 shadow-lg" role="alert" aria-live="assertive" aria-atomic="true">
+    <div class="toast-header bg-primary text-white">
+      <i class="fas fa-info-circle me-2"></i>
+      <strong class="me-auto">System Notice</strong>
+      <small>just now</small>
+      <button type="button" class="btn-close btn-close-white ms-2 mb-1" data-bs-dismiss="toast" aria-label="Close"></button>
+    </div>
+    <div class="toast-body" id="appToastBody">
+      Action completed.
+    </div>
+  </div>
+</div>
+
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
 <script src="notifications.js"></script>
+
+<script>
+(function () {
+  // Helper to show a toast with a specific color
+  function showToast(message, type) {
+    const toastEl   = document.getElementById('appToast');
+    const toastBody = document.getElementById('appToastBody');
+    if (!toastEl || !toastBody) return;
+
+    // Reset bg classes, then add the one we need
+    toastEl.classList.remove('bg-success','bg-danger','bg-info','bg-warning','bg-primary','bg-secondary','bg-dark');
+    const map = { success:'bg-success', danger:'bg-danger', info:'bg-info', warning:'bg-warning' };
+    toastEl.classList.add(map[type] || 'bg-info');
+
+    toastBody.innerHTML = message;
+
+    const toast = new bootstrap.Toast(toastEl, { delay: 3000 });
+    toast.show();
+  }
+
+  // 1) Handle transfer approve/reject via ?success=approved|rejected
+  const url = new URL(window.location.href);
+  const success = url.searchParams.get('success');
+  if (success === 'approved') {
+    showToast('Transfer request approved.', 'success');
+  } else if (success === 'rejected') {
+    showToast('Transfer request rejected.', 'danger');
+  }
+  // Clean the URL so refresh won’t re-toast
+  if (success) {
+    url.searchParams.delete('success');
+    window.history.replaceState({}, '', url.pathname + (url.search ? '?' + url.searchParams.toString() : ''));
+  }
+
+  // 2) Handle password reset flash (from session)
+  const flashEl = document.getElementById('flashMessage');
+  if (flashEl) {
+    showToast(flashEl.dataset.message || 'Action completed.', 'info');
+    flashEl.remove();
+  }
+})();
+</script>
+
 </body>
 </html>
