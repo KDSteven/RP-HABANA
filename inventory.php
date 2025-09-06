@@ -793,7 +793,7 @@ $services_result = $services_stmt->get_result();
       <div class="modal-header fp-header">
         <div class="d-flex align-items-center gap-2">
           <i class="fas fa-exchange-alt"></i>
-          <h5 class="modal-title mb-0" id="forgotPasswordLabel">Password Recovery</h5>
+          <h5 class="modal-title mb-0" id="transferstockLabel">Stock Transfer Request</h5>
         </div>
         <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
@@ -859,6 +859,20 @@ $services_result = $services_stmt->get_result();
   </div>
 </div>
 
+<!-- Toast container -->
+<div class="toast-container position-fixed top-0 end-0 p-3" style="z-index:1100">
+  <div id="appToast" class="toast border-0 shadow-lg" role="alert" aria-live="assertive" aria-atomic="true">
+    <div class="toast-header bg-primary text-white">
+      <i class="fas fa-info-circle me-2"></i>
+      <strong class="me-auto">System Notice</strong>
+      <small>just now</small>
+      <button type="button" class="btn-close btn-close-white ms-2 mb-1" data-bs-dismiss="toast" aria-label="Close"></button>
+    </div>
+    <div class="toast-body" id="appToastBody">
+      Action completed.
+    </div>
+  </div>
+</div>
 
 </body>
 </html>
@@ -1025,6 +1039,7 @@ document.addEventListener('DOMContentLoaded', function () {
     priceInput.addEventListener('input', calculateRetail);
     markupInput.addEventListener('input', calculateRetail);
 });
+
 //tranfer request
 (() => {
   const modalEl   = document.getElementById('transferModal');
@@ -1126,22 +1141,21 @@ document.addEventListener('DOMContentLoaded', function () {
     })
     .then(r => r.json())
     .then(d => {
-      const cls = d.status === 'success' ? 'alert alert-success' : 'alert alert-danger';
-      msg.innerHTML = `<div class="${cls}" style="border-radius:12px;">${d.message}</div>`;
-      if (d.status === 'success') {
+      const success = d.status === 'success';
+      showToast(d.message, success ? 'success' : 'danger');
+
+      if (success) {
         form.reset();
         prodSel.disabled = true;
         prodSel.innerHTML = '<option value="">Select a branch first</option>';
         setTimeout(() => {
           const m = bootstrap.Modal.getInstance(modalEl);
           m?.hide();
-          msg.innerHTML = '';
-          // TODO: refresh your inventory table here if needed
         }, 900);
       }
     })
     .catch(() => {
-      msg.innerHTML = `<div class="alert alert-danger" style="border-radius:12px;">Something went wrong. Please try again.</div>`;
+      showToast('Something went wrong. Please try again.', 'danger');
     })
     .finally(() => {
       spin.classList.add('d-none');
@@ -1160,6 +1174,31 @@ document.addEventListener('DOMContentLoaded', function () {
     Array.from(dstSel.options).forEach(opt => opt.disabled = false);
   });
 })();
+
+//for toast container
+function showToast(message, type = 'info') {
+  const toastEl   = document.getElementById('appToast');
+  const toastBody = document.getElementById('appToastBody');
+  if (!toastEl || !toastBody) return;
+
+  // reset classes
+  toastEl.classList.remove('bg-success','bg-danger','bg-info','bg-warning');
+  
+  // map type to class
+  const map = {
+    success: 'bg-success',
+    danger:  'bg-danger',
+    info:    'bg-info',
+    warning: 'bg-warning'
+  };
+  toastEl.querySelector('.toast-header').className = `toast-header text-white ${map[type] || 'bg-info'}`;
+  
+  toastBody.textContent = message;
+
+  const bsToast = new bootstrap.Toast(toastEl);
+  bsToast.show();
+}
+
 </script>
 
 </body>

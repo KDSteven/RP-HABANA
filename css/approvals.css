@@ -72,27 +72,28 @@
   border-top-right-radius: 8px;
 }
 
-/* Make all toasts rounded and bigger */
-.toast {
+/* Toast base */
+#appToast.toast {
+  border: 0;
   border-radius: 12px;
-  min-width: 300px;
-  font-size: 0.95rem;
+  overflow: hidden;
+  box-shadow: 0 8px 24px rgba(0,0,0,.15);
 }
 
-/* Customize the info style */
-.toast.bg-info {
-  background: linear-gradient(90deg, #17a2b8, #20c997);
-  color: #fff;
+/* Toast body always white/black */
+#appToast .toast-body {
+  background: #fff;
+  color: #000;
+  font-weight: 500;
+  padding: 1rem;
 }
 
-/* Success */
-.toast.bg-success {
-  background: linear-gradient(90deg, #28a745, #34ce57);
-  color: #fff;
+
+/* Variants */
+#appToast .toast-header.bg-success {
+  background: linear-gradient(135deg,#28a745,#1e7e34) !important;
+}
+#appToast .toast-header.bg-danger {
+  background: linear-gradient(135deg,#dc3545,#b02a37) !important;
 }
 
-/* Danger */
-.toast.bg-danger {
-  background: linear-gradient(90deg, #dc3545, #e4606d);
-  color: #fff;
-}

@@ -363,7 +363,7 @@ $resetRequests = $conn->query("
     const toastEl   = document.getElementById('appToast');
     const toastBody = document.getElementById('appToastBody');
     if (!toastEl || !toastBody) return;
-
+    
     // Reset bg classes, then add the one we need
     toastEl.classList.remove('bg-success','bg-danger','bg-info','bg-warning','bg-primary','bg-secondary','bg-dark');
     const map = { success:'bg-success', danger:'bg-danger', info:'bg-info', warning:'bg-warning' };
