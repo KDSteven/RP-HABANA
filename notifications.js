@@ -3,14 +3,12 @@
 // ===============================
 console.log("✅ notifications.js is loaded");
 
-
-
 let latestNotifications = [];
 let lastCount = parseInt(localStorage.getItem('lastNotifCount')) || 0;
 let lastPopupTime = parseInt(localStorage.getItem('lastPopupTime')) || 0;
 let modalOpen = false;
 const POLL_INTERVAL = 5000;  // Check every 5s
-const POPUP_INTERVAL = 6000000; // Show popup every 30s if items exist
+const POPUP_INTERVAL = 6000000; // Show popup every 100 min if items exist
 
 // Request desktop notification permission
 if (Notification.permission !== "granted") Notification.requestPermission();
@@ -18,27 +16,26 @@ if (Notification.permission !== "granted") Notification.requestPermission();
 // ===============================
 // FETCH NOTIFICATIONS
 // ===============================
-function fetchNotifications() {  console.log("⏳ Running fetchNotifications...");
+function fetchNotifications() {
+    console.log("⏳ Running fetchNotifications...");
     fetch('get_notifications.php')
         .then(r => r.json())
-        .then(data => { console.log("DEBUG: API Response", data);
+        .then(data => {
             updateBadge(data.count);
             latestNotifications = data.items;
 
             const now = Date.now();
-const newNotifications = data.count > lastCount; // Check if there are new ones
+            const newNotifications = data.count > lastCount;
 
-if ((newNotifications || (data.count > 0 && now - lastPopupTime >= POPUP_INTERVAL)) && !modalOpen) {
-    console.log("✅ Triggering popup now...");
-    lastPopupTime = now; // ✅ Update timestamp
-    localStorage.setItem('lastPopupTime', now); // ✅ Persist
-    openNotificationModal(data.items);
-    playSound();
-    showDesktopNotification("Stock Alert", "You have new stock alerts!");
-    broadcastPopup();
-}
-
-
+            if ((newNotifications || (data.count > 0 && now - lastPopupTime >= POPUP_INTERVAL)) && !modalOpen) {
+                console.log("✅ Triggering popup now...");
+                lastPopupTime = now;
+                localStorage.setItem('lastPopupTime', now);
+                openNotificationModal(data.items);
+                playSound();
+                showDesktopNotification("Stock Alert", "You have new stock alerts!");
+                broadcastPopup();
+            }
 
             lastCount = data.count;
             localStorage.setItem('lastNotifCount', lastCount);
@@ -95,21 +92,15 @@ function openNotificationModal(items) {
     // Categorize items
     const outItems = items.filter(i => i.category === 'out');
     const criticalItems = items.filter(i => i.category === 'critical');
-    const lowItems = items.filter(i => i.category === 'low');
 
     overlay.innerHTML = `
-        <div class="notif-modal">
-            <div class="notif-header">📢 Stock Alerts</div>
+        <div class="notif-modal modern">
+            <div class="notif-header"><i class="fas fa-bell"></i> Stock Alerts</div>
             <div class="notif-tabs">
                 <div class="notif-tab active" data-tab="out">Out (${outItems.length})</div>
                 <div class="notif-tab" data-tab="critical">Critical (${criticalItems.length})</div>
-                <div class="notif-tab" data-tab="low">Low (${lowItems.length})</div>
             </div>
             <div class="notif-content" id="notifContent"></div>
-            <div class="notif-footer">
-                <button id="markSeenBtn" class="btn-primary">Mark as Seen</button>
-                <button id="closeModalBtn" class="btn-warning">Close</button>
-            </div>
         </div>
     `;
     document.body.appendChild(overlay);
@@ -125,33 +116,12 @@ function openNotificationModal(items) {
         });
     });
 
-    // Close Modal
-    document.getElementById('closeModalBtn').onclick = closeModal;
     overlay.onclick = e => { if (e.target.id === 'notifModalOverlay') closeModal(); };
     document.addEventListener('keydown', escClose);
 
-    // Mark as Seen
-    document.getElementById('markSeenBtn').addEventListener('click', () => {
-        fetch('mark_seen.php', { method: 'POST' }).then(() => {
-            closeModal();
-            const badge = document.getElementById('notifCount');
-            if (badge) badge.style.display = 'none';
-            lastCount = 0;
-            localStorage.setItem('lastNotifCount', 0);
-        });
-    });
-
     function renderTable(type) {
         const content = document.getElementById('notifContent');
-        let rows = [];
-
-        if (type === 'out') {
-            rows = outItems;
-        } else if (type === 'critical') {
-            rows = criticalItems;
-        } else {
-            rows = lowItems;
-        }
+        const rows = type === 'out' ? outItems : criticalItems;
 
         const html = rows.length
             ? `<table class="notif-table">

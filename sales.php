@@ -67,11 +67,14 @@ if($reportType === 'itemized'){
             p.category,
             si.quantity,
             si.price,
-            (si.quantity*si.price) AS total_amount
+            (si.quantity*si.price) AS total_amount,
+            IFNULL(r.refund_amount,0) AS refunded_amount,
+            IFNULL(r.refund_reason,'') AS refund_reason
         FROM sales s
         JOIN sales_items si ON s.sale_id = si.sale_id
         JOIN products p ON si.product_id = p.product_id
         LEFT JOIN branches b ON s.branch_id = b.branch_id
+        LEFT JOIN sales_refunds r ON r.sale_id = s.sale_id
         WHERE s.sale_date BETWEEN '$startDate' AND '$endDate'
         $branchCondition
         ORDER BY s.sale_date DESC
@@ -156,6 +159,7 @@ $salesReportResult = $conn->query($query);
         <option value="daily" <?= $reportType==='daily'?'selected':'' ?>>Daily</option>
         <option value="weekly" <?= $reportType==='weekly'?'selected':'' ?>>Weekly</option>
         <option value="monthly" <?= $reportType==='monthly'?'selected':'' ?>>Monthly</option>
+
     </select>
     <input type="month" name="month" value="<?= $selectedMonth ?>" onchange="this.form.submit()">
 </form>
@@ -166,7 +170,8 @@ $salesReportResult = $conn->query($query);
 <thead>
 <?php if($reportType==='itemized'): ?>
 <tr>
-<th>Sale ID</th><th>Date</th><th>Period</th><th>Branch</th><th>Product</th><th>Category</th><th>Qty</th><th>Price</th><th>Total</th>
+<th>Sale ID</th><th>Date</th><th>Period</th><th>Branch</th><th>Product</th><th>Category</th><th>Qty</th><th>Price</th><th>Total</th> <th>Refunded Amount</th>
+    <th>Refund Reason</th>
 </tr>
 <?php else: ?>
 <tr>
@@ -196,7 +201,14 @@ if ($salesReportResult && $salesReportResult->num_rows > 0) {
 <td><?= $row['quantity'] ?></td>
 <td>₱<?= number_format($row['price'],2) ?></td>
 <td>₱<?= number_format($row['total_amount'],2) ?></td>
+<td><?php if($row['refunded_amount'] > 0): ?>
+        <span class="text-danger fw-bold">₱<?= number_format($row['refunded_amount'],2) ?></span>
+    <?php else: ?>
+        ₱0.00
+    <?php endif; ?></td>
+    <td><?= htmlspecialchars($row['refund_reason'] ?? '') ?></td>
 <?php else: ?>
+    
 <td><?= $row['period'] ?></td>
 <td>₱<?= number_format($row['total_sales'],2) ?></td>
 <td><?= $row['total_transactions'] ?></td>

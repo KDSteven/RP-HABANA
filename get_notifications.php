@@ -11,14 +11,15 @@ if ($role !== 'admin' && $branch_id) {
     $where = "AND i.branch_id = $branch_id";
 }
 
-// Fetch items with stock = 0 OR stock <= critical_point
+// Fetch items with stock = 0 OR stock <= critical_point, excluding archived inventory
 $query = "
 SELECT p.product_name, i.stock, p.critical_point, p.ceiling_point, b.branch_name
 FROM inventory i
 INNER JOIN products p ON i.product_id = p.product_id
 INNER JOIN branches b ON i.branch_id = b.branch_id
-WHERE (i.stock = 0 OR i.stock <= p.critical_point)
-$where
+WHERE i.archived = 0
+  AND (i.stock = 0 OR i.stock <= p.critical_point)
+  $where
 ";
 
 $result = $conn->query($query);

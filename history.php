@@ -4,39 +4,72 @@ include 'config/db.php';
 
 // Check if user is logged in
 if (!isset($_SESSION['role'])) {
-    header("Location: index.html"); // redirect to login if not logged in
+    header("Location: index.html");
     exit;
 }
 
-// Get role and branch_id from session
 $role = $_SESSION['role'];
 $branch_id = $_SESSION['branch_id'] ?? 0;
 
-$role = $_SESSION['role'];
-$branch_id = isset($_SESSION['branch_id']) ? (int)$_SESSION['branch_id'] : 0;
+// --- FILTERS ---
+$where = [];
+$params = [];
+$types = "";
 
-// Fetch sales history based on role
-if ($role === 'staff') {
-  // Staff sees only sales from their own branch
-  $stmt = $conn->prepare("
-      SELECT s.sale_id, s.sale_date, s.total, b.branch_name 
-      FROM sales s
-      JOIN branches b ON s.branch_id = b.branch_id
-      WHERE s.branch_id = ?
-      ORDER BY s.sale_date DESC
-  ");
-  $stmt->bind_param("i", $branch_id);
-} else {
-  // Admin sees all sales
-  $stmt = $conn->prepare("
-      SELECT s.sale_id, s.sale_date, s.total, b.branch_name 
-      FROM sales s
-      JOIN branches b ON s.branch_id = b.branch_id
-      ORDER BY s.sale_date DESC
-  ");
+// Date range filter
+if (!empty($_GET['from_date']) && !empty($_GET['to_date'])) {
+    $where[] = "DATE(s.sale_date) BETWEEN ? AND ?";
+    $params[] = $_GET['from_date'];
+    $params[] = $_GET['to_date'];
+    $types .= "ss";
 }
+
+// Sale ID filter
+if (!empty($_GET['sale_id'])) {
+    $where[] = "s.sale_id = ?";
+    $params[] = (int)$_GET['sale_id'];
+    $types .= "i";
+}
+
+// Branch filter
+if ($role === 'staff') {
+    $where[] = "s.branch_id = ?";
+    $params[] = $branch_id;
+    $types .= "i";
+} elseif (!empty($_GET['branch_id'])) {
+    $where[] = "s.branch_id = ?";
+    $params[] = (int)$_GET['branch_id'];
+    $types .= "i";
+}
+
+$sql = "
+SELECT s.sale_id, s.sale_date, s.total, b.branch_name
+FROM sales s
+JOIN branches b ON s.branch_id = b.branch_id
+WHERE NOT EXISTS (
+    SELECT 1 
+    FROM sales_refunds r
+    WHERE r.sale_id = s.sale_id 
+      AND r.refund_amount >= s.total
+)
+";
+
+if ($where) {
+    $sql .= " AND " . implode(" AND ", $where);
+}
+
+$sql .= " ORDER BY s.sale_date DESC";
+
+$stmt = $conn->prepare($sql);
+
+if ($params) {
+    $stmt->bind_param($types, ...$params);
+}
+
 $stmt->execute();
 $sales_result = $stmt->get_result();
+
+
 $pending = 0;
 if ($role === 'admin') {
     $result = $conn->query("SELECT COUNT(*) AS pending FROM transfer_requests WHERE status='Pending'");
@@ -46,105 +79,22 @@ if ($role === 'admin') {
     }
 }
 
-?>
 
+?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
+  <meta charset="UTF-8">
   <title>Sales History</title>
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" >
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
- <link rel="stylesheet" href="css/sidebar.css">
-<audio id="notifSound" src="img/notif.mp3" preload="auto"></audio>
-
-  <style>
-   * {
-      margin: 0; padding: 0; box-sizing: border-box;
-      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-    }
-
-    body {
-      display: flex;
-      height: 100vh;
-      background: #f5f5f5;
-      color: #333;
-    }
-
-    .sidebar {
-      width: 220px;
-      background-color: #f7931e;
-      padding: 30px 15px;
-      color: white;
-    }
-
-    .sidebar h2 {
-      margin-bottom: 30px;
-      font-size: 22px;
-      text-align: center;
-    }
-
-    .sidebar a {
-      display: flex;
-      align-items: center;
-      text-decoration: none;
-      color: white;
-      padding: 12px 15px;
-      margin: 6px 0;
-      border-radius: 8px;
-      transition: background 0.2s;
-    }
-
-    .sidebar a:hover, .sidebar a.active {
-      background-color: #e67e00;
-    }
-
-    .sidebar a i {
-      margin-right: 10px;
-      font-size: 16px;
-    }
-
-    h1 {
-      color: #f7931e;
-      text-align: center;
-    }
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      margin-top: 20px;
-      background: white;
-      border-radius: 5px;
-      overflow: hidden;
-      box-shadow: 0 4px 8px rgba(0,0,0,0.1);
-    }
-    th, td {
-      border: 1px solid #ccc;
-      padding: 10px;
-      text-align: left;
-    }
-    th {
-      background-color: #f7931e;
-      color: white;
-    }
-    a.view-link {
-      color: #f7931e;
-      text-decoration: none;
-      font-weight: bold;
-      transition: color 0.3s ease;
-    }
-    a.view-link:hover {
-      text-decoration: underline;
-      color: #e67e00;
-    }
-    .content {
-      flex: 1;
-      padding: 40px;
-      overflow-y: auto;
-    }
-  </style>
+  <link rel="stylesheet" href="css/notifications.css">
+  <link rel="stylesheet" href="css/history.css?v2">
+    <link rel="stylesheet" href="css/sidebar.css">
+<audio id="notifSound" src="notif.mp3" preload="auto"></audio>
 </head>
 <body>
- <div class="sidebar">
+  <div class="sidebar">
     <h2>
     <?= strtoupper($role) ?>
     <span class="notif-wrapper">
@@ -174,22 +124,74 @@ if ($role === 'admin') {
 
     <a href="index.html"><i class="fas fa-sign-out-alt"></i> Logout</a>
 </div>
+<div class="container py-5">
 
 
-  <div class="content">
-    <h1>Sales History</h1>
+ <!-- Page Header -->
+  <div class="page-header">
+    <h2><i class="fas fa-history"></i> Sales History</h2>
+  </div>
+
+  <!-- Filter Card -->
+  <form method="GET" class="row g-3 mb-4">
+  <div class="col-md-3">
+    <label class="form-label">From</label>
+    <input type="date" name="from_date" class="form-control" 
+           value="<?= htmlspecialchars($_GET['from_date'] ?? '') ?>">
+  </div>
+  <div class="col-md-3">
+    <label class="form-label">To</label>
+    <input type="date" name="to_date" class="form-control" 
+           value="<?= htmlspecialchars($_GET['to_date'] ?? '') ?>">
+  </div>
+  <div class="col-md-3">
+    <label class="form-label">Sale ID</label>
+    <input type="text" name="sale_id" class="form-control" 
+           placeholder="Sale ID" value="<?= htmlspecialchars($_GET['sale_id'] ?? '') ?>">
+  </div>
+
+  <?php if ($role === 'admin'): ?>
+    <div class="col-md-3">
+      <label class="form-label">Branch</label>
+      <select name="branch_id" class="form-select">
+        <option value="">All Branches</option>
+        <?php
+        $branches = $conn->query("SELECT branch_id, branch_name FROM branches");
+        while ($b = $branches->fetch_assoc()): ?>
+          <option value="<?= $b['branch_id'] ?>" 
+            <?= (($_GET['branch_id'] ?? '') == $b['branch_id']) ? 'selected' : '' ?>>
+            <?= htmlspecialchars($b['branch_name']) ?>
+          </option>
+        <?php endwhile; ?>
+      </select>
+    </div>
+  <?php endif; ?>
+
+  <div class="col-md-2 align-self-end">
+    <button type="submit" class="btn btn-modern btn-gradient-blue w-100">
+      <i class="fas fa-filter"></i> Filter
+    </button>
+  </div>
+</form>
+
+
+  <!-- Sales Table -->
+  <div class="card-custom p-4">
     <?php if ($sales_result->num_rows === 0): ?>
-      <p>No sales history found.</p>
+      <div class="text-center text-muted py-4">
+        <i class="fas fa-info-circle fs-4 d-block mb-2"></i>
+        No sales history found.
+      </div>
     <?php else: ?>
-      <table>
+    <div class="table-responsive">
+      <table class="table table-modern table-bordered align-middle">
         <thead>
           <tr>
             <th>Sale ID</th>
             <th>Branch</th>
             <th>Date</th>
             <th>Total (₱)</th>
-            <th>Receipt</th>
-
+            <th>Actions</th>
           </tr>
         </thead>
         <tbody>
@@ -198,14 +200,105 @@ if ($role === 'admin') {
             <td><?= (int)$sale['sale_id'] ?></td>
             <td><?= htmlspecialchars($sale['branch_name']) ?></td>
             <td><?= htmlspecialchars($sale['sale_date']) ?></td>
-            <td><?= number_format($sale['total'], 2) ?></td>
-            <td><a class="view-link" href="receipt.php?sale_id=<?= (int)$sale['sale_id'] ?>" target="_blank">View Receipt</a></td>
+            <td><span class="fw-bold text-success">₱<?= number_format($sale['total'], 2) ?></span></td>
+            <td>
+              <a href="receipt.php?sale_id=<?= (int)$sale['sale_id'] ?>" target="_blank" 
+                 class="btn btn-info btn-modern btn-sm"><i class="fas fa-receipt"></i> Receipt</a>
+               <button onclick="openReturnModal(<?= (int)$sale['sale_id'] ?>)" 
+            class="btn-action btn-gradient-green">
+      <i class="fas fa-undo"></i> Refund
+    </button>
+            </td>
           </tr>
           <?php endwhile; ?>
         </tbody>
       </table>
+    </div>
     <?php endif; ?>
   </div>
-  <script src="notifications.js"></script>
+</div>
+
+<!-- Return Modal -->
+<div class="modal fade" id="returnModal" tabindex="-1">
+  <div class="modal-dialog">
+    <form method="POST" action="product_return.php" class="modal-content">
+      <div class="modal-header bg-danger text-white rounded-top">
+        <h5 class="modal-title"><i class="fas fa-undo me-2"></i> Return / Refund</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+            <!-- Product details table -->
+    <div id="returnProducts" class="mb-3">
+        <table class="table table-sm table-bordered">
+            <thead>
+                <tr>
+                    <th>Product</th>
+                    <th>Qty</th>
+                    <th>Price (₱)</th>
+                </tr>
+            </thead>
+            <tbody id="returnProductsBody">
+                <!-- Filled dynamically -->
+            </tbody>
+        </table>
+    </div>
+        <input type="hidden" name="sale_id" id="returnSaleId">
+        <div class="mb-3">
+  <label class="form-label">Reason</label>
+  <select name="refund_reason" class="form-select" required>
+    <option value="" disabled selected>Select a reason</option>
+    <option value="Customer changed mind">Customer changed mind</option>
+    <option value="Wrong item delivered">Wrong item delivered</option>
+    <option value="Damaged product">Damaged product</option>
+    <option value="Expired product">Expired product</option>
+    <option value="Other">Other</option>
+  </select>
+</div>
+
+        <div class="mb-3">
+          <label class="form-label">Refund Amount (₱)</label>
+          <input type="number" step="0.01" name="refund_amount" class="form-control" required>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="submit" class="btn btn-danger btn-modern"><i class="fas fa-check"></i> Process Refund</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+function openReturnModal(saleId) {
+    document.getElementById('returnSaleId').value = saleId;
+
+    const tbody = document.getElementById('returnProductsBody');
+    tbody.innerHTML = ''; // clear previous
+
+    fetch(`get_sales_products.php?sale_id=${saleId}`)
+        .then(res => res.json())
+        .then(data => {
+            if (data.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="3" class="text-center">No products found</td></tr>`;
+                return;
+            }
+
+            data.forEach(item => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td>${item.product_name}</td>
+                    <td>${item.quantity}</td>
+                    <td>₱${parseFloat(item.price).toFixed(2)}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+        });
+
+    new bootstrap.Modal(document.getElementById('returnModal')).show();
+}
+</script>
+
+<script src="notifications.js"></script>
+
 </body>
 </html>

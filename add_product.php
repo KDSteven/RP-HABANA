@@ -30,15 +30,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     // Validation
     if ($criticalPoint > $ceilingPoint) {
-        echo "<script>alert('Critical Point cannot be greater than Ceiling Point.');history.back();</script>";
+        $_SESSION['stock_message'] = "❌ Critical Point cannot be greater than Ceiling Point.";
+        header("Location: inventory.php?stock=error");
         exit;
     }
     if ($stocks > $ceilingPoint) {
-        echo "<script>alert('Stocks cannot be greater than Ceiling Point.');history.back();</script>";
+        $_SESSION['stock_message'] = "❌ Stocks cannot be greater than Ceiling Point.";
+        header("Location: inventory.php?stock=error");
         exit;
     }
     if ($stocks < 0 || $price < 0) {
-        echo "<script>alert('Invalid values for stock or price.');history.back();</script>";
+        $_SESSION['stock_message'] = "❌ Invalid values for stock or price.";
+        header("Location: inventory.php?stock=error");
         exit;
     }
 
@@ -55,19 +58,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $stmt2->bind_param("iii", $productId, $branchId, $stocks);
 
         if ($stmt2->execute()) {
+            $stmt2->close();
+
             // Logging
             logAction($conn, "Add Product", "Added product '$productName' (ID: $productId) with stock $stocks to branch ID $branchId");
 
-            header("Location: inventory.php?success=1");
+            // Session-based success message
+            $_SESSION['stock_message'] = "✅ Product '$productName' added successfully with stock: $stocks (Branch ID: $branchId)";
+            header("Location: inventory.php?stock=success");
             exit();
         } else {
-            echo "Error adding to inventory: " . $stmt2->error;
+            $_SESSION['stock_message'] = "❌ Error adding to inventory: " . $stmt2->error;
+            $stmt2->close();
+            header("Location: inventory.php?stock=error");
+            exit();
         }
-        $stmt2->close();
+        
     } else {
-        echo "Error adding product: " . $stmt->error;
+        $_SESSION['stock_message'] = "❌ Error adding product: " . $stmt->error;
+        header("Location: inventory.php?stock=error");
+        exit();
     }
 
-    $conn->close();
+
 }
 ?>

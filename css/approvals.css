@@ -1,4 +1,4 @@
-/* Content fills space to the right of the sidebar */
+* Content fills space to the right of the sidebar */
 .content{
   flex: 1 1 auto;
   min-width: 0;
@@ -96,4 +96,3 @@
 #appToast .toast-header.bg-danger {
   background: linear-gradient(135deg,#dc3545,#b02a37) !important;
 }
-

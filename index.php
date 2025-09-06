@@ -5,8 +5,12 @@ include 'config/db.php';
 $error = "";
 
 if ($_SERVER["REQUEST_METHOD"] == "POST") {
-    $username = $_POST['username'] ?? "";
-    $password = $_POST['password'] ?? "";
+    $username = trim($_POST['username'] ?? "");
+    $password = trim($_POST['password'] ?? "");
+
+    // Get client info
+    $ip_address = $_SERVER['REMOTE_ADDR'] ?? 'Unknown';
+    $user_agent = $_SERVER['HTTP_USER_AGENT'] ?? 'Unknown';
 
     if (empty($username) || empty($password)) {
         $error = "Username and password are required.";

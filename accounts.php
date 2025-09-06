@@ -35,7 +35,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['create_user'])) {
     $username  = trim($_POST['username'] ?? '');
     $password  = $_POST['password'] ?? '';
     $role      = $_POST['role'] ?? '';
-    $branch_id = ($role === 'staff' && isset($_POST['branch_id'])) ? (int)$_POST['branch_id'] : 0;
+   $branch_id = (in_array($role, ['staff','stockman']) && isset($_POST['branch_id']))  ? (int)$_POST['branch_id'] : 0;
+
 
     if($username === '' || $password === '' || $role === '') {
         header("Location: accounts.php?create=invalid");
@@ -66,7 +67,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_user'])) {
     $id        = (int) ($_POST['edit_user_id'] ?? 0);
     $username  = trim($_POST['username'] ?? '');
     $role      = $_POST['role'] ?? '';
-    $branch_id = ($role === 'staff' && isset($_POST['branch_id'])) ? (int)$_POST['branch_id'] : 0;
+    $branch_id = (in_array($role, ['staff','stockman']) && isset($_POST['branch_id'])) ? (int)$_POST['branch_id']  : 0;
     $password  = $_POST['password'] ?? '';
 
     if ($id <= 0 || $username === '' || $role === '') {
@@ -234,7 +235,12 @@ function logAction($conn, $action, $details, $user_id = null, $branch_id = null)
                             <td><?= (int)$user['id'] ?></td>
                             <td><?= htmlspecialchars($user['username'], ENT_QUOTES) ?></td>
                             <td><?= htmlspecialchars(ucfirst($user['role']), ENT_QUOTES) ?></td>
-                            <td><?= $user['role'] === 'staff' ? htmlspecialchars($user['branch_name'], ENT_QUOTES) : 'N/A' ?></td>
+                            <td>
+  <?= in_array($user['role'], ['staff','stockman']) 
+        ? htmlspecialchars($user['branch_name'], ENT_QUOTES) 
+        : 'N/A' ?>
+</td>
+
                             <td class="text-center">
     <div class="action-buttons">
         <!-- Edit User -->
@@ -469,9 +475,11 @@ function prevStep(step){ nextStep(step); }
 
 /* ---------------- Toggle Branch radios ---------------- */
 function toggleCreateBranch(){
+    const role = document.getElementById('createRoleSelect').value;
     document.getElementById('createBranchGroup').style.display = 
-        document.getElementById('createRoleSelect').value === 'staff' ? 'block' : 'none';
+        (role === 'staff' || role === 'stockman') ? 'block' : 'none';
 }
+
 function toggleEditBranch(){
     document.getElementById('editBranchGroup').style.display = 
         document.getElementById('editRole').value === 'staff' ? 'block' : 'none';

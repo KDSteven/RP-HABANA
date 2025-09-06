@@ -339,7 +339,7 @@
     document.getElementById("loginForm").addEventListener("submit", function(event) {
       var username = document.getElementById("username").value;
       var password = document.getElementById("password").value;
-      var usernamePattern = /^(?=.*\d)(?=.*[a-zA-Z])[a-zA-Z\d]{6,}$/;
+      var usernamePattern = /^(?=.*[a-zA-Z])(?=.*[a-zA-Z0-9])[a-zA-Z0-9.]{6,}$/;
 
       if (!usernamePattern.test(username)) {
         alert("Username must be at least 6 characters long and contain both letters and numbers.");

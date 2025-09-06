@@ -46,7 +46,6 @@ $sql = "
     ON p.product_id = i.product_id 
 ";
 
-
 $params = [];
 $types  = [];
 $conditions = ["i.archived = 0"];
@@ -121,6 +120,9 @@ if ($role === 'staff') {
 
 // Fetch brands
 $brand_result = $conn->query("SELECT brand_id, brand_name FROM brands ORDER BY brand_name ASC");
+
+$category_result = $conn->query("SELECT DISTINCT category FROM products ORDER BY category ASC");
+
 // Archive product for specific branch
 if (isset($_POST['archive_product'])) {
     $inventory_id = (int) $_POST['inventory_id'];
@@ -157,11 +159,25 @@ if (isset($_POST['archive_product'])) {
     }
 }
 
-// Archive service
+// Determine current branch for services
+$current_branch_id = $_GET['branch'] ?? $_SESSION['current_branch_id'] ?? $branch_id ?? 0;
+$_SESSION['current_branch_id'] = $current_branch_id;
+
+// Fetch services for the current branch
+$services_stmt = $conn->prepare("
+    SELECT service_id, service_name, price, description, branch_id
+    FROM services
+    WHERE branch_id = ? AND archived = 0
+    ORDER BY service_name ASC
+");
+$services_stmt->bind_param("i", $current_branch_id);
+$services_stmt->execute();
+$services_result = $services_stmt->get_result();
+
+// Handle archive service
 if (isset($_POST['archive_service'])) {
     $service_id = (int) $_POST['service_id'];
 
-    // Fetch service name and branch_id
     $stmt = $conn->prepare("SELECT service_name, branch_id FROM services WHERE service_id = ?");
     $stmt->bind_param("i", $service_id);
     $stmt->execute();
@@ -169,29 +185,32 @@ if (isset($_POST['archive_service'])) {
     $stmt->fetch();
     $stmt->close();
 
-    // Archive service
     $stmt = $conn->prepare("UPDATE services SET archived = 1 WHERE service_id = ?");
     $stmt->bind_param("i", $service_id);
     $stmt->execute();
+    $stmt->close();
 
-    // Log with the service's branch_id
     logAction($conn, "Archive Service", "Archived service: $service_name (ID: $service_id)", null, $service_branch_id);
-
-    header("Location: inventory.php?archived=success");
+    header("Location: inventory.php?archived=service");
     exit;
 }
 
+if (isset($_SESSION['stock_message'])): ?>
+<div class="toast-container position-fixed top-0 end-0 p-3" style="z-index: 9999;">
+  <div class="toast align-items-center text-bg-success border-0 show" role="alert" aria-live="assertive" aria-atomic="true">
+    <div class="d-flex">
+      <div class="toast-body">
+        <?= $_SESSION['stock_message']; ?>
+      </div>
+      <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+    </div>
+  </div>
+</div>
+<?php unset($_SESSION['stock_message']); ?>
+<?php endif;
 
-// Set branch_id for current session or GET parameter
-$branch_id = $_GET['branch'] ?? $_SESSION['branch_id'] ?? 0;
 
-// Fetch services for this branch
-$services_stmt = $conn->prepare("SELECT * FROM services WHERE branch_id = ? AND archived = 0");
-$services_stmt->bind_param("i", $branch_id);
-$services_stmt->execute();
-$services_result = $services_stmt->get_result();
 ?>
-
 
 <!DOCTYPE html>
 <html lang="en">
@@ -203,7 +222,7 @@ $services_result = $services_stmt->get_result();
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
  <link rel="stylesheet" href="css/sidebar.css">
   <link rel="stylesheet" href="css/notifications.css">
-  <link rel="stylesheet" href="css/inventory.css?>v2">
+  <link rel="stylesheet" href="css/inventory.css?>=v2">
 <audio id="notifSound" src="notif.mp3" preload="auto"></audio>
 
 
@@ -263,16 +282,27 @@ $services_result = $services_stmt->get_result();
 
 <!-- Branch Navigation -->
 <div class="content">
-
   <div class="branches modern-tabs">
-  <?php while ($branch = $branches_result->fetch_assoc()): ?>
-    <a href="inventory.php?branch=<?= $branch['branch_id'] ?>" 
-       class="<?= ($branch['branch_id'] == $branch_id) ? 'active' : '' ?>">
-       <?= htmlspecialchars($branch['branch_name']) ?> 
-       <small class="text-muted"><?= htmlspecialchars($branch['branch_location']) ?></small>
-    </a>
-  <?php endwhile; ?>
-</div>
+    <?php if ($role === 'stockman'): 
+        // Only show the stockman's branch
+        $stockmanBranch = $conn->query("SELECT branch_name, branch_location, branch_id FROM branches WHERE branch_id = $branch_id")->fetch_assoc();
+    ?>
+        <a href="inventory.php?branch=<?= $branch_id ?>" class="active">
+            <?= htmlspecialchars($stockmanBranch['branch_name']) ?> 
+            <small class="text-muted"><?= htmlspecialchars($stockmanBranch['branch_location']) ?></small>
+        </a>
+    <?php else: ?>
+        <?php while ($branch = $branches_result->fetch_assoc()): ?>
+            <a href="inventory.php?branch=<?= $branch['branch_id'] ?>" 
+               class="<?= ($branch['branch_id'] == $current_branch_id) ? 'active' : '' ?>">
+               <?= htmlspecialchars($branch['branch_name']) ?> 
+               <small class="text-muted"><?= htmlspecialchars($branch['branch_location']) ?></small>
+            </a>
+        <?php endwhile; ?>
+    <?php endif; ?>
+  </div>
+
+
 <div class="search-box modern-search">
   <form method="GET" action="inventory.php" class="search-form d-flex align-items-center gap-2">
     <input type="hidden" name="branch" value="<?= htmlspecialchars($_GET['branch'] ?? '') ?>">
@@ -475,93 +505,111 @@ $services_result = $services_stmt->get_result();
   </div>
 </div>
 
-<!-- Add Service Modal -->
+<!-- ======================= ADD SERVICE MODAL ======================= -->
 <div class="modal fade" id="addServiceModal" tabindex="-1" aria-labelledby="addServiceModalLabel" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered">
-        <div class="modal-content border-0 shadow-lg">
-            <form action="add_service.php" method="POST">
-                <div class="modal-header bg-primary text-white">
-                    <h5 class="modal-title fw-bold" id="addServiceModalLabel">
-                        <i class="bi bi-plus-circle me-2"></i> Add New Service
-                    </h5>
-                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
-                </div>
-                <input type="hidden" name="branch_id" value="<?= htmlspecialchars($branch_id) ?>">
-
-                <div class="modal-body p-4">
-                    <div class="mb-3">
-                        <label for="serviceName" class="form-label fw-semibold">Service Name</label>
-                        <input type="text" name="service_name" id="serviceName" class="form-control" placeholder="Enter service name" required>
-                    </div>
-
-                    <div class="mb-3">
-                        <label for="servicePrice" class="form-label fw-semibold">Price (₱)</label>
-                        <input type="number" step="0.01" name="price" id="servicePrice" class="form-control" placeholder="Enter price" required>
-                    </div>
-
-                    <div class="mb-3">
-                        <label for="serviceDescription" class="form-label fw-semibold">Description</label>
-                        <textarea name="description" id="serviceDescription" class="form-control" rows="3" placeholder="Optional"></textarea>
-                    </div>
-
-                    <input type="hidden" name="branch_id" value="<?= htmlspecialchars($branch_id) ?>">
-                </div>
-
-                <div class="modal-footer border-top-0">
-                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="submit" class="btn btn-success fw-semibold">
-                        <i class="bi bi-save me-1"></i> Save Service
-                    </button>
-                </div>
-            </form>
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content border-0 shadow-lg">
+      <form id="addServiceForm" action="add_service.php" method="POST">
+        <div class="modal-header bg-primary text-white">
+          <h5 class="modal-title fw-bold" id="addServiceModalLabel">
+            <i class="bi bi-plus-circle me-2"></i> Add New Service
+          </h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
         </div>
-    </div>
-</div>
 
+        <input type="hidden" name="branch_id" value="<?= htmlspecialchars($branch_id) ?>">
 
-<!-- Button to trigger modal -->
-</div><!-- Add Product Modal -->
-<div class="modal fade" id="addProductModal" tabindex="-1" aria-labelledby="addProductModalLabel" aria-hidden="true">
-  <div class="modal-dialog modal-lg"> <!-- Use modal-lg for more space -->
-    <div class="modal-content">
-      <div class="modal-header">
-        <h5 class="modal-title" id="addProductModalLabel">Add New Product</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-      </div>
-
-      <form id="addProductForm" method="POST" action="add_product.php">
-        <div class="modal-body">
-          <div class="row g-3">
-
-            <div class="col-md-6">
-            <label for="brand" class="form-label">Brand</label>
-            <select class="form-select" id="brand" name="brand_name" required>
-              <option value="">-- Select Brand --</option>
-              <?php while($brand = $brand_result->fetch_assoc()): ?>
-                <option value="<?= htmlspecialchars($brand['brand_name']) ?>">
-                  <?= htmlspecialchars($brand['brand_name']) ?>
-                </option>
-              <?php endwhile; ?>
-            </select>
-            <button type="button" class="btn btn-link p-0 mt-1" data-bs-toggle="modal" data-bs-target="#addBrandModal">
-              + Add New Brand
-            </button>
+        <div class="modal-body p-4">
+          <div class="mb-3">
+            <label for="serviceName" class="form-label fw-semibold">Service Name</label>
+            <input type="text" name="service_name" id="serviceName" class="form-control" placeholder="Enter service name" required>
           </div>
 
+          <div class="mb-3">
+            <label for="servicePrice" class="form-label fw-semibold">Price (₱)</label>
+            <input type="number" step="0.01" name="price" id="servicePrice" class="form-control" placeholder="Enter price" required>
+          </div>
+
+          <div class="mb-3">
+            <label for="serviceDescription" class="form-label fw-semibold">Description</label>
+            <textarea name="description" id="serviceDescription" class="form-control" rows="3" placeholder="Optional"></textarea>
+          </div>
+
+          <!-- Inline confirmation area -->
+          <div id="confirmSectionService" class="alert alert-warning mt-3 d-none">
+            <p id="confirmMessageService">Are you sure you want to save this service?</p>
+            <div class="d-flex justify-content-end gap-2">
+              <button type="button" class="btn btn-secondary btn-sm" id="cancelConfirmService">Cancel</button>
+              <button type="submit" class="btn btn-success btn-sm">Yes, Save Service</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="modal-footer border-top-0">
+          <!-- Trigger confirmation -->
+          <button type="button" id="openConfirmService" class="btn btn-success fw-semibold">
+            <i class="bi bi-save me-1"></i> Save
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- ======================= ADD PRODUCT MODAL ======================= -->
+<div class="modal fade" id="addProductModal" tabindex="-1" aria-labelledby="addProductModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <form id="addProductForm" method="POST" action="add_product.php">
+        <div class="modal-header">
+          <h5 class="modal-title" id="addProductModalLabel">Add New Product</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+
+        <div class="modal-body">
+          <div class="row g-3">
+            <!-- Brand -->
+            <div class="col-md-6">
+              <label for="brand" class="form-label">Brand</label>
+              <select class="form-select" id="brand" name="brand_name" required>
+                <option value="">-- Select Brand --</option>
+                <?php while($brand = $brand_result->fetch_assoc()): ?>
+                  <option value="<?= htmlspecialchars($brand['brand_name']) ?>">
+                    <?= htmlspecialchars($brand['brand_name']) ?>
+                  </option>
+                <?php endwhile; ?>
+              </select>
+              <button type="button" class="btn btn-link p-0 mt-1" data-bs-toggle="modal" data-bs-target="#addBrandModal">
+                + Add New Brand
+              </button>
+            </div>
+
+            <!-- Product Name -->
             <div class="col-md-6">
               <label for="productName" class="form-label">Product Name</label>
               <input type="text" class="form-control" id="productName" name="product_name" required>
             </div>
 
+            <!-- Category -->
             <div class="col-md-6">
               <label for="category" class="form-label">Category</label>
-              <select name="category" id="category" class="form-select" required>
+              <select class="form-select" id="category" name="category_id" required>
                 <option value="">-- Select Category --</option>
-                <option value="Solid">Tire</option>
-                <option value="Liquid">Liquid</option>
+                <?php 
+                  $category_result = $conn->query("SELECT category_id, category_name FROM categories ORDER BY category_name ASC");
+                  while($category = $category_result->fetch_assoc()): 
+                ?>
+                  <option value="<?= $category['category_id'] ?>">
+                    <?= htmlspecialchars($category['category_name']) ?>
+                  </option>
+                <?php endwhile; ?>
               </select>
+              <button type="button" class="btn btn-link p-0 mt-1" data-bs-toggle="modal" data-bs-target="#addCategoryModal">
+                + Add New Category
+              </button>
             </div>
 
+            <!-- Price & Markup -->
             <div class="col-md-6">
               <label for="price" class="form-label">Price</label>
               <input type="number" class="form-control" id="price" name="price" step="0.01" required>
@@ -574,9 +622,10 @@ $services_result = $services_stmt->get_result();
 
             <div class="col-md-6">
               <label for="retailPrice" class="form-label">Retail Price</label>
-              <input type="number" class="form-control" id="retailPrice" name="retail_price" class="form-control" readonly>
+              <input type="number" class="form-control" id="retailPrice" name="retail_price" readonly>
             </div>
 
+            <!-- Other product fields -->
             <div class="col-md-6">
               <label for="ceilingPoint" class="form-label">Ceiling Point</label>
               <input type="number" class="form-control" id="ceilingPoint" name="ceiling_point" required>
@@ -615,34 +664,54 @@ $services_result = $services_stmt->get_result();
                 ?>
               </select>
             </div>
+          </div>
 
+          <!-- Inline confirmation area -->
+          <div id="confirmSectionProduct" class="alert alert-warning mt-3 d-none">
+            <p id="confirmMessageProduct">Are you sure you want to save this product?</p>
+            <div class="d-flex justify-content-end gap-2">
+              <button type="button" class="btn btn-secondary btn-sm" id="cancelConfirmProduct">Cancel</button>
+              <button type="submit" class="btn btn-success btn-sm">Yes, Save Product</button>
+            </div>
           </div>
         </div>
 
         <div class="modal-footer">
-          <button type="submit" class="btn btn-primary">Save Product</button>
+          <button type="button" id="openConfirmProduct" class="btn btn-primary">Save</button>
         </div>
       </form>
     </div>
   </div>
 </div>
+
 <!-- Add Stock Modal -->
-<!-- Shared Add Stock Modal -->
 <div class="modal fade" id="addStockModal" tabindex="-1">
   <div class="modal-dialog">
     <div class="modal-content">
-      <form method="post" action="add_stock.php">
+      <form id="addStockForm" method="post" action="add_stock.php">
+        <input type="hidden" name="branch_id" value="<?= $_SESSION['current_branch_id'] ?? $_SESSION['branch_id'] ?>">
+
         <div class="modal-header">
           <h5 class="modal-title">Add Stock</h5>
           <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
         </div>
+
         <div class="modal-body">
-          <!-- Dropdown of all products -->
           <label>Select Product</label>
           <select name="product_id" class="form-control" required>
             <option value="">-- Choose Product --</option>
             <?php
-              $prodRes = $conn->query("SELECT p.product_id, p.product_name, IFNULL(i.stock,0) stock FROM products p LEFT JOIN inventory i ON p.product_id=i.product_id");
+              $branch_id = $_SESSION['current_branch_id'] ?? $_SESSION['branch_id'] ?? 0;
+              $stmt = $conn->prepare("
+                SELECT p.product_id, p.product_name, i.stock
+                FROM products p
+                INNER JOIN inventory i ON p.product_id = i.product_id
+                WHERE i.branch_id = ? AND i.archived = 0
+                ORDER BY p.product_name ASC
+              ");
+              $stmt->bind_param("i", $branch_id);
+              $stmt->execute();
+              $prodRes = $stmt->get_result();
               while ($p = $prodRes->fetch_assoc()):
             ?>
               <option value="<?= $p['product_id'] ?>">
@@ -651,20 +720,109 @@ $services_result = $services_stmt->get_result();
             <?php endwhile; ?>
           </select>
 
-          <!-- Stock Amount -->
           <label class="mt-2">Stock Amount</label>
           <input type="number" class="form-control" name="stock_amount" min="1" required>
+
+          <!-- Inline confirmation area -->
+          <div id="confirmSection" class="alert alert-warning mt-3 d-none">
+            <p id="confirmMessage"></p>
+            <div class="d-flex justify-content-end gap-2">
+              <button type="button" class="btn btn-secondary btn-sm" id="cancelConfirm">Cancel</button>
+              <button type="submit" class="btn btn-success btn-sm">Yes, Add Stock</button>
+            </div>
+          </div>
         </div>
+
         <div class="modal-footer">
-          <button type="submit" class="btn btn-success">Add</button>
+          <!-- Trigger confirmation -->
+          <button type="button" id="openConfirmStock" class="btn btn-success">Add</button>
         </div>
       </form>
     </div>
   </div>
 </div>
+
+<!-- Modal for Deleting Branches -->
+<div class="modal" id="deleteSelectionModal" style="display: none;">
+  <div class="modal-content">
+    <div class="modal-header">🗑️ Select Branches to Delete</div>
+    <form id="deleteBranchesForm" method="POST">
+      <?php
+      $branches_result = $conn->query("SELECT * FROM branches");
+      if ($branches_result->num_rows > 0):
+          while ($branch = $branches_result->fetch_assoc()):
+      ?>
+        <label>
+          <input type="checkbox" name="branches_to_delete[]" value="<?= $branch['branch_number'] ?>">
+          <?= $branch['branch_name'] ?> - <?= $branch['branch_location'] ?>
+        </label>
+      <?php endwhile; else: ?>
+        <p>No branches available for deletion.</p>
+      <?php endif; ?>
+      <button type="button" onclick="openDeleteConfirmationModal()">Delete Selected</button>
+    </form>
+  </div>
+</div>
+<!-- MODAL FOR BRAND -->
+<div class="modal fade" id="addBrandModal" tabindex="-1" aria-labelledby="addBrandModalLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="addBrandModalLabel">Add New Brand</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <form method="POST" action="add_brand.php">
+        <div class="modal-body">
+          <input type="text" name="brand_name" class="form-control" placeholder="Brand Name" required>
+        </div>
+        <div class="modal-footer">
+          <button type="submit" class="btn btn-primary">Add Brand</button>
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+<!-- Add Category Modal -->
+<div class="modal fade" id="addCategoryModal" tabindex="-1" aria-labelledby="addCategoryModalLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <form method="POST" action="add_category.php">
+        <div class="modal-header">
+          <h5 class="modal-title" id="addCategoryModalLabel">Add New Category</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <label for="category_name" class="form-label">Category Name</label>
+          <input type="text" class="form-control" id="category_name" name="category_name" required>
+        </div>
+        <div class="modal-footer">
+          <button type="submit" class="btn btn-primary">Save Category</button>
+        </div>
+      </form>
+    </div>
+  </div>
 </div>
 
- <!-- Edit Product Modal -->
+<!-- Stock Confirmation Modal -->
+   <div class="modal fade" id="confirmAddStock" tabindex="-1" aria-hidden="true">
+      <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow-lg" style="border-radius:15px;">
+          <div class="modal-header bg-warning text-dark">
+            <h5 class="modal-title">Confirm Add Stock</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+          </div>
+          <div class="modal-body">
+            <p id="confirmMessage">Are you sure you want to add this stock?</p>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+            <button type="submit" form="addStockForm" class="btn btn-success">Yes, Add Stock</button>
+          </div>
+        </div>
+      </div>
+    </div>
+<!-- Edit Product Modal -->
 <div class="modal fade" id="editProductModal" tabindex="-1" aria-labelledby="editProductModalLabel" aria-hidden="true">
   <div class="modal-dialog modal-lg">
     <div class="modal-content">
@@ -701,15 +859,22 @@ $services_result = $services_stmt->get_result();
               <input type="text" class="form-control" id="edit_product_name" name="product_name" required>
             </div>
 
-            <!-- Category -->
-            <div class="col-md-6">
-              <label class="form-label">Category</label>
-              <select class="form-select" id="edit_category" name="category" required>
-                <option value="">-- Select Category --</option>
-                <option value="Solid">Tire</option>
-                <option value="Liquid">Liquid</option>
-              </select>
-            </div>
+           <!-- Category -->
+<div class="col-md-6">
+  <label class="form-label">Category</label>
+  <select class="form-select" id="edit_category" name="category" required>
+    <option value="">-- Select Category --</option>
+    <?php
+      // Fetch categories from DB
+      $categories = $conn->query("SELECT category_name FROM categories"); // Adjust table/column names
+      while ($cat = $categories->fetch_assoc()) {
+          $selected = ($cat['category_name'] == $product['category']) ? 'selected' : '';
+          echo "<option value='" . htmlspecialchars($cat['category_name']) . "' $selected>" . htmlspecialchars($cat['category_name']) . "</option>";
+      }
+    ?>
+  </select>
+</div>
+
 
             <!-- Price -->
             <div class="col-md-6">
@@ -744,7 +909,7 @@ $services_result = $services_stmt->get_result();
             <!-- Stock -->
             <div class="col-md-6">
               <label class="form-label">Stock</label>
-              <input type="number" class="form-control" id="edit_stock" name="stock" required>
+              <input type="number" class="form-control" id="edit_stock" name="stock" disabled>
             </div>
 
             <!-- VAT -->
@@ -775,13 +940,64 @@ $services_result = $services_stmt->get_result();
             </div>
           </div>
         </div>
-
+         <!-- Modal Footer with Cancel and Save buttons -->
         <div class="modal-footer">
           <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
           <button type="submit" class="btn btn-primary">Save Changes</button>
         </div>
       </form>
+    </div>
+  </div>
+</div>
+<!-- ======================= EDIT SERVICE MODAL ======================= -->
+<div class="modal fade" id="editServiceModal" tabindex="-1" aria-labelledby="editServiceModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content border-0 shadow-lg">
+      <form id="editServiceForm" action="edit_service.php" method="POST">
+        <div class="modal-header bg-warning text-dark">
+          <h5 class="modal-title fw-bold" id="editServiceModalLabel">
+            <i class="bi bi-pencil-square me-2"></i> Edit Service
+          </h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
 
+        <!-- Hidden input for service ID -->
+        <input type="hidden" name="service_id" id="edit_service_id">
+        <input type="hidden" name="branch_id" value="<?= htmlspecialchars($branch_id) ?>">
+
+        <div class="modal-body p-4">
+          <div class="mb-3">
+            <label for="editServiceName" class="form-label fw-semibold">Service Name</label>
+            <input type="text" name="service_name" id="editServiceName" class="form-control" placeholder="Enter service name" required>
+          </div>
+
+          <div class="mb-3">
+            <label for="editServicePrice" class="form-label fw-semibold">Price (₱)</label>
+            <input type="number" step="0.01" name="price" id="editServicePrice" class="form-control" placeholder="Enter price" required>
+          </div>
+
+          <div class="mb-3">
+            <label for="editServiceDescription" class="form-label fw-semibold">Description</label>
+            <textarea name="description" id="editServiceDescription" class="form-control" rows="3" placeholder="Optional"></textarea>
+          </div>
+
+          <!-- Inline confirmation area -->
+          <div id="confirmSectionEditService" class="alert alert-warning mt-3 d-none">
+            <p id="confirmMessageEditService">Are you sure you want to save changes to this service?</p>
+            <div class="d-flex justify-content-end gap-2">
+              <button type="button" class="btn btn-secondary btn-sm" id="cancelConfirmEditService">Cancel</button>
+              <button type="submit" class="btn btn-success btn-sm">Yes, Save Changes</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="modal-footer border-top-0">
+          <!-- Trigger confirmation -->
+          <button type="button" id="openConfirmEditService" class="btn btn-success fw-semibold">
+            <i class="bi bi-save me-1"></i> Save Changes
+          </button>
+        </div>
+      </form>
     </div>
   </div>
 </div>
@@ -873,72 +1089,150 @@ $services_result = $services_stmt->get_result();
     </div>
   </div>
 </div>
-
-</body>
-</html>
-<script>
-  function openAddProductModal() {
-    document.getElementById('addProductModal').style.display = 'flex';
-  }
-
-  function closeAddProductModal() {
-    document.getElementById('addProductModal').style.display = 'none';
-  }
-
-  // Optional: Click outside to close
-  window.onclick = function(event) {
-    const modal = document.getElementById('addProductModal');
-    if (event.target === modal) {
-      modal.style.display = "none";
-    }
-  }
-</script>
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
-
-
-<!-- Modal for Deleting Branches -->
-<div class="modal" id="deleteSelectionModal" style="display: none;">
-  <div class="modal-content">
-    <div class="modal-header">🗑️ Select Branches to Delete</div>
-    <form id="deleteBranchesForm" method="POST">
-      <?php
-      $branches_result = $conn->query("SELECT * FROM branches");
-      if ($branches_result->num_rows > 0):
-          while ($branch = $branches_result->fetch_assoc()):
-      ?>
-        <label>
-          <input type="checkbox" name="branches_to_delete[]" value="<?= $branch['branch_number'] ?>">
-          <?= $branch['branch_name'] ?> - <?= $branch['branch_location'] ?>
-        </label>
-      <?php endwhile; else: ?>
-        <p>No branches available for deletion.</p>
-      <?php endif; ?>
-      <button type="button" onclick="openDeleteConfirmationModal()">Delete Selected</button>
-    </form>
-  </div>
-</div>
-<!-- MODAL FOR BRAND -->
-<div class="modal fade" id="addBrandModal" tabindex="-1" aria-labelledby="addBrandModalLabel" aria-hidden="true">
-  <div class="modal-dialog">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h5 class="modal-title" id="addBrandModalLabel">Add New Brand</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+<!-- Stock Transfer Request Modal -->
+<div class="modal fade" id="transferModal" tabindex="-1" aria-labelledby="transferLabel" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-md">
+    <div class="modal-content fp-card">
+      <div class="modal-header fp-header">
+        <div class="d-flex align-items-center gap-2">
+          <i class="fas fa-exchange-alt"></i>
+          <h5 class="modal-title mb-0" id="transferstockLabel">Stock Transfer Request</h5>
+        </div>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
-      <form method="POST" action="add_brand.php">
-        <div class="modal-body">
-          <input type="text" name="brand_name" class="form-control" placeholder="Brand Name" required>
-        </div>
-        <div class="modal-footer">
-          <button type="submit" class="btn btn-primary">Add Brand</button>
-          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-        </div>
-      </form>
+          <form id="transferForm" autocomplete="off">
+            
+          <!-- Source Branch -->
+          <div class="mb-3 px-3">
+            <label for="source_branch" class="form-label fw-semibold">Source Branch</label>
+            <div class="input-group">
+              <span class="input-group-text"><i class="fas fa-warehouse"></i></span>
+              <select class="form-select" id="source_branch" name="source_id" required>
+                <option value="">Select source branch</option>
+                
+              </select>
+            </div>
+            <div class="invalid-feedback">Please select a source branch.</div>
+          </div>
+
+          <!-- Product -->
+          <div class="mb-3 px-3">
+            <label for="product_id" class="form-label fw-semibold">Product</label>
+            <div class="input-group">
+              <span class="input-group-text"><i class="fas fa-box"></i></span>
+              <select class="form-select" id="product_id" name="product_id" required disabled>
+                <option value="">Select a branch first</option>
+              </select>
+            </div>
+            <div class="form-text">Select a source branch to load available products.</div>
+            <div class="invalid-feedback">Please select a product.</div>
+          </div>
+
+          <!-- Destination Branch -->
+          <div class="mb-3 px-3">
+            <label for="destination_branch" class="form-label fw-semibold">Destination Branch</label>
+            <div class="input-group">
+              <span class="input-group-text"><i class="fas fa-truck"></i></span>
+              <select class="form-select" id="destination_branch" name="destination_branch" required>
+                <option value="">Select destination branch</option>
+              </select>
+            </div>
+            <div class="invalid-feedback">Please select a destination branch.</div>
+          </div>
+
+          <!-- Quantity -->
+          <div class="mb-3 px-3">
+            <label for="quantity" class="form-label fw-semibold">Quantity</label>
+            <div class="input-group">
+              <span class="input-group-text"><i class="fas fa-sort-numeric-up"></i></span>
+              <input type="number" class="form-control" id="quantity" name="quantity" min="1" required placeholder="Enter quantity">
+            </div>
+            <div class="invalid-feedback">Please enter a valid quantity.</div>
+          </div>
+
+          <!-- Message / Feedback -->
+          <div id="transferMsg" class="mt-3 "></div>
+
+          <!-- Submit -->
+          <button type="submit" class="btn btn w-100 py-3" id="transferSubmit">
+            <span class="btn-label">Submit Request</span>
+            <span class="btn-spinner spinner-border spinner-border-sm ms-2 d-none" role="status" aria-hidden="true"></span>
+          </button>
+        </form>
+      </div>
     </div>
   </div>
 </div>
 
+<!-- Toast container -->
+<div class="toast-container position-fixed top-0 end-0 p-3" style="z-index:1100">
+  <div id="appToast" class="toast border-0 shadow-lg" role="alert" aria-live="assertive" aria-atomic="true">
+    <div class="toast-header bg-primary text-white">
+      <i class="fas fa-info-circle me-2"></i>
+      <strong class="me-auto">System Notice</strong>
+      <small>just now</small>
+      <button type="button" class="btn-close btn-close-white ms-2 mb-1" data-bs-dismiss="toast" aria-label="Close"></button>
+    </div>
+    <div class="toast-body" id="appToastBody">
+      Action completed.
+    </div>
+  </div>
+</div>
+</body>
 <script src="notifications.js"></script>
+
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+  function setupConfirm(openBtnId, formId, sectionId, messageId, cancelBtnId, label) {
+    const openBtn = document.getElementById(openBtnId);
+    const form = document.getElementById(formId);
+    const confirmSection = document.getElementById(sectionId);
+    const confirmMessage = document.getElementById(messageId);
+    const cancelBtn = document.getElementById(cancelBtnId);
+
+    if (!openBtn || !form || !confirmSection || !confirmMessage || !cancelBtn) return;
+
+    openBtn.addEventListener("click", function () {
+      const requiredFields = form.querySelectorAll("input[required], select[required], textarea[required]");
+      const emptyField = Array.from(requiredFields).some(f => !f.value.trim());
+      if (emptyField) {
+        alert("Please fill in all required fields.");
+        return;
+      }
+      const values = Array.from(requiredFields).map(f => f.value.trim());
+      confirmMessage.textContent = `Confirm adding ${label}: ${values.join(" - ")} ?`;
+      confirmSection.classList.remove("d-none");
+    });
+
+    cancelBtn.addEventListener("click", function () {
+      confirmSection.classList.add("d-none");
+    });
+  }
+
+  setupConfirm("openConfirmStock", "addStockForm", "confirmSection", "confirmMessage", "cancelConfirm", "Stock");
+  setupConfirm("openConfirmProduct", "addProductForm", "confirmSectionProduct", "confirmMessageProduct", "cancelConfirmProduct", "Product");
+  setupConfirm("openConfirmService", "addServiceForm", "confirmSectionService", "confirmMessageService", "cancelConfirmService", "Service");
+});
+
+</script>
+
+<script>
+function openAddProductModal() {
+  document.getElementById('addProductModal').style.display = 'flex';
+}
+
+function closeAddProductModal() {
+  document.getElementById('addProductModal').style.display = 'none';
+}
+
+// Optional: Click outside to close
+window.onclick = function(event) {
+  const modal = document.getElementById('addProductModal');
+  if (event.target === modal) modal.style.display = "none";
+}
+
+</script>
+
 <script>
 document.addEventListener('DOMContentLoaded', function () {
   const ceilingInput = document.getElementById('ceiling_point');
@@ -949,38 +1243,17 @@ document.addEventListener('DOMContentLoaded', function () {
     form.addEventListener('submit', function (e) {
       const ceiling = parseFloat(ceilingInput.value);
       const critical = parseFloat(criticalInput.value);
-
-      // Ensure both values are numbers
-      if (!isNaN(ceiling) && !isNaN(critical)) {
-        if (critical > ceiling) {
-          e.preventDefault();
-          alert("❌ Critical Point cannot be greater than Ceiling Point.");
-          criticalInput.focus();
-        }
+      if (!isNaN(ceiling) && !isNaN(critical) && critical > ceiling) {
+        e.preventDefault();
+        alert("❌ Critical Point cannot be greater than Ceiling Point.");
+        criticalInput.focus();
       }
     });
   }
 });
+
 </script>
-<!-- <script>
-document.addEventListener('DOMContentLoaded', function () {
-  const ceilingInput = document.getElementById('ceiling_point');
-  const criticalInput = document.getElementById('critical_point');
-  const form = document.getElementById('your-form-id'); // Replace with your form ID
 
-  form.addEventListener('submit', function (e) {
-    const ceiling = parseInt(ceilingInput.value);
-    const critical = parseInt(criticalInput.value);
-
-    if (critical > ceiling) {
-      e.preventDefault();
-      alert("Critical Point cannot be greater than Ceiling Point.");
-      criticalInput.focus();
-    }
-  });
-});
-</script> -->
- 
 <script>
   function openEditModal(id, name, category, price, stock, markup_price, ceiling_point, critical_point, branch_id) {
   document.getElementById('edit_product_id').value = id;
@@ -1006,8 +1279,38 @@ document.addEventListener('DOMContentLoaded', function () {
   const editModal = new bootstrap.Modal(document.getElementById('editProductModal'));
   editModal.show();
 }
-
 </script>
+<script>
+// Accept a single service object
+function openEditServiceModal(service) {
+  console.log(service); // Debug: check values
+
+  document.getElementById('edit_service_id').value = service.service_id;
+  document.getElementById('editServiceName').value = service.service_name;
+  document.getElementById('editServicePrice').value = service.price;
+  document.getElementById('editServiceDescription').value = service.description;
+
+  const editModal = new bootstrap.Modal(document.getElementById('editServiceModal'));
+  editModal.show();
+}
+
+// Confirmation logic for Edit Service
+document.addEventListener("DOMContentLoaded", function () {
+  const openBtn = document.getElementById('openConfirmEditService');
+  const cancelBtn = document.getElementById('cancelConfirmEditService');
+  const confirmSection = document.getElementById('confirmSectionEditService');
+
+  if (openBtn && cancelBtn && confirmSection) {
+    openBtn.addEventListener('click', function () {
+      confirmSection.classList.remove('d-none');
+    });
+    cancelBtn.addEventListener('click', function () {
+      confirmSection.classList.add('d-none');
+    });
+  }
+});
+</script>
+
 <script>
 function validateEditForm() {
   const stock = parseInt(document.getElementById('edit_stock').value);
@@ -1039,8 +1342,8 @@ document.addEventListener('DOMContentLoaded', function () {
     priceInput.addEventListener('input', calculateRetail);
     markupInput.addEventListener('input', calculateRetail);
 });
-
-//tranfer request
+</script>
+<script>
 (() => {
   const modalEl   = document.getElementById('transferModal');
   const form      = document.getElementById('transferForm');
@@ -1201,5 +1504,7 @@ function showToast(message, type = 'info') {
 
 </script>
 
+</script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>
