@@ -2,6 +2,8 @@
 session_start();
 require 'config/db.php';
 
+$role = $_SESSION['role'] ?? '';
+
 // Only admin can access
 if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
     header('Location: index.html');
@@ -61,6 +63,7 @@ if ($params) $stmt->bind_param($types, ...$params);
 $stmt->execute();
 $result = $stmt->get_result();
 
+
 ?>
 
 
@@ -73,11 +76,17 @@ $result = $stmt->get_result();
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
 <link rel="stylesheet" href="css/sidebar.css">
 <link rel="stylesheet" href="css/logs.css?v3">
+<link rel="stylesheet" href="css/notifications.css">
 </head>
 <body>
-
 <div class="sidebar">
-    <h2><?= htmlspecialchars(strtoupper($currentRole)) ?></h2>
+    <h2>
+    <?= strtoupper($role) ?>
+    <span class="notif-wrapper">
+        <i class="fas fa-bell" id="notifBell"></i>
+        <span id="notifCount" <?= $pending > 0 ? '' : 'style="display:none;"' ?>>0</span>
+        </span>
+    </h2>
     <a href="dashboard.php"><i class="fas fa-tv"></i> Dashboard</a>
     <a href="inventory.php"><i class="fas fa-box"></i> Inventory</a>
     <a href="sales.php"><i class="fas fa-receipt"></i> Sales</a>
@@ -163,6 +172,8 @@ $result = $stmt->get_result();
 <p class="text-center text-muted mt-3">No logs available</p>
 <?php endif; ?>
 
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+<script src="notifications.js"></script>
 
 <script>document.addEventListener('DOMContentLoaded', function(){
 

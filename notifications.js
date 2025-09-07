@@ -18,7 +18,7 @@ if (Notification.permission !== "granted") Notification.requestPermission();
 // ===============================
 function fetchNotifications() {
     console.log("⏳ Running fetchNotifications...");
-    fetch('get_notifications.php')
+fetch('../../get_notifications.php')
         .then(r => r.json())
         .then(data => {
             updateBadge(data.count);

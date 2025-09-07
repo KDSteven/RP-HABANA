@@ -1,5 +1,5 @@
 <?php
-// admin/backup_restore.php
+// admin/backup_admin.php
 // -------------------------------------------------------------
 // SIMPLE, SAFE DB BACKUP & RESTORE (Admin only)
 // -------------------------------------------------------------
@@ -338,21 +338,17 @@ function flash() {
 .td-actions a{margin-left:6px}
 
 /* Action button style */
-.btn-download{background:#f7931e;color:#fff;padding:6px 10px;font-size:13px;border-radius:6px;text-decoration:none}
-.btn-download:hover{background:#e67e00;color:#fff}
+.btn-download{background:#f7931e;color:#fff;padding:6px 10px;font-size:13px;border-radius:6px;text-decoration:none;   transition: background 0.6s ease-in-out, 
+              transform 0.4s ease-in-out, 
+              box-shadow 0.6s ease-in-out, 
+              color 0.3s ease-in-out;}
+.btn-download:hover{    
+    background: linear-gradient(90deg, #e67e00, #ffa500);
+    transform: translateY(-2px);
+    box-shadow: 0 6px 15px rgba(0,0,0,0.25);
+    color: black;
+  }
 
-.btn-delete {
-  background: linear-gradient(135deg, #ff4d4d, #cc0000);
-  color:#fff;
-  padding:6px 10px;
-  font-size:13px;
-  border-radius:6px;
-  text-decoration:none;
-  display:inline-flex;
-  align-items:center;
-  gap:6px;
-}
-.btn-delete:hover { background:#cc1f1a; color:#fff; }
 
 </style>
 </head>
@@ -582,7 +578,7 @@ function flash() {
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
-<script src="notifications.js"></script>
+<script src="../../notifications.js"></script>
 <script>
   (function () {
     const form = document.getElementById('restoreForm');
