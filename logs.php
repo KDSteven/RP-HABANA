@@ -85,6 +85,7 @@ $result = $stmt->get_result();
     <a href="accounts.php"><i class="fas fa-users"></i> Accounts</a>
     <a href="archive.php"><i class="fas fa-archive"></i> Archive</a>
     <a href="logs.php" class="active"><i class="fas fa-file-alt"></i> Logs</a>
+    <a href="/config/admin/backup_admin.php"><i class="fa-solid fa-database"></i> Backup and Restore</a>
     <a href="logout.php"><i class="fas fa-sign-out-alt"></i> Logout</a>
 </div>
 <div class="content">
