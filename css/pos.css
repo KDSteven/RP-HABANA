@@ -151,7 +151,7 @@ button:hover {
     background: #fff;
     border-radius: 10px;
     padding: 12px; /* smaller padding */
-    box-shadow: 0 3px 10px rgba(0,0,0,0.08);
+    box-shadow: 0 3px 10px rgba(0, 0, 0, 0.473);
     display: flex;
     flex-direction: column;
     justify-content: space-between;
@@ -160,7 +160,7 @@ button:hover {
 
 .product-card:hover {
     transform: translateY(-2px);
-    box-shadow: 0 5px 15px rgba(0,0,0,0.12);
+    box-shadow: 0 5px 15px rgba(255, 102, 1, 0.644);
 }
 
 .product-name {
@@ -208,17 +208,17 @@ button:hover {
 
 .cart-section {
     flex: 1.2;
-    max-width: 550px; /* wider cart */
+    max-width: 650px; /* wider cart */
     width: 100%;
     position: sticky;
     top: 20px;
 }
 
 .cart-box {
-    background: #fff;
+    background: #ffffff;
     padding: 20px;
     border-radius: 12px;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.473);
     max-height: 85vh; /* vertical scroll */
     overflow-y: auto;
     overflow-x: hidden; /* hide horizontal scroll */

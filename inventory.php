@@ -698,34 +698,52 @@ if (isset($_SESSION['stock_message'])): ?>
         </div>
 
         <div class="modal-body">
-          <label>Select Product</label>
-          <select name="product_id" class="form-control" required>
-            <option value="">-- Choose Product --</option>
-            <?php
-              $branch_id = $_SESSION['current_branch_id'] ?? $_SESSION['branch_id'] ?? 0;
-              $stmt = $conn->prepare("
-                SELECT p.product_id, p.product_name, i.stock
-                FROM products p
-                INNER JOIN inventory i ON p.product_id = i.product_id
-                WHERE i.branch_id = ? AND i.archived = 0
-                ORDER BY p.product_name ASC
-              ");
-              $stmt->bind_param("i", $branch_id);
-              $stmt->execute();
-              $prodRes = $stmt->get_result();
-              while ($p = $prodRes->fetch_assoc()):
-            ?>
-              <option value="<?= $p['product_id'] ?>">
-                <?= htmlspecialchars($p['product_name']) ?> (Stock: <?= $p['stock'] ?>)
-              </option>
-            <?php endwhile; ?>
-          </select>
 
-          <label class="mt-2">Stock Amount</label>
-          <input type="number" class="form-control" name="stock_amount" min="1" required>
+          <!-- ✅ New: Scan / type barcode -->
+          <label class="mb-1">Scan / Type Barcode</label>
+          <input type="text"
+                 class="form-control mb-2"
+                 id="addstock_barcode"
+                 name="barcode"
+                 placeholder="Scan or type barcode, then Enter"
+                 autocomplete="off"
+                 inputmode="numeric">
 
-          <!-- Inline confirmation area -->
-          <div id="confirmSection" class="alert alert-warning mt-3 d-none">
+          <div class="form-text mb-2">
+            Tip: You can leave product unselected if you scan a barcode.
+          </div>
+
+          <!-- Product (NOT required if barcode provided) -->
+            <label>Select Product (optional if barcode used)</label>
+            <select name="product_id" class="form-control" id="addstock_product">
+              <option value="">-- Choose Product --</option>
+              <?php
+                $branch_id = $_SESSION['current_branch_id'] ?? $_SESSION['branch_id'] ?? 0;
+                $stmt = $conn->prepare("
+                  SELECT p.product_id, p.product_name, p.barcode, i.stock
+                  FROM products p
+                  INNER JOIN inventory i ON p.product_id = i.product_id
+                  WHERE i.branch_id = ? AND i.archived = 0
+                  ORDER BY p.product_name ASC
+                ");
+                $stmt->bind_param("i", $branch_id);
+                $stmt->execute();
+                $prodRes = $stmt->get_result();
+                while ($p = $prodRes->fetch_assoc()):
+              ?>
+                <option value="<?= $p['product_id'] ?>"
+                        data-barcode="<?= htmlspecialchars($p['barcode'] ?? '') ?>">
+                  <?= htmlspecialchars($p['product_name']) ?> (Stock: <?= $p['stock'] ?>)
+                </option>
+              <?php endwhile; ?>
+            </select>
+
+
+          <label class="mt-3">Stock Amount</label>
+          <input type="number" class="form-control" id="addstock_qty" name="stock_amount" min="1" required>
+
+          <!-- Inline confirmation (kept as you had it) -->
+          <div id="confirmSection" class=" d-none mx-auto text-center" style="max-width: 350px;">
             <p id="confirmMessage"></p>
             <div class="d-flex justify-content-end gap-2">
               <button type="button" class="btn btn-secondary btn-sm" id="cancelConfirm">Cancel</button>
@@ -735,13 +753,13 @@ if (isset($_SESSION['stock_message'])): ?>
         </div>
 
         <div class="modal-footer">
-          <!-- Trigger confirmation -->
           <button type="button" id="openConfirmStock" class="btn btn-success">Add</button>
         </div>
       </form>
     </div>
   </div>
 </div>
+
 
 <!-- Modal for Deleting Branches -->
 <div class="modal" id="deleteSelectionModal" style="display: none;">
@@ -1502,10 +1520,164 @@ function showToast(message, type = 'info') {
   const bsToast = new bootstrap.Toast(toastEl);
   bsToast.show();
 }
+</script>
 
+<script>
+function selectByBarcode(code) {
+  const prodSel = document.getElementById('addstock_product');
+  const clean   = (code || '').replace(/\s+/g, '');
+
+  let match = null;
+  for (const opt of prodSel.options) {
+    const bc = (opt.dataset.barcode || '').replace(/\s+/g, '');
+    if (bc && bc === clean) { match = opt; break; }
+  }
+
+  if (match) {
+    prodSel.value = match.value;
+    // Optional success toast
+    const nameOnly = match.textContent.split('(')[0].trim();
+    showToast(`✅ ${nameOnly} selected via barcode`, 'success');
+    return true;
+  } else {
+    prodSel.value = '';
+    showToast(`❌ No product found with barcode: ${clean}`, 'danger');
+    return false;
+  }
+}
 </script>
 
 </script>
+<!-- Barcode Script -->
+<script>
+(() => {
+  const modalEl  = document.getElementById('addStockModal');
+  const form     = document.getElementById('addStockForm');
+  const bcInput  = document.getElementById('addstock_barcode');
+  const qtyInput = document.getElementById('addstock_qty');
+
+  // Tuning
+  const INTER_CHAR_MS = 50;     // typical scan gap
+  const SILENCE_MS    = 120;    // submit/finalize after this pause if no Enter
+
+  let buffer = '';
+  let lastTs = 0;
+  let silenceTimer = null;
+  let listening = false;
+
+  function resetBuffer() {
+    buffer = '';
+    lastTs = 0;
+    if (silenceTimer) { clearTimeout(silenceTimer); silenceTimer = null; }
+  }
+
+  function finalizeScan() {
+    if (!buffer || buffer.length < 4) { resetBuffer(); return; }
+    const code = buffer.replace(/\s+/g, '');
+    bcInput.value = code;
+
+    // NEW: select product by barcode + show toast
+    const matched = selectByBarcode(code);
+
+    // UX after matching
+    if (matched) {
+      if (!qtyInput.value) qtyInput.focus();
+    }
+
+    resetBuffer();
+  }
+
+  function scheduleSilentFinalize() {
+    if (silenceTimer) clearTimeout(silenceTimer);
+    silenceTimer = setTimeout(finalizeScan, SILENCE_MS);
+  }
+
+  function onKey(e) {
+    if (!listening) return;
+
+    // If typing inside inputs, don't hijack except barcode field itself
+    const tag = (e.target.tagName || '').toUpperCase();
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') {
+      // Allow normal typing; barcode scanners will usually not focus fields anyway
+      return;
+    }
+
+    const now = Date.now();
+    if (now - lastTs > INTER_CHAR_MS) buffer = '';
+    lastTs = now;
+
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      finalizeScan();
+      return;
+    }
+
+    if (e.key && e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      buffer += e.key;
+      scheduleSilentFinalize();
+    }
+  }
+
+  // Activate only while the modal is shown
+  modalEl.addEventListener('shown.bs.modal', () => {
+    listening = true;
+    resetBuffer();
+    // If cashier will type, focus the barcode field
+    bcInput.focus();
+  });
+  modalEl.addEventListener('hidden.bs.modal', () => {
+    listening = false;
+    resetBuffer();
+  });
+
+  document.addEventListener('keydown', onKey);
+
+  // Also support manual Enter in the visible barcode field
+  bcInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      buffer = bcInput.value;
+      finalizeScan();
+    }
+  });
+})();
+</script>
+<!-- dropdown script -->
+<script>
+document.addEventListener("DOMContentLoaded", () => {
+  const bcInput = document.getElementById("addstock_barcode");
+  const prodSel = document.getElementById("addstock_product");
+
+  // When cashier scans or types and presses Enter
+  bcInput.addEventListener("keydown", e => {
+    if (e.key === "Enter") {
+      e.preventDefault(); // prevent form auto-submit
+      const code = bcInput.value.trim();
+
+      if (!code) return;
+
+      let found = false;
+      for (const opt of prodSel.options) {
+        if ((opt.dataset.barcode || "") === code) {
+          prodSel.value = opt.value;
+          found = true;
+          break;
+        }
+      }
+
+      if (!found) {
+        selectByBarcode(code); // handles both success & error toasts internally
+
+        prodSel.value = ""; // reset selection
+      }
+
+      // clear barcode input for next scan
+      bcInput.value = "";
+    }
+  });
+});
+</script>
+
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>
