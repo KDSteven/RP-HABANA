@@ -259,7 +259,7 @@ if (isset($_SESSION['stock_message'])): ?>
         <a href="/config/admin/backup_admin.php"><i class="fa-solid fa-database"></i> Backup and Restore</a>
     <?php endif; ?>
 
-    <!-- Stockman Links -->
+    <!-- Stockman Linkssss -->
      <?php
       $transferNotif = $transferNotif ?? 0; // if not set, default to 0
       ?>
