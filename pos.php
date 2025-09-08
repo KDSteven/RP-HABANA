@@ -12,6 +12,15 @@ if (!isset($_SESSION['role'])) {
 $role = $_SESSION['role'];
 $branch_id = (int)($_SESSION['branch_id'] ?? 0);
 
+$pending = 0;
+if ($role === 'admin') {
+    $result = $conn->query("SELECT COUNT(*) AS pending FROM transfer_requests WHERE status='Pending'");
+    if ($result) {
+        $row = $result->fetch_assoc();
+        $pending = $row['pending'] ?? 0;
+    }
+}
+
 // Initialize cart
 if (!isset($_SESSION['cart'])) {
     $_SESSION['cart'] = [];
@@ -33,12 +42,16 @@ $params = [$branch_id];
 $types = "i";
 
 if ($search) {
-    $query .= " AND (products.product_name LIKE ? OR products.category LIKE ?)";
+    $query .= " AND (products.product_name LIKE ? 
+                     OR products.category LIKE ? 
+                     OR products.barcode = ?)";
     $search_param = "%$search%";
-    $params[] = $search_param;
-    $params[] = $search_param;
-    $types .= "ss";
+    $params[] = $search_param;   // for product_name
+    $params[] = $search_param;   // for category
+    $params[] = $search;         // exact barcode match
+    $types .= "sss";
 }
+
 
 if ($category_filter) {
     $query .= " AND products.category = ?";
@@ -55,6 +68,55 @@ $products_result = $stmt->get_result();
 $errorMessage = '';
 $showReceiptModal = false;
 $lastSaleId = null;
+
+// =================== Scan Barcode -> Auto Add ===================
+if (!empty($_POST['scan_barcode'])) {
+    // Normalize: trim and remove inner spaces often read by phone apps
+    $raw = $_POST['scan_barcode'];
+    $barcode = preg_replace('/\s+/', '', trim($raw));  // keep leading zeros by staying string
+
+    // Find the product for this branch with available stock
+    $scanStmt = $conn->prepare("
+        SELECT p.product_id, p.product_name, IFNULL(i.stock,0) AS stock
+        FROM products p
+        JOIN inventory i ON i.product_id = p.product_id
+        WHERE p.barcode = ? AND i.branch_id = ?
+        LIMIT 1
+    ");
+    $scanStmt->bind_param("si", $barcode, $branch_id);
+    $scanStmt->execute();
+    $prod = $scanStmt->get_result()->fetch_assoc();
+    $scanStmt->close();
+
+    if (!$prod) {
+        $errorMessage = "No product found for barcode: {$barcode}.";
+    } elseif ((int)$prod['stock'] <= 0) {
+        $errorMessage = "{$prod['product_name']} is out of stock.";
+    } else {
+        // Add 1 to cart (reuse your cart structure)
+        $product_id = (int)$prod['product_id'];
+        $found = false;
+        foreach ($_SESSION['cart'] as &$item) {
+            if ($item['type'] === 'product' && $item['product_id'] === $product_id) {
+                $item['stock'] += 1;
+                $found = true;
+                break;
+            }
+        }
+        if (!$found) {
+            $_SESSION['cart'][] = [
+                'type' => 'product',
+                'product_id' => $product_id,
+                'stock' => 1
+            ];
+        }
+        logAction($conn, "Barcode Scan", "Scanned {$barcode} -> {$prod['product_name']}", null, $branch_id);
+    }
+
+    // Redirect clears the scan box and preserves current filters
+    header("Location: pos.php?search=" . urlencode($search) . "&category=" . urlencode($category_filter));
+    exit;
+}
 
 // =================== Add Product to Cart ===================
 if (isset($_POST['add'])) {
@@ -219,8 +281,8 @@ if (isset($_POST['checkout'])) {
   <link rel="stylesheet" href="css/pos.css?>v2">
   <link rel="stylesheet" href="css/sidebar.css">
 <audio id="notifSound" src="img/notif.mp3" preload="auto"></audio>
-
 </head>
+
 <body>
  <div class="sidebar"> 
   <h2>
@@ -272,6 +334,87 @@ if (isset($_POST['checkout'])) {
                 </select>
                 <button type="submit">Filter</button>
             </form>
+            <!-- Hidden scan form: posted automatically by JS -->
+            <form id="scanForm" method="POST" action="pos.php">
+                <input type="hidden" name="scan_barcode" id="scan_barcode">
+                <input type="hidden" name="from_scan" value="1">
+            </form>
+
+            <!-- Optional tiny display of last scanned code -->
+            <div id="lastScan" style="font-size:12px;color:#666;"></div>
+
+
+<script>
+(() => {
+  // Tune these if needed
+  const INTER_CHAR_MS = 50;    // gap between scan keystrokes (barcodes are very fast)
+  const SUBMIT_SILENCE_MS = 120; // submit if no key pressed for this long (when scanner doesn't send Enter)
+
+  const form     = document.getElementById('scanForm');
+  const hidden   = document.getElementById('scan_barcode');
+  const lastScan = document.getElementById('lastScan');
+
+  let buffer = '';
+  let lastTs = 0;
+  let silenceTimer = null;
+
+  function resetBuffer() {
+    buffer = '';
+    lastTs = 0;
+    if (silenceTimer) { clearTimeout(silenceTimer); silenceTimer = null; }
+  }
+
+  function scheduleSilentSubmit() {
+    if (silenceTimer) clearTimeout(silenceTimer);
+    silenceTimer = setTimeout(() => {
+      if (buffer.length >= 4) {   // ignore accidental short noise
+        submitBuffer();
+      } else {
+        resetBuffer();
+      }
+    }, SUBMIT_SILENCE_MS);
+  }
+
+  function submitBuffer() {
+    hidden.value = buffer.replace(/\s+/g, ''); // strip spaces between digits
+    if (lastScan) lastScan.textContent = 'Scanned: ' + hidden.value;
+    form.submit();           // your PHP already handles scan_barcode
+    resetBuffer();
+  }
+
+  // Global key capture
+  document.addEventListener('keydown', (e) => {
+    // If user is typing inside an input/textarea/select, don't hijack
+    const tag = (e.target.tagName || '').toUpperCase();
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || e.isComposing) return;
+
+    const now = Date.now();
+    if (now - lastTs > INTER_CHAR_MS) {
+      // gap too long => new sequence
+      buffer = '';
+    }
+    lastTs = now;
+
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      if (buffer.length >= 4) submitBuffer();
+      else resetBuffer();
+      return;
+    }
+
+    // Only collect printable characters (1-char keys)
+    if (e.key && e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      buffer += e.key;
+      scheduleSilentSubmit(); // in case scanner doesn't send Enter
+    }
+  });
+
+  // Optional: keep a visible scan box always focused if you re-add one
+  // setInterval(() => { if (visibleScanInput && document.activeElement !== visibleScanInput) visibleScanInput.focus(); }, 1000);
+})();
+</script>
+
+
         </div>
 
         <!-- ✅ Products Grid -->

@@ -283,8 +283,6 @@
 /* Style modal content only */
 
 .modal-content {
-    border-radius: 16px;
-   
     width: 95%;
     max-width: 700px;
     margin: auto;
@@ -298,8 +296,10 @@
     font-size: 20px;
     font-weight: 600;
     margin-bottom: 15px;
+    background: linear-gradient(90deg, #f7931e, #ffb347);
     display: flex;
     justify-content: space-between;
+    color: white;
 }
 
 /* Modal body */
@@ -329,6 +329,7 @@
     justify-content: flex-end;
     gap: 12px;
     margin-top: 20px;
+    background: linear-gradient(90deg, #f7931e, #ffb347);
 }
 .modal-footer button {
     background-color: #28a745;
