@@ -7,12 +7,13 @@ if (!isset($_SESSION['user_id'])) {
     exit;
 }
 
-$currentRole   = $_SESSION['role'] ?? '';
-$currentBranch = $_SESSION['branch_id'] ?? null;
+$user_id = $_SESSION['user_id'];
+$role = $_SESSION['role'];
+$branch_id = $_SESSION['branch_id'] ?? null;
 
-// Pending notifications
+// Pending notifications (only for admin)
 $pending = 0;
-if ($currentRole === 'admin') {
+if ($role === 'admin') {
     $result = $conn->query("SELECT COUNT(*) AS pending FROM transfer_requests WHERE LOWER(status) = 'pending'");
     $pending = $result ? (int)($result->fetch_assoc()['pending'] ?? 0) : 0;
 }
@@ -25,14 +26,13 @@ $endDate = date("Y-m-t", strtotime($startDate));
 
 // Branch filter
 $branchCondition = '';
-$branch_id = null;
-if ($currentRole === 'admin') {
+if ($role === 'admin') {
     if (!empty($_GET['branch_id']) && is_numeric($_GET['branch_id'])) {
         $branch_id = intval($_GET['branch_id']);
         $branchCondition = " AND s.branch_id = $branch_id";
     }
-} else if ($currentRole === 'staff') {
-    $branch_id = $currentBranch;
+} else if ($role === 'staff') {
+    // Staff can only see their branch
     $branchCondition = " AND s.branch_id = $branch_id";
 }
 
@@ -112,40 +112,52 @@ $salesReportResult = $conn->query($query);
     <title>Sales</title>
 </head>
 <body>
+    
 <div class="sidebar">
-<h2>
-    <?= htmlspecialchars(strtoupper($currentRole), ENT_QUOTES) ?>
-    <span class="notif-wrapper">
-        <i class="fas fa-bell" id="notifBell"></i>
-        <span id="notifCount" <?= $pending > 0 ? '' : 'style="display:none;"' ?>><?= $pending ?></span>
-    </span>
-</h2>
+    <h2>
+        <?= strtoupper($role) ?>
+        <span class="notif-wrapper">
+            <i class="fas fa-bell" id="notifBell"></i>
+            <span id="notifCount" <?= $pending > 0 ? '' : 'style="display:none;"' ?>><?= $pending ?></span>
+        </span>
+    </h2>
 
-<a href="dashboard.php" ><i class="fas fa-tv"></i> Dashboard</a>
+    <!-- Common -->
+    <a href="dashboard.php"><i class="fas fa-tv"></i> Dashboard</a>
 
-<?php if ($currentRole === 'admin'): ?>
-    <a href="inventory.php"><i class="fas fa-box"></i> Inventory</a>
-    <a href="sales.php" class="active"><i class="fas fa-receipt"></i> Sales</a>
-    <a href="approvals.php"><i class="fas fa-check-circle"></i> Approvals
-        <?php if ($pending > 0): ?>
-            <span class="notif-badge"><?= $pending ?></span>
-        <?php endif; ?>
-    </a>
-    <a href="accounts.php"><i class="fas fa-users"></i> Accounts</a>
-    <a href="archive.php"><i class="fas fa-archive"></i> Archive</a>
-    <a href="logs.php"><i class="fas fa-file-alt"></i> Logs</a>
-<?php endif; ?>
+    <!-- Admin Links -->
+    <?php if ($role === 'admin'): ?>
+        <a href="inventory.php"><i class="fas fa-box"></i> Inventory</a>
+        <a href="physical_inventory.php" class="active"><i class="fas fa-warehouse"></i> Physical Inventory</a>
+        <a href="sales.php"><i class="fas fa-receipt"></i> Sales</a>
+        <a href="approvals.php"><i class="fas fa-check-circle"></i> Approvals
+            <?php if ($pending > 0): ?>
+                <span style="background:red;color:white;border-radius:50%;padding:3px 7px;font-size:12px;"><?= $pending ?></span>
+            <?php endif; ?>
+        </a>
+        <a href="accounts.php"><i class="fas fa-users"></i> Accounts</a>
+        <a href="archive.php"><i class="fas fa-archive"></i> Archive</a>
+        <a href="logs.php"><i class="fas fa-file-alt"></i> Logs</a>
+    <?php endif; ?>
 
-<?php if ($currentRole === 'stockman'): ?>
-    <a href="transfer.php"><i class="fas fa-exchange-alt"></i> Transfer</a>
-<?php endif; ?>
+    <!-- Stockman Links -->
+    <?php if ($role === 'stockman'): ?>
+        <a href="inventory.php"><i class="fas fa-box"></i> Inventory
+            <?php if ($transferNotif > 0): ?>
+                <span style="background:red;color:white;border-radius:50%;padding:3px 7px;font-size:12px;"><?= $transferNotif ?></span>
+            <?php endif; ?>
+        </a>
+        <a href="physical_inventory.php" class="active"><i class="fas fa-warehouse"></i> Physical Inventory</a>
+    <?php endif; ?>
 
-<?php if ($currentRole === 'staff'): ?>
-    <a href="pos.php"><i class="fas fa-cash-register"></i> POS</a>
-    <a href="history.php"><i class="fas fa-history"></i> Sales History</a>
-<?php endif; ?>
+    <!-- Staff Links -->
+    <?php if ($role === 'staff'): ?>
+        <a href="pos.php"><i class="fas fa-cash-register"></i> POS</a>
+        <a href="history.php"><i class="fas fa-history"></i> Sales History</a>
+    <?php endif; ?>
 
-<a href="logout.php"><i class="fas fa-sign-out-alt"></i> Logout</a>
+    <!-- Logout -->
+    <a href="logout.php"><i class="fas fa-sign-out-alt"></i> Logout</a>
 </div>
 
 

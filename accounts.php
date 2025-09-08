@@ -62,13 +62,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['create_user'])) {
     exit;
 }
 
-// Update user
+// ------------------- UPDATE USER -------------------
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_user'])) {
-    $id        = (int) ($_POST['edit_user_id'] ?? 0);
-    $username  = trim($_POST['username'] ?? '');
-    $role      = $_POST['role'] ?? '';
-    $branch_id = (in_array($role, ['staff','stockman']) && isset($_POST['branch_id'])) ? (int)$_POST['branch_id']  : 0;
-    $password  = $_POST['password'] ?? '';
+    $id       = (int) ($_POST['edit_user_id'] ?? 0);
+    $username = trim($_POST['username'] ?? '');
+    $password = $_POST['password'] ?? '';
+    $role     = $_POST['role'] ?? '';
+
+    // Determine branch_id
+    if (in_array($role, ['staff','stockman']) && !empty($_POST['branch_id'])) {
+        $branch_id = (int) $_POST['branch_id'];
+    } else {
+        $branch_id = null; // Admin or role without branch
+    }
 
     if ($id <= 0 || $username === '' || $role === '') {
         header("Location: accounts.php?updated=invalid");
@@ -77,13 +83,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_user'])) {
 
     if (!empty($password)) {
         $hashedPassword = password_hash($password, PASSWORD_DEFAULT);
-        $stmt = $conn->prepare("UPDATE users SET username=?, password=?, role=?, branch_id=? WHERE id=?");
-        $stmt->bind_param("sssii", $username, $hashedPassword, $role, $branch_id, $id);
+
+        if (is_null($branch_id)) {
+            $stmt = $conn->prepare("UPDATE users 
+                                    SET username=?, password=?, role=?, branch_id=NULL 
+                                    WHERE id=?");
+            $stmt->bind_param("sssi", $username, $hashedPassword, $role, $id);
+        } else {
+            $stmt = $conn->prepare("UPDATE users 
+                                    SET username=?, password=?, role=?, branch_id=? 
+                                    WHERE id=?");
+            $stmt->bind_param("sssii", $username, $hashedPassword, $role, $branch_id, $id);
+        }
     } else {
-        $stmt = $conn->prepare("UPDATE users SET username=?, role=?, branch_id=? WHERE id=?");
-        $stmt->bind_param("ssii", $username, $role, $branch_id, $id);
+        if (is_null($branch_id)) {
+            $stmt = $conn->prepare("UPDATE users 
+                                    SET username=?, role=?, branch_id=NULL 
+                                    WHERE id=?");
+            $stmt->bind_param("ssi", $username, $role, $id);
+        } else {
+            $stmt = $conn->prepare("UPDATE users 
+                                    SET username=?, role=?, branch_id=? 
+                                    WHERE id=?");
+            $stmt->bind_param("ssii", $username, $role, $branch_id, $id);
+        }
     }
+
     $stmt->execute();
+
+    logAction($conn, "Update Account", "Updated user: $username, role: $role, branch_id: " . ($branch_id ?? 'NULL'));
+
     header("Location: accounts.php?updated=success");
     exit;
 }
@@ -185,6 +214,7 @@ function logAction($conn, $action, $details, $user_id = null, $branch_id = null)
 
     <?php if ($currentRole === 'admin'): ?>
         <a href="inventory.php"><i class="fas fa-box"></i> Inventory</a>
+        <a href="physical_inventory.php"><i class="fas fa-warehouse"></i> Physical Inventory</a>
         <a href="sales.php"><i class="fas fa-receipt"></i> Sales</a>
         <a href="approvals.php"><i class="fas fa-check-circle"></i> Approvals
             <?php if ($pending > 0): ?>
@@ -248,7 +278,7 @@ function logAction($conn, $action, $details, $user_id = null, $branch_id = null)
             data-id="<?= (int)$user['id'] ?>"
             data-username="<?= htmlspecialchars($user['username'], ENT_QUOTES) ?>"
             data-role="<?= htmlspecialchars($user['role'], ENT_QUOTES) ?>"
-            data-branch="<?= htmlspecialchars($user['branch_name'] ?? '', ENT_QUOTES) ?>"
+            data-branch="<?= htmlspecialchars($user['branch_id'] ?? '', ENT_QUOTES) ?>"
             onclick="openEditModal(this)">
             <i class="fas fa-edit"></i>
         </button>
@@ -438,18 +468,20 @@ function logAction($conn, $action, $details, $user_id = null, $branch_id = null)
 function openCreateUserModal(){ document.getElementById('createUserModal').classList.add('active'); }
 function closeCreateUserModal(){ document.getElementById('createUserModal').classList.remove('active'); }
 function openEditModal(button){
-    const modal = document.getElementById('editModal');
-    modal.classList.add('active');
+    document.getElementById('editModal').style.display = 'block';
     document.getElementById('editUserId').value = button.dataset.id;
     document.getElementById('editUsername').value = button.dataset.username;
     document.getElementById('editRole').value = button.dataset.role;
-    toggleEditBranch();
-    // preselect branch
-    const branch = button.dataset.branch || '';
-    document.querySelectorAll('#editBranchGroup input[name="branch_id"]').forEach(r => {
-        r.checked = r.parentNode.textContent.trim() === branch;
+
+    // preselect branch radio if present (match by ID, not label text)
+    let branchId = button.dataset.branch || '';
+    document.querySelectorAll('#editBranchGroup input[name="branch_id"]').forEach(radio => {
+        radio.checked = (radio.value === branchId);
     });
+
+    toggleEditBranch();
 }
+
 function closeEditModal(){ document.getElementById('editModal').classList.remove('active'); }
 
 /* ---------------- Branch Modal ---------------- */
@@ -533,8 +565,10 @@ function closeModal(){
 }
 function toggleEditBranch(){
     const role = document.getElementById('editRole').value;
-    document.getElementById('editBranchGroup').style.display = (role === 'staff') ? 'block' : 'none';
+    document.getElementById('editBranchGroup').style.display = 
+        (role === 'staff' || role === 'stockman') ? 'block' : 'none';
 }
+
 function toggleBranchDropdown(){
     const role = document.getElementById('roleSelect').value;
     document.getElementById('branchRadioGroup').style.display = (role === 'staff') ? 'block' : 'none';

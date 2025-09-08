@@ -8,15 +8,11 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
     $username = trim($_POST['username'] ?? "");
     $password = trim($_POST['password'] ?? "");
 
-    // Get client info
-    $ip_address = $_SERVER['REMOTE_ADDR'] ?? 'Unknown';
-    $user_agent = $_SERVER['HTTP_USER_AGENT'] ?? 'Unknown';
-
     if (empty($username) || empty($password)) {
         $error = "Username and password are required.";
     } else {
-        // Include must_change_password in query
-        $sql = "SELECT id, username, password, role, branch_id, must_change_password FROM users WHERE username = ?";
+        $sql = "SELECT id, username, password, role, branch_id, must_change_password 
+                FROM users WHERE username = ?";
         $stmt = $conn->prepare($sql);
 
         if ($stmt) {
@@ -28,8 +24,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                 $user = $result->fetch_assoc();
                 $stmt->close();
 
-                // 🚫 BLOCK LOGIN IF THERE IS A PENDING PASSWORD RESET
-                // (Admins shouldn't have pending requests via your flow, but this is safe anyway.)
+                // 🚫 Check if pending reset
                 $stmt = $conn->prepare("SELECT 1 FROM password_resets WHERE user_id=? AND status='Pending' LIMIT 1");
                 $stmt->bind_param("i", $user['id']);
                 $stmt->execute();
@@ -39,42 +34,49 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
 
                 if ($hasPendingReset) {
                     $error = "Your account has a pending password reset. Please wait for Admin approval.";
-                } else {
-                    // Proceed with normal password check
-                    if (password_verify($password, $user['password'])) {
-                        // Login success – set session
-                        $_SESSION['user_id'] = $user['id'];
-                        $_SESSION['username'] = $user['username'];
-                        $_SESSION['role'] = $user['role'];
-                        $_SESSION['branch_id'] = $user['branch_id']; // Only meaningful for staff
+                } elseif (password_verify($password, $user['password'])) {
+                    // ✅ Login success
+                    $_SESSION['user_id'] = $user['id'];
+                    $_SESSION['username'] = $user['username'];
+                    $_SESSION['role'] = $user['role'];
+                    $_SESSION['branch_id'] = $user['branch_id'] ?? null;
 
-                        // Force password change if required
-                        if ((int)$user['must_change_password'] === 1) {
-                            header("Location: change_password.php");
-                            exit();
-                        }
+                    // 🔔 Insert login log (no IP address)
+                    $action = "Login successful";
+                    $logStmt = $conn->prepare("INSERT INTO logs (user_id, action) VALUES (?, ?)");
+                    $logStmt->bind_param("is", $user['id'], $action);
+                    $logStmt->execute();
 
-                        // Normal redirect
-                        header("Location: dashboard.php");
+                    // Force password change if required
+                    if ((int)$user['must_change_password'] === 1) {
+                        header("Location: change_password.php");
                         exit();
-                    } else {
-                        $error = "Invalid username or password.";
                     }
+
+                    header("Location: dashboard.php");
+                    exit;
+                } else {
+                    $error = "Invalid username or password.";
                 }
             } else {
                 $error = "Invalid username or password.";
-                $stmt && $stmt->close();
             }
         } else {
             $error = "Database error: " . $conn->error;
         }
     }
+
+    // ❌ Failed login attempt log (no IP address)
+    if (!empty($username)) {
+        $action = "Login failed for username: $username";
+        $logStmt = $conn->prepare("INSERT INTO logs (user_id, action) VALUES (0, ?)");
+        $logStmt->bind_param("s", $action);
+        $logStmt->execute();
+    }
 }
 
 $conn->close();
 ?>
-
-
 
 
 <!DOCTYPE html>

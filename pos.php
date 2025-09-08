@@ -9,8 +9,19 @@ if (!isset($_SESSION['role'])) {
     exit;
 }
 
+$user_id = $_SESSION['user_id'];
 $role = $_SESSION['role'];
-$branch_id = (int)($_SESSION['branch_id'] ?? 0);
+$branch_id = $_SESSION['branch_id'] ?? null;
+
+$pending = 0;
+if ($role === 'admin') {
+    $result = $conn->query("SELECT COUNT(*) AS pending FROM transfer_requests WHERE status='Pending'");
+    if ($result) {
+        $row = $result->fetch_assoc();
+        $pending = $row['pending'] ?? 0;
+    }
+}
+
 
 // Initialize cart
 if (!isset($_SESSION['cart'])) {
@@ -223,14 +234,13 @@ if (isset($_POST['checkout'])) {
 </head>
 <body>
  <div class="sidebar"> 
-  <h2>
+ 
     <h2>
     <?= strtoupper($role) ?>
     <span class="notif-wrapper">
         <i class="fas fa-bell" id="notifBell"></i>
         <span id="notifCount" <?= $pending > 0 ? '' : 'style="display:none;"' ?>>0</span>
     </span>
-</h2>
 </h2>
 
     <a href="dashboard.php"><i class="fas fa-tv"></i> Dashboard</a>
@@ -532,48 +542,48 @@ function submitCheckout() {
     document.getElementById("checkoutForm").submit();
 }
 </script>
-
 <script>
-const serviceJobData = <?= json_encode($serviceJobData) ?>;
+const serviceJobData = <?= json_encode($serviceJobData ?? [], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_QUOT) ?>;
 
-const ctx = document.getElementById('serviceJobChart').getContext('2d');
-ctx.canvas.height = serviceJobData.length * 50; // dynamic height
+if (serviceJobData.length > 0) {
+    const ctx = document.getElementById('serviceJobChart').getContext('2d');
+    ctx.canvas.height = serviceJobData.length * 50; // dynamic height
 
-const labels = serviceJobData.map(item => item.service_name);
-const data = serviceJobData.map(item => item.count);
+    const labels = serviceJobData.map(item => item.service_name);
+    const data = serviceJobData.map(item => item.count);
 
-const colors = labels.map(() => `hsl(${Math.floor(Math.random() * 360)}, 70%, 60%)`);
+    const colors = labels.map(() => `hsl(${Math.floor(Math.random() * 360)}, 70%, 60%)`);
 
-new Chart(ctx, {
-    type: 'bar',
-    data: {
-        labels: labels,
-        datasets: [{
-            label: 'Services Sold',
-            data: data,
-            backgroundColor: colors
-        }]
-    },
-    options: {
-        indexAxis: 'y',
-        responsive: true,
-        plugins: { legend: { display: false } },
-        scales: {
-            x: { beginAtZero: true },
-            y: { ticks: { autoSkip: false } }
+    new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: labels,
+            datasets: [{
+                label: 'Services Sold',
+                data: data,
+                backgroundColor: colors
+            }]
+        },
+        options: {
+            indexAxis: 'y',
+            responsive: true,
+            plugins: { legend: { display: false } },
+            scales: {
+                x: { beginAtZero: true },
+                y: { ticks: { autoSkip: false } }
+            }
         }
-    }
-});
+    });
+}
+
+// Show error modal if PHP error exists
 <?php if (!empty($errorMessage)): ?>
-<script>
 document.addEventListener('DOMContentLoaded', function() {
     document.getElementById('errorMessage').innerText = "<?= addslashes($errorMessage) ?>";
     var errorModal = new bootstrap.Modal(document.getElementById('errorModal'));
     errorModal.show();
 });
-</script>
 <?php endif; ?>
-
 </script>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>

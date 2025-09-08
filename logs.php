@@ -7,10 +7,19 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
     header('Location: index.html');
     exit;
 }
+$user_id = $_SESSION['user_id'];
+$role = $_SESSION['role'];
+$branch_id = $_SESSION['branch_id'] ?? null;
 
-$currentRole = $_SESSION['role'];
-$pending = 0; // pending requests placeholder
 
+$pending = 0;
+if ($role === 'admin') {
+    $result = $conn->query("SELECT COUNT(*) AS pending FROM transfer_requests WHERE status='Pending'");
+    if ($result) {
+        $row = $result->fetch_assoc();
+        $pending = $row['pending'] ?? 0;
+    }
+}
 // Get branch list
 $branches = $conn->query("SELECT branch_id, branch_name FROM branches");
 // Filters
@@ -73,20 +82,63 @@ $result = $stmt->get_result();
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
 <link rel="stylesheet" href="css/sidebar.css">
 <link rel="stylesheet" href="css/logs.css?v3">
+<link rel="stylesheet" href="css/notifications.css">
 </head>
 <body>
 
 <div class="sidebar">
-    <h2><?= htmlspecialchars(strtoupper($currentRole)) ?></h2>
-    <a href="dashboard.php"><i class="fas fa-tv"></i> Dashboard</a>
-    <a href="inventory.php"><i class="fas fa-box"></i> Inventory</a>
-    <a href="sales.php"><i class="fas fa-receipt"></i> Sales</a>
-    <a href="approvals.php"><i class="fas fa-check-circle"></i> Approvals</a>
-    <a href="accounts.php"><i class="fas fa-users"></i> Accounts</a>
-    <a href="archive.php"><i class="fas fa-archive"></i> Archive</a>
-    <a href="logs.php" class="active"><i class="fas fa-file-alt"></i> Logs</a>
+   <h2>
+    <?= strtoupper($role) ?>
+    <span class="notif-wrapper">
+        <i class="fas fa-bell" id="notifBell"></i>
+        <span id="notifCount" <?= $pending > 0 ? '' : 'style="display:none;"' ?>>
+    <?= $pending ?>
+</span>
+</h2>
+    <!-- Common -->
+    <a href="dashboard.php" ><i class="fas fa-tv"></i> Dashboard</a>
+
+    <!-- Admin Links -->
+    <?php if ($role === 'admin'): ?>
+        <a href="inventory.php" ><i class="fas fa-box"></i> Inventory</a>
+        <a href="physical_inventory.php" ><i class="fas fa-warehouse"></i> Physical Inventory</a>
+        <a href="sales.php"><i class="fas fa-receipt"></i> Sales</a>
+        <a href="approvals.php"><i class="fas fa-check-circle"></i> Approvals
+            <?php if ($pending > 0): ?>
+                <span style="background:red;color:white;border-radius:50%;padding:3px 7px;font-size:12px;">
+                    <?= $pending ?>
+                </span>
+            <?php endif; ?>
+        </a>
+        <a href="accounts.php"><i class="fas fa-users"></i> Accounts</a>
+        <a href="archive.php"><i class="fas fa-archive"></i> Archive</a>
+        <a href="logs.php" class="active"><i class="fas fa-file-alt"></i> Logs</a>
+    <?php endif; ?>
+
+    <!-- Stockman Links -->
+     <?php
+      $transferNotif = $transferNotif ?? 0; // if not set, default to 0
+      ?>
+    <?php if ($role === 'stockman'): ?>
+        <a href="inventory.php" ><i class="fas fa-box"></i> Inventory
+            <?php if ($transferNotif > 0): ?>
+                <span style="background:red;color:white;border-radius:50%;padding:3px 7px;font-size:12px;">
+                    <?= $transferNotif ?>
+                </span>
+            <?php endif; ?>
+        </a>
+        <a href="physical_inventory.php" class="active"><i class="fas fa-warehouse"></i> Physical Inventory</a>
+    <?php endif; ?>
+
+    <!-- Staff Links -->
+    <?php if ($role === 'staff'): ?>
+        <a href="pos.php"><i class="fas fa-cash-register"></i> POS</a>
+        <a href="history.php"><i class="fas fa-history"></i> Sales History</a>
+    <?php endif; ?>
+
     <a href="logout.php"><i class="fas fa-sign-out-alt"></i> Logout</a>
 </div>
+
 <div class="content">
     <!-- Header + Filters -->
     <div class="header-bar">
@@ -218,6 +270,6 @@ $result = $stmt->get_result();
 });
 
 </script>
-
+<script src="notifications.js"></script>
 </body>
 </html>

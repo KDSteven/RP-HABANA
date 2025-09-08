@@ -76,6 +76,7 @@ $pending = $conn->query("SELECT COUNT(*) AS pending FROM transfer_requests WHERE
     <!-- Admin Links -->
     <?php if ($role === 'admin'): ?>
         <a href="inventory.php"><i class="fas fa-box"></i> Inventory</a>
+        <a href="physical_inventory.php"><i class="fas fa-warehouse"></i> Physical Inventory</a>
         <a href="sales.php"><i class="fas fa-receipt"></i> Sales</a>
         <a href="approvals.php"><i class="fas fa-check-circle"></i> Approvals
             <?php if ($pending > 0): ?>

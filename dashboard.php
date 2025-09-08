@@ -268,6 +268,7 @@ if (empty($serviceJobData)) {
     <!-- Admin Links -->
     <?php if ($role === 'admin'): ?>
         <a href="inventory.php"><i class="fas fa-box"></i> Inventory</a>
+        <a href="physical_inventory.php"><i class="fas fa-warehouse"></i> Physical Inventory</a>
         <a href="sales.php"><i class="fas fa-receipt"></i> Sales</a>
         <a href="approvals.php"><i class="fas fa-check-circle"></i> Approvals
             <?php if ($pending > 0): ?>
@@ -292,6 +293,7 @@ if (empty($serviceJobData)) {
                     <?= $transferNotif ?>
                 </span>
             <?php endif; ?>
+            <a href="physical_inventory.php"><i class="fas fa-warehouse"></i> Physical Inventory</a>
         </a>
     <?php endif; ?>
     <!-- Staff Links -->
@@ -317,21 +319,21 @@ if (empty($serviceJobData)) {
         <label for="month">View Reports for:</label>
         <input type="month" id="month" name="month" value="<?= htmlspecialchars($_GET['month'] ?? date('Y-m')) ?>">
 
-        <?php if ($role === 'staff'): 
-            $staffBranch = $conn->query("SELECT branch_name FROM branches WHERE branch_id = $branch_id")->fetch_assoc();
-            $staffBranchName = $staffBranch ? htmlspecialchars($staffBranch['branch_name']) : 'Your Branch';
+        <?php if ($role === 'stockman' || $role === 'staff'): 
+            $branchData = $conn->query("SELECT branch_name FROM branches WHERE branch_id = $branch_id")->fetch_assoc();
+            $branchName = $branchData ? htmlspecialchars($branchData['branch_name']) : 'Your Branch';
         ?>
             <input type="hidden" name="branch_id" value="<?= $branch_id ?>">
             <select id="branch" name="branch_id" disabled>
-                <option value="<?= $branch_id ?>" selected><?= $staffBranchName ?></option>
+                <option value="<?= $branch_id ?>" selected><?= $branchName ?></option>
             </select>
-        <?php else: ?>
+
+        <?php else: 
+            $branches = $conn->query("SELECT branch_id, branch_name FROM branches");
+        ?>
             <select id="branch" name="branch_id">
                 <option value="">All Branches</option>
-                <?php
-                $branches = $conn->query("SELECT branch_id, branch_name FROM branches");
-                while ($b = $branches->fetch_assoc()):
-                ?>
+                <?php while ($b = $branches->fetch_assoc()): ?>
                     <option value="<?= $b['branch_id'] ?>" <?= (isset($_GET['branch_id']) && $_GET['branch_id'] == $b['branch_id']) ? 'selected' : '' ?>>
                         <?= htmlspecialchars($b['branch_name']) ?>
                     </option>

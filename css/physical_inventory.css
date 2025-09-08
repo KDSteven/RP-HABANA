@@ -1,0 +1,63 @@
+/* Table Container */
+.table-responsive {
+    max-height: 70vh;
+    overflow-y: auto;
+}
+
+/* Table Styling */
+#inventoryTable {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+#inventoryTable th,
+#inventoryTable td {
+    vertical-align: middle;
+    text-align: center;
+}
+
+/* Sticky Header */
+#inventoryTable thead.sticky-top {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    background-color: #343a40 !important;
+    color: #fff !important;
+}
+
+/* Hover Effect (rows not changed) */
+/* Hover Effect (only for rows NOT marked as changed) */
+/* Hover for normal rows */
+#inventoryTable tbody tr:not(.changed):hover td {
+    background-color: #a0d2ff !important; /* bright blue for testing */
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+/* Changed rows */
+#inventoryTable tbody tr.changed td {
+    background-color: #fff3cd !important; /* light yellow highlight */
+    transition: background-color 0.2s;
+}
+
+/* Hover for changed rows */
+#inventoryTable tbody tr.changed:hover td {
+    background-color: #ffe8a1 !important; /* slightly darker yellow */
+    cursor: pointer;
+}
+
+/* Inputs inside rows */
+#inventoryTable tbody tr input {
+    background-color: transparent;
+    border: none;
+    text-align: center;
+    width: 70px;
+    margin: 0 auto;
+}
+
+/* Status Badges */
+#inventoryTable .badge {
+    font-size: 0.9rem;
+    padding: 0.4em 0.6em;
+    transition: all 0.2s;
+}
