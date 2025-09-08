@@ -23,6 +23,15 @@ if ($role === 'admin') {
 }
 
 
+$pending = 0;
+if ($role === 'admin') {
+    $result = $conn->query("SELECT COUNT(*) AS pending FROM transfer_requests WHERE status='Pending'");
+    if ($result) {
+        $row = $result->fetch_assoc();
+        $pending = $row['pending'] ?? 0;
+    }
+}
+
 // Initialize cart
 if (!isset($_SESSION['cart'])) {
     $_SESSION['cart'] = [];
@@ -44,12 +53,16 @@ $params = [$branch_id];
 $types = "i";
 
 if ($search) {
-    $query .= " AND (products.product_name LIKE ? OR products.category LIKE ?)";
+    $query .= " AND (products.product_name LIKE ? 
+                     OR products.category LIKE ? 
+                     OR products.barcode = ?)";
     $search_param = "%$search%";
-    $params[] = $search_param;
-    $params[] = $search_param;
-    $types .= "ss";
+    $params[] = $search_param;   // for product_name
+    $params[] = $search_param;   // for category
+    $params[] = $search;         // exact barcode match
+    $types .= "sss";
 }
+
 
 if ($category_filter) {
     $query .= " AND products.category = ?";
@@ -66,6 +79,55 @@ $products_result = $stmt->get_result();
 $errorMessage = '';
 $showReceiptModal = false;
 $lastSaleId = null;
+
+// =================== Scan Barcode -> Auto Add ===================
+if (!empty($_POST['scan_barcode'])) {
+    // Normalize: trim and remove inner spaces often read by phone apps
+    $raw = $_POST['scan_barcode'];
+    $barcode = preg_replace('/\s+/', '', trim($raw));  // keep leading zeros by staying string
+
+    // Find the product for this branch with available stock
+    $scanStmt = $conn->prepare("
+        SELECT p.product_id, p.product_name, IFNULL(i.stock,0) AS stock
+        FROM products p
+        JOIN inventory i ON i.product_id = p.product_id
+        WHERE p.barcode = ? AND i.branch_id = ?
+        LIMIT 1
+    ");
+    $scanStmt->bind_param("si", $barcode, $branch_id);
+    $scanStmt->execute();
+    $prod = $scanStmt->get_result()->fetch_assoc();
+    $scanStmt->close();
+
+    if (!$prod) {
+        $errorMessage = "No product found for barcode: {$barcode}.";
+    } elseif ((int)$prod['stock'] <= 0) {
+        $errorMessage = "{$prod['product_name']} is out of stock.";
+    } else {
+        // Add 1 to cart (reuse your cart structure)
+        $product_id = (int)$prod['product_id'];
+        $found = false;
+        foreach ($_SESSION['cart'] as &$item) {
+            if ($item['type'] === 'product' && $item['product_id'] === $product_id) {
+                $item['stock'] += 1;
+                $found = true;
+                break;
+            }
+        }
+        if (!$found) {
+            $_SESSION['cart'][] = [
+                'type' => 'product',
+                'product_id' => $product_id,
+                'stock' => 1
+            ];
+        }
+        logAction($conn, "Barcode Scan", "Scanned {$barcode} -> {$prod['product_name']}", null, $branch_id);
+    }
+
+    // Redirect clears the scan box and preserves current filters
+    header("Location: pos.php?search=" . urlencode($search) . "&category=" . urlencode($category_filter));
+    exit;
+}
 
 // =================== Add Product to Cart ===================
 if (isset($_POST['add'])) {
@@ -230,8 +292,8 @@ if (isset($_POST['checkout'])) {
   <link rel="stylesheet" href="css/pos.css?>v2">
   <link rel="stylesheet" href="css/sidebar.css">
 <audio id="notifSound" src="img/notif.mp3" preload="auto"></audio>
-
 </head>
+
 <body>
  <div class="sidebar"> 
  
@@ -282,6 +344,51 @@ if (isset($_POST['checkout'])) {
                 </select>
                 <button type="submit">Filter</button>
             </form>
+           <!-- Hidden scan form (stays invisible) -->
+<form id="scanForm" method="POST" action="pos.php">
+  <input type="hidden" name="scan_barcode" id="scan_barcode">
+  <input type="hidden" name="from_scan" value="1">
+</form>
+<div id="lastScan" style="font-size:12px;color:#666;"></div>
+
+<script>
+(() => {
+  const MAX_GAP_MS       = 40;   // time between scan keystrokes
+  const SILENCE_FINAL_MS = 120;  // finalize if scanner doesn't send Enter
+  const MIN_LEN          = 3;    // <-- your barcodes are 3 digits
+
+  const form   = document.getElementById('scanForm');
+  const hidden = document.getElementById('scan_barcode');
+  const lastUI = document.getElementById('lastScan');
+
+  let buf = '';
+  let lastTs = 0;
+  let timer = null;
+
+  function reset(){ buf=''; lastTs=0; if(timer){clearTimeout(timer); timer=null;} }
+  function finalize(){
+    if (buf.length < MIN_LEN) return reset();
+    const code = buf.replace(/\s+/g,'');
+    hidden.value = code;
+    if (lastUI) lastUI.textContent = 'Scanned: ' + code;
+    form.submit();
+    reset();
+  }
+  function schedule(){ if(timer) clearTimeout(timer); timer=setTimeout(finalize, SILENCE_FINAL_MS); }
+
+  document.addEventListener('keydown', (e) => {
+    if (e.ctrlKey || e.metaKey || e.altKey || e.isComposing) return;
+
+    const now = Date.now();
+    if (now - lastTs > MAX_GAP_MS) buf = '';
+    lastTs = now;
+
+    if (e.key === 'Enter') { if (buf.length >= MIN_LEN) finalize(); else reset(); return; }
+    if (e.key && e.key.length === 1) { buf += e.key; schedule(); }
+  });
+})();
+</script>
+
         </div>
 
         <!-- ✅ Products Grid -->

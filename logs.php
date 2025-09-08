@@ -2,6 +2,8 @@
 session_start();
 require 'config/db.php';
 
+$role = $_SESSION['role'] ?? '';
+
 // Only admin can access
 if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
     header('Location: index.html');
@@ -70,6 +72,7 @@ if ($params) $stmt->bind_param($types, ...$params);
 $stmt->execute();
 $result = $stmt->get_result();
 
+
 ?>
 
 
@@ -85,7 +88,6 @@ $result = $stmt->get_result();
 <link rel="stylesheet" href="css/notifications.css">
 </head>
 <body>
-
 <div class="sidebar">
    <h2>
     <?= strtoupper($role) ?>
@@ -113,6 +115,7 @@ $result = $stmt->get_result();
         <a href="accounts.php"><i class="fas fa-users"></i> Accounts</a>
         <a href="archive.php"><i class="fas fa-archive"></i> Archive</a>
         <a href="logs.php" class="active"><i class="fas fa-file-alt"></i> Logs</a>
+         <a href="/config/admin/backup_admin.php"><i class="fa-solid fa-database"></i> Backup and Restore</a>
     <?php endif; ?>
 
     <!-- Stockman Links -->
@@ -214,6 +217,8 @@ $result = $stmt->get_result();
 <p class="text-center text-muted mt-3">No logs available</p>
 <?php endif; ?>
 
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+<script src="notifications.js"></script>
 
 <script>document.addEventListener('DOMContentLoaded', function(){
 
