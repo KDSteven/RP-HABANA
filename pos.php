@@ -334,86 +334,50 @@ if (isset($_POST['checkout'])) {
                 </select>
                 <button type="submit">Filter</button>
             </form>
-            <!-- Hidden scan form: posted automatically by JS -->
-            <form id="scanForm" method="POST" action="pos.php">
-                <input type="hidden" name="scan_barcode" id="scan_barcode">
-                <input type="hidden" name="from_scan" value="1">
-            </form>
-
-            <!-- Optional tiny display of last scanned code -->
-            <div id="lastScan" style="font-size:12px;color:#666;"></div>
-
+           <!-- Hidden scan form (stays invisible) -->
+<form id="scanForm" method="POST" action="pos.php">
+  <input type="hidden" name="scan_barcode" id="scan_barcode">
+  <input type="hidden" name="from_scan" value="1">
+</form>
+<div id="lastScan" style="font-size:12px;color:#666;"></div>
 
 <script>
 (() => {
-  // Tune these if needed
-  const INTER_CHAR_MS = 50;    // gap between scan keystrokes (barcodes are very fast)
-  const SUBMIT_SILENCE_MS = 120; // submit if no key pressed for this long (when scanner doesn't send Enter)
+  const MAX_GAP_MS       = 40;   // time between scan keystrokes
+  const SILENCE_FINAL_MS = 120;  // finalize if scanner doesn't send Enter
+  const MIN_LEN          = 3;    // <-- your barcodes are 3 digits
 
-  const form     = document.getElementById('scanForm');
-  const hidden   = document.getElementById('scan_barcode');
-  const lastScan = document.getElementById('lastScan');
+  const form   = document.getElementById('scanForm');
+  const hidden = document.getElementById('scan_barcode');
+  const lastUI = document.getElementById('lastScan');
 
-  let buffer = '';
+  let buf = '';
   let lastTs = 0;
-  let silenceTimer = null;
+  let timer = null;
 
-  function resetBuffer() {
-    buffer = '';
-    lastTs = 0;
-    if (silenceTimer) { clearTimeout(silenceTimer); silenceTimer = null; }
+  function reset(){ buf=''; lastTs=0; if(timer){clearTimeout(timer); timer=null;} }
+  function finalize(){
+    if (buf.length < MIN_LEN) return reset();
+    const code = buf.replace(/\s+/g,'');
+    hidden.value = code;
+    if (lastUI) lastUI.textContent = 'Scanned: ' + code;
+    form.submit();
+    reset();
   }
+  function schedule(){ if(timer) clearTimeout(timer); timer=setTimeout(finalize, SILENCE_FINAL_MS); }
 
-  function scheduleSilentSubmit() {
-    if (silenceTimer) clearTimeout(silenceTimer);
-    silenceTimer = setTimeout(() => {
-      if (buffer.length >= 4) {   // ignore accidental short noise
-        submitBuffer();
-      } else {
-        resetBuffer();
-      }
-    }, SUBMIT_SILENCE_MS);
-  }
-
-  function submitBuffer() {
-    hidden.value = buffer.replace(/\s+/g, ''); // strip spaces between digits
-    if (lastScan) lastScan.textContent = 'Scanned: ' + hidden.value;
-    form.submit();           // your PHP already handles scan_barcode
-    resetBuffer();
-  }
-
-  // Global key capture
   document.addEventListener('keydown', (e) => {
-    // If user is typing inside an input/textarea/select, don't hijack
-    const tag = (e.target.tagName || '').toUpperCase();
-    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || e.isComposing) return;
+    if (e.ctrlKey || e.metaKey || e.altKey || e.isComposing) return;
 
     const now = Date.now();
-    if (now - lastTs > INTER_CHAR_MS) {
-      // gap too long => new sequence
-      buffer = '';
-    }
+    if (now - lastTs > MAX_GAP_MS) buf = '';
     lastTs = now;
 
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      if (buffer.length >= 4) submitBuffer();
-      else resetBuffer();
-      return;
-    }
-
-    // Only collect printable characters (1-char keys)
-    if (e.key && e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
-      buffer += e.key;
-      scheduleSilentSubmit(); // in case scanner doesn't send Enter
-    }
+    if (e.key === 'Enter') { if (buf.length >= MIN_LEN) finalize(); else reset(); return; }
+    if (e.key && e.key.length === 1) { buf += e.key; schedule(); }
   });
-
-  // Optional: keep a visible scan box always focused if you re-add one
-  // setInterval(() => { if (visibleScanInput && document.activeElement !== visibleScanInput) visibleScanInput.focus(); }, 1000);
 })();
 </script>
-
 
         </div>
 
