@@ -217,7 +217,9 @@ if (isset($_SESSION['stock_message'])): ?>
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Branch Inventory</title>
+<?php $pageTitle = 'Inventory'; ?>
+<title><?= htmlspecialchars("RP Habana — $pageTitle") ?></title>
+<link rel="icon" href="img/R.P.png">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" >
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
  <link rel="stylesheet" href="css/sidebar.css">
@@ -411,14 +413,20 @@ if (isset($_SESSION['stock_message'])): ?>
                       )' class="btn-edit">
                         <i class="fas fa-edit"></i>
                       </button>
-
+                      <!-- Archive Products -->
                       <?php if ($inventory_id): ?>
-                       <form method="POST" onsubmit="return confirm('Are you sure you want to archive this product?');" style="display:inline-block;">
-    <input type="hidden" name="inventory_id" value="<?= $inventory_id ?>">
-    <button type="submit" name="archive_product" class="btn-archive-unique">
-        <i class="fas fa-archive"></i>
-    </button>
-</form>
+                        <form id="archiveForm-<?= $inventory_id ?>" method="POST" style="display:inline-block;">
+                          <input type="hidden" name="inventory_id" value="<?= $inventory_id ?>">
+                          <button
+                            type="button"
+                            name="archive_product"
+                            class="btn-archive-unique"
+                            data-archive-type="product"
+                            data-archive-name="<?= htmlspecialchars($row['product_name']) ?>"
+                          >
+                            <i class="fas fa-archive"></i>
+                          </button>
+                        </form>
 
                       <?php else: ?>
                         <span class="text-muted">No Inventory</span>
@@ -483,13 +491,19 @@ if (isset($_SESSION['stock_message'])): ?>
                       <button onclick='openEditServiceModal(<?= json_encode($service) ?>)' class="btn-edit">
                         <i class="fas fa-edit"></i>
                       </button>
-                     <form method="POST" onsubmit="return confirm('Are you sure you want to archive this service?');" style="display:inline-block;">
-    <input type="hidden" name="service_id" value="<?= $service['service_id'] ?>">
-    <button type="submit" name="archive_service" class="btn-archive-unique">
-        <i class="fas fa-archive"></i>
-    </button>
-</form>
-
+                      <!-- Archive Service -->
+                        <form id="archiveServiceForm-<?= $service['service_id'] ?>" method="POST" style="display:inline-block;">
+                          <input type="hidden" name="service_id" value="<?= $service['service_id'] ?>">
+                          <button
+                            type="button"
+                            name="archive_service"
+                            class="btn-archive-unique"
+                            data-archive-type="service"
+                            data-archive-name="<?= htmlspecialchars($service['service_name']) ?>"
+                          >
+                            <i class="fas fa-archive"></i>
+                          </button>
+                        </form>
                     </div>
                   </td>
                 </tr>
@@ -497,7 +511,6 @@ if (isset($_SESSION['stock_message'])): ?>
             </tbody>
           </table>
         </div>
-
       </div>
     <?php else: ?>
       <div class="text-center text-muted py-4">
@@ -1024,77 +1037,60 @@ if (isset($_SESSION['stock_message'])): ?>
 </div>
 
 <!-- Stock Transfer Request Modal -->
-<div class="modal fade" id="transferModal" tabindex="-1" aria-labelledby="transferLabel" aria-hidden="true">
-  <div class="modal-dialog modal-dialog-centered modal-md">
-    <div class="modal-content fp-card">
-      <div class="modal-header fp-header">
-        <div class="d-flex align-items-center gap-2">
-          <i class="fas fa-exchange-alt"></i>
-          <h5 class="modal-title mb-0" id="transferstockLabel">Stock Transfer Request</h5>
+<!-- Stock Transfer Request (templated like Add Stock modal) -->
+<div class="modal fade" id="transferModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <form id="transferForm" autocomplete="off">
+        <div class="modal-header">
+          <h5 class="modal-title">Stock Transfer Request</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
         </div>
-        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
-      </div>
-          <form id="transferForm" autocomplete="off">
+
+        <div class="modal-body">
           <!-- Source Branch -->
-          <div class="mb-3 px-3">
-            <label for="source_branch" class="form-label fw-semibold">Source Branch</label>
-            <div class="input-group">
-              <span class="input-group-text"><i class="fas fa-warehouse"></i></span>
-              <select class="form-select" id="source_branch" name="source_branch" required>
-                <option value="">Select source branch</option>
-              </select>
-            </div>
-            <div class="invalid-feedback">Please select a source branch.</div>
-          </div>
+          <label for="source_branch" class="form-label fw-semibold mb-1"><i class="fas fa-warehouse"></i> Source Branch</label>
+          <select class="form-control mb-3" id="source_branch" name="source_branch" required>
+            <option value="">Select source branch</option>
+          </select>
+          <div class="invalid-feedback">Please select a source branch.</div>
 
           <!-- Product -->
-          <div class="mb-3 px-3">
-            <label for="product_id" class="form-label fw-semibold">Product</label>
-            <div class="input-group">
-              <span class="input-group-text"><i class="fas fa-box"></i></span>
-              <select class="form-select" id="product_id" name="product_id" required disabled>
-                <option value="">Select a branch first</option>
-              </select>
-            </div>
-            <div class="form-text">Select a source branch to load available products.</div>
-            <div class="invalid-feedback">Please select a product.</div>
-          </div>
+          <label for="product_id" class="form-label fw-semibold mb-1"><i class="fas fa-box"></i> Product</label>
+          <select class="form-control mb-1" id="product_id" name="product_id" required disabled>
+            <option value="">Select a branch first</option>
+          </select>
+          <div class="form-text mb-3">Select a source branch to load available products.</div>
+          <div class="invalid-feedback">Please select a product.</div>
 
           <!-- Destination Branch -->
-          <div class="mb-3 px-3">
-            <label for="destination_branch" class="form-label fw-semibold">Destination Branch</label>
-            <div class="input-group">
-              <span class="input-group-text"><i class="fas fa-truck"></i></span>
-              <select class="form-select" id="destination_branch" name="destination_branch" required>
-                <option value="">Select destination branch</option>
-              </select>
-            </div>
-            <div class="invalid-feedback">Please select a destination branch.</div>
-          </div>
+          <label for="destination_branch" class="form-label fw-semibold mb-1"><i class="fas fa-truck"></i> Destination Branch</label>
+          <select class="form-control mb-3" id="destination_branch" name="destination_branch" required>
+            <option value="">Select destination branch</option>
+          </select>
+          <div class="invalid-feedback">Please select a destination branch.</div>
 
           <!-- Quantity -->
-          <div class="mb-3 px-3">
-            <label for="quantity" class="form-label fw-semibold">Quantity</label>
-            <div class="input-group">
-              <span class="input-group-text"><i class="fas fa-sort-numeric-up"></i></span>
-              <input type="number" class="form-control" id="quantity" name="quantity" min="1" required placeholder="Enter quantity">
-            </div>
-            <div class="invalid-feedback">Please enter a valid quantity.</div>
-          </div>
+          <label for="quantity" class="form-label fw-semibold mb-1"><i class="fas fa-sort-numeric-up"></i> Quantity</label>
+          <input type="number" class="form-control" id="quantity" name="quantity" min="1" required placeholder="Enter quantity">
+          <div class="invalid-feedback">Please enter a valid quantity.</div>
 
           <!-- Message / Feedback -->
-          <div id="transferMsg" class="mt-3 "></div>
+          <div id="transferMsg" class="mt-3"></div>
+        </div>
 
-          <!-- Submit -->
-          <button type="submit" class="btn btn w-100 py-3" id="transferSubmit">
+        <div class="modal-footer">
+          <!-- Keep same submit button & IDs so existing JS (spinner/toast) works -->
+          <button type="submit" class="btn btn-success" id="transferSubmit">
             <span class="btn-label">Submit Request</span>
             <span class="btn-spinner spinner-border spinner-border-sm ms-2 d-none" role="status" aria-hidden="true"></span>
           </button>
-        </form>
-      </div>
+        </div>
+      </form>
     </div>
   </div>
 </div>
+
 
 <!-- Toast container -->
 <div class="toast-container position-fixed top-0 end-0 p-3" style="z-index:1100">
@@ -1199,7 +1195,61 @@ if (isset($_SESSION['stock_message'])): ?>
     </div>
   </div>
 </div>
+
+<!-- Archive Service Modal -->
+<div class="modal fade" id="archiveServiceModal" tabindex="-1" aria-labelledby="archiveServiceLabel" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content border-0 shadow-lg">
+      <div class="modal-header bg-danger text-white">
+        <h5 class="modal-title" id="archiveServiceLabel">
+          <i class="fa-solid fa-box-archive me-2"></i> Archive Service
+        </h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        You’re about to archive <strong id="archiveServiceName">this service</strong> for this branch.
+        <div class="small text-muted mt-2">
+          This hides the service from selection but keeps history/logs.
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-danger" id="confirmArchiveServiceBtn">
+          <i class="fa-solid fa-archive me-1"></i> Yes, Archive
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Archive Product Modal -->
+<div class="modal fade" id="archiveProductModal" tabindex="-1" aria-labelledby="archiveProductLabel" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content border-0 shadow-lg">
+      <div class="modal-header bg-danger text-white">
+        <h5 class="modal-title" id="archiveProductLabel">
+          <i class="fa-solid fa-box-archive me-2"></i> Archive Product
+        </h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        You’re about to archive <strong id="archiveProductName">this product</strong> for this branch.
+        <div class="small text-muted mt-2">
+          This hides the product from inventory operations for this branch but keeps history/logs.
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-danger" id="confirmArchiveProductBtn">
+          <i class="fa-solid fa-archive me-1"></i> Yes, Archive
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
 </body>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
 <script src="notifications.js"></script>
 
 <script>
@@ -1429,8 +1479,11 @@ document.addEventListener('DOMContentLoaded', function () {
           return;
         }
         data.forEach(p => {
+          // Skip products with 0 or null/undefined stock
+          if ((p.stock ?? 0) <= 0) return;
+
           const opt = document.createElement('option');
-          opt.value = p.product_id; // must post product_id
+          opt.value = p.product_id;
           opt.textContent = `${p.product_name} (Stock: ${p.stock})`;
           prodSel.appendChild(opt);
         });
@@ -1442,9 +1495,10 @@ document.addEventListener('DOMContentLoaded', function () {
   });
 
 // Expand product select (no overlay)
+// Only expand if you explicitly opt-in with a class
 (() => {
   const prodSel = document.getElementById('product_id');
-  if (!prodSel) return;
+  if (!prodSel || !prodSel.classList.contains('expand-on-focus')) return;
   const expand = () => { const n = Math.min(6, prodSel.options.length || 6); if (n>1) prodSel.size = n; };
   const collapse = () => { prodSel.size = 1; };
   prodSel.addEventListener('focus', expand);
@@ -1680,6 +1734,69 @@ document.addEventListener("DOMContentLoaded", () => {
 });
 </script>
 
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+<!-- Function for Archive Modals -->
+<script>
+(() => {
+  let pendingArchiveForm = null;      // which form to submit on confirm
+  let pendingArchiveType = null;      // "product" | "service"
+
+  // Open modal when clicking any archive button
+  document.querySelectorAll('.btn-archive-unique').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      const form = e.currentTarget.closest('form');
+      const type = e.currentTarget.dataset.archiveType;
+      const name = e.currentTarget.dataset.archiveName || (type === 'product' ? 'this product' : 'this service');
+
+      pendingArchiveForm = form;
+      pendingArchiveType = type;
+
+      if (type === 'product') {
+        document.getElementById('archiveProductName').textContent = name;
+        new bootstrap.Modal(document.getElementById('archiveProductModal')).show();
+      } else {
+        document.getElementById('archiveServiceName').textContent = name;
+        new bootstrap.Modal(document.getElementById('archiveServiceModal')).show();
+      }
+    });
+  });
+
+  // Confirm buttons submit the stored form
+  const confirmProductBtn = document.getElementById('confirmArchiveProductBtn');
+  const confirmServiceBtn = document.getElementById('confirmArchiveServiceBtn');
+
+  if (confirmProductBtn) {
+    confirmProductBtn.addEventListener('click', () => {
+      if (pendingArchiveForm && pendingArchiveType === 'product') {
+        // ensure the correct POST name is present
+        if (!pendingArchiveForm.querySelector('[name="archive_product"]')) {
+          const hidden = document.createElement('input');
+          hidden.type = 'hidden';
+          hidden.name = 'archive_product';
+          hidden.value = '1';
+          pendingArchiveForm.appendChild(hidden);
+        }
+        pendingArchiveForm.submit();
+      }
+    });
+  }
+
+  if (confirmServiceBtn) {
+    confirmServiceBtn.addEventListener('click', () => {
+      if (pendingArchiveForm && pendingArchiveType === 'service') {
+        if (!pendingArchiveForm.querySelector('[name="archive_service"]')) {
+          const hidden = document.createElement('input');
+          hidden.type = 'hidden';
+          hidden.name = 'archive_service';
+          hidden.value = '1';
+          pendingArchiveForm.appendChild(hidden);
+        }
+        pendingArchiveForm.submit();
+      }
+    });
+  }
+})();
+</script>
+
 </body>
 </html>

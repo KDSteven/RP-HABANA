@@ -184,7 +184,9 @@ function logAction($conn, $action, $details, $user_id = null, $branch_id = null)
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Admin Dashboard - Accounts</title>
+    <?php $pageTitle = 'Acounts & Branches'; ?>
+    <title><?= htmlspecialchars("RP Habana — $pageTitle") ?></title>
+    <link rel="icon" href="img/R.P.png">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <link rel="stylesheet" href="css/notifications.css">

@@ -302,7 +302,9 @@ if (empty($serviceJobData)) {
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title><?= strtoupper($role) ?> Dashboard</title>
+<?php $pageTitle =''; ?>
+<title><?= htmlspecialchars("RP Habana — $pageTitle") ?><?= strtoupper($role) ?> Dashboard</title>
+<link rel="icon" href="img/R.P.png">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
 <link rel="stylesheet" href="css/dashboard.css?v=<?= filemtime('css/dashboard.css') ?>">
