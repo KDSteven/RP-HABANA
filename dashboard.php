@@ -57,96 +57,155 @@ if ($role === 'staff') {
 
 
 
-// Total Sales
+// Total Sales (sum only within selected month and (optionally) branch)
 if ($role === 'staff') {
-    $stmt = $conn->prepare("SELECT IFNULL(SUM(total), 0) AS total_sales FROM sales WHERE branch_id = ?");
-    $stmt->bind_param("i", $branch_id);
+    $stmt = $conn->prepare("
+        SELECT IFNULL(SUM(total), 0) AS total_sales
+        FROM sales
+        WHERE branch_id = ? AND sale_date BETWEEN ? AND ?
+    ");
+    $stmt->bind_param("iss", $branch_id, $startDate, $endDate);
 } else {
-    $stmt = $conn->prepare("SELECT IFNULL(SUM(total), 0) AS total_sales FROM sales");
+    if (!empty($filterBranch)) {
+        $stmt = $conn->prepare("
+            SELECT IFNULL(SUM(total), 0) AS total_sales
+            FROM sales
+            WHERE branch_id = ? AND sale_date BETWEEN ? AND ?
+        ");
+        $stmt->bind_param("iss", $filterBranch, $startDate, $endDate);
+    } else {
+        $stmt = $conn->prepare("
+            SELECT IFNULL(SUM(total), 0) AS total_sales
+            FROM sales
+            WHERE sale_date BETWEEN ? AND ?
+        ");
+        $stmt->bind_param("ss", $startDate, $endDate);
+    }
 }
+
 $stmt->execute();
 $result = $stmt->get_result();
 $totalSales = $result->fetch_assoc()['total_sales'] ?? 0;
 
+
 // Fetch fast moving products
-$fastMovingQuery = "
+$WINDOW_DAYS = (new DateTime($startDate))->diff(new DateTime($endDate))->days + 1;
+$SLOW_THRESHOLD_PER_DAY = 0.1; // ≈ 3 per 30-day month
+$FAST_MIN_QTY_THIS_MONTH = (int)ceil($SLOW_THRESHOLD_PER_DAY * $WINDOW_DAYS); // e.g., 3
+
+$fastSql = "
 SELECT p.product_name, SUM(si.quantity) AS total_qty, si.product_id
 FROM sales_items si
 JOIN products p ON si.product_id = p.product_id
-JOIN sales s ON si.sale_id = s.sale_id
-WHERE s.sale_date BETWEEN '$startDate' AND '$endDate'
-$branchCondition
+JOIN sales s    ON si.sale_id = s.sale_id
+WHERE s.sale_date BETWEEN ? AND ?
+" . (!empty($filterBranch) ? " AND s.branch_id = ?" : ($role === 'staff' ? " AND s.branch_id = ?" : "")) . "
 GROUP BY si.product_id
+HAVING SUM(si.quantity) >= ?
 ORDER BY total_qty DESC
 LIMIT 5
 ";
-$fastMovingResult = $conn->query($fastMovingQuery);
+
+// --- Bind depending on scope ---
+if ($role === 'staff' || !empty($filterBranch)) {
+    $stmt = $conn->prepare($fastSql);
+    $b = ($role === 'staff') ? (int)$branch_id : (int)$filterBranch;
+    // 4 params: startDate, endDate, branch, minQty
+    $stmt->bind_param("ssii", $startDate, $endDate, $b, $FAST_MIN_QTY_THIS_MONTH);
+} else {
+    $stmt = $conn->prepare($fastSql);
+    // 3 params: startDate, endDate, minQty
+    $stmt->bind_param("ssi", $startDate, $endDate, $FAST_MIN_QTY_THIS_MONTH);
+}
+
+$stmt->execute();
+$fastMovingResult = $stmt->get_result();
 
 $fastMovingProductIds = [];
 $fastItems = [];
 while ($row = $fastMovingResult->fetch_assoc()) {
     $fastItems[] = $row;
-    $fastMovingProductIds[] = $row['product_id'];
+    $fastMovingProductIds[] = (int)$row['product_id'];
 }
-
-// Prepare product IDs string to exclude from slow moving
 $excludeFastIds = !empty($fastMovingProductIds) ? implode(',', $fastMovingProductIds) : '0';
 
-// Fetch slow moving products excluding fast moving ones
 
-$branchFilter = '';
-if (isset($_GET['branch_id']) && is_numeric($_GET['branch_id'])) {
-    $branchId = intval($_GET['branch_id']);
-    $branchFilter = "AND s.branch_id = $branchId";
+// === Slow Moving Items (sold > 0 in selected month, not in fast list, branch-aware) ===
+$branchJoin = '';
+$params = [$startDate, $endDate];
+$types  = 'ss';
+
+if ($role === 'staff') {
+    $branchJoin = " AND s.branch_id = ? ";
+    $params[] = (int)$branch_id; 
+    $types   .= 'i';
+} elseif (!empty($filterBranch)) {
+    $branchJoin = " AND s.branch_id = ? ";
+    $params[] = (int)$filterBranch; 
+    $types   .= 'i';
 }
-$slowMovingQuery = "
+
+$slowSql = "
 SELECT 
+    p.product_id,
     p.product_name,
-    SUM(CASE 
-        WHEN s.sale_date BETWEEN '$startDate' AND '$endDate' THEN si.quantity 
-        ELSE 0 
-    END) AS total_qty
+    COALESCE(SUM(CASE WHEN s.sale_date BETWEEN ? AND ? $branchJoin THEN si.quantity ELSE 0 END), 0) AS total_qty
 FROM products p
-LEFT JOIN sales_items si ON p.product_id = si.product_id
-LEFT JOIN sales s ON si.sale_id = s.sale_id
+LEFT JOIN sales_items si ON si.product_id = p.product_id
+LEFT JOIN sales s        ON s.sale_id = si.sale_id
 WHERE p.product_id NOT IN ($excludeFastIds)
-" . ($branchFilter ? " AND s.branch_id = $branchId" : "") . "
 GROUP BY p.product_id
-ORDER BY total_qty ASC
+HAVING total_qty > 0            -- exclude non-moving here
+ORDER BY total_qty ASC, p.product_name
 LIMIT 5
 ";
 
-$slowMovingResult = $conn->query($slowMovingQuery);
+$stmt = $conn->prepare($slowSql);
+$stmt->bind_param($types, ...$params);
+$stmt->execute();
+$slowMovingResult = $stmt->get_result();
+
 $slowItems = [];
 while ($row = $slowMovingResult->fetch_assoc()) {
     $slowItems[] = $row;
 }
 
 
-// Not Moving Items (not sold in selected month)
-$notMovingQuery = "
-SELECT p.product_name
+
+$nonSql = "
+SELECT DISTINCT p.product_id, p.product_name
 FROM inventory i
-JOIN products p ON i.product_id = p.product_id
-WHERE i.product_id NOT IN (
+JOIN products p ON p.product_id = i.product_id
+LEFT JOIN (
     SELECT si.product_id
     FROM sales_items si
-    JOIN sales s ON si.sale_id = s.sale_id
-    WHERE s.sale_date BETWEEN '$startDate' AND '$endDate'
-    " . ($role === 'staff' ? " AND s.branch_id = $branch_id" : (!empty($filterBranch) ? " AND s.branch_id = $filterBranch" : "")) . "
-)
+    JOIN sales s ON s.sale_id = si.sale_id
+    WHERE s.sale_date BETWEEN ? AND ?
+    " . ($role === 'staff' ? " AND s.branch_id = ? " : (!empty($filterBranch) ? " AND s.branch_id = ? " : "")) . "
+) sold ON sold.product_id = i.product_id
+WHERE sold.product_id IS NULL
+" . ($role === 'staff' ? " AND i.branch_id = ? " : (!empty($filterBranch) ? " AND i.branch_id = ? " : "")) . "
+ORDER BY p.product_name
 ";
-if ($role === 'staff') {
-    $notMovingQuery .= " AND i.branch_id = $branch_id";
-} elseif (!empty($filterBranch)) {
-    $notMovingQuery .= " AND i.branch_id = $filterBranch";
-}
 
-$notMovingResult = $conn->query($notMovingQuery);
+if ($role === 'staff') {
+    $stmt = $conn->prepare($nonSql);
+    $stmt->bind_param("ssii", $startDate, $endDate, $branch_id, $branch_id);
+} elseif (!empty($filterBranch)) {
+    $b = (int)$filterBranch;
+    $stmt = $conn->prepare($nonSql);
+    $stmt->bind_param("ssii", $startDate, $endDate, $b, $b);
+} else {
+    $stmt = $conn->prepare($nonSql);
+    $stmt->bind_param("ss", $startDate, $endDate);
+}
+$stmt->execute();
+$res = $stmt->get_result();
 $notMovingItems = [];
-while ($row = $notMovingResult->fetch_assoc()) {
+while ($row = $res->fetch_assoc()) {
     $notMovingItems[] = $row['product_name'];
 }
+
 
 // Notifications (Pending Approvals)
 $pending = $conn->query("SELECT COUNT(*) AS pending FROM transfer_requests WHERE status='Pending'")->fetch_assoc()['pending'];
@@ -246,7 +305,7 @@ if (empty($serviceJobData)) {
 <title><?= strtoupper($role) ?> Dashboard</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
-<link rel="stylesheet" href="css/dashboard.css?>v2">
+<link rel="stylesheet" href="css/dashboard.css?v=<?= filemtime('css/dashboard.css') ?>">
 <link rel="stylesheet" href="css/notifications.css">
 <link rel="stylesheet" href="css/sidebar.css">
 <audio id="notifSound" src="img/notif.mp3" preload="auto"></audio>

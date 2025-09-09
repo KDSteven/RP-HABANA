@@ -296,18 +296,19 @@
     font-size: 20px;
     font-weight: 600;
     margin-bottom: 15px;
-    background: linear-gradient(90deg, #f7931e, #ffb347);
+    background:linear-gradient(135deg,#ff9d2f,#ff6a00)!important; color:#fff;
     display: flex;
     justify-content: space-between;
     color: white;
 }
 
-/* Modal body */
+/* Modal body*/
 .modal-body {
     display: flex;
     flex-wrap: wrap;
     gap: 20px;
 }
+
 .modal-body input, .modal-body select {
     width: 100%;
     padding: 12px;
@@ -389,6 +390,7 @@
     background:linear-gradient(90deg,#ff7a00,#ff9b27);
     color: white;
 }
+
 /* Helper text */
 .form-text{ color:#8a8a8a; }
 

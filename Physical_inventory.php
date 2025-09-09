@@ -156,22 +156,31 @@ $lastSavedRow = $conn->query("
 $lastSaved = $lastSavedRow ? ($lastSavedRow->fetch_assoc()['last_saved'] ?? 'Never') : 'Never';
 
 // =====================
-// Compute inventory stats
+// Compute inventory stats (map new labels)
 // =====================
-$totalProducts = $match = $mismatch = $pendingCount = 0;
+$totalProducts = 0;
+$stats = ['overstock' => 0, 'understock' => 0, 'complete' => 0, 'pending' => 0];
+
 if ($result) {
     while ($rowTemp = $result->fetch_assoc()) {
         $totalProducts++;
-        if ($rowTemp['status'] === 'Match') $match++;
-        elseif ($rowTemp['status'] === 'Mismatch') $mismatch++;
-        else $pendingCount++;
+        $status = $rowTemp['status'];
+
+        if ($status === 'Overstock')      $stats['overstock']++;
+        elseif ($status === 'Understock') $stats['understock']++;
+        elseif ($status === 'Complete')   $stats['complete']++;
+        else                               $stats['pending']++; // Pending or null
     }
-    // Reset pointer to reuse $result for table display
+
+    // if you will reuse $result to render the table:
     $result->data_seek(0);
-} else {
-    // Handle query error gracefully if needed
-    $totalProducts = $match = $mismatch = $pendingCount = 0;
 }
+
+// Keep your existing card labels by mapping:
+$match        = $stats['complete'];                          // "Match" card = Complete
+$mismatch     = $stats['overstock'] + $stats['understock'];  // "Mismatch" card = Over+Under
+$pendingCount = $stats['pending'];
+
 
 ?>
 
@@ -374,6 +383,54 @@ if ($result) {
   </div>
 </div>
 
+<!-- Toast container -->
+<div class="toast-container position-fixed top-0 end-0 p-3" style="z-index:1100">
+  <div id="appToast" class="toast border-0 shadow-lg" role="alert" aria-live="assertive" aria-atomic="true">
+    <div class="toast-header bg-primary text-white">
+      <i class="fas fa-info-circle me-2"></i>
+      <strong class="me-auto">System Notice</strong>
+      <small class="text-muted">just now</small>
+      <button type="button" class="btn-close btn-close-white ms-2 mb-1" data-bs-dismiss="toast" aria-label="Close"></button>
+    </div>
+    <div class="toast-body" id="appToastBody">
+      Action completed.
+    </div>
+  </div>
+</div>
+
+<!-- add this BEFORE your showToast() script -->
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+
+
+<!-- Function for Toast -->
+<script>
+// Toast helper
+function showToast(message, type = "info") {
+  const toastEl = document.getElementById("appToast");
+  const toastBody = document.getElementById("appToastBody");
+  if (!toastEl || !toastBody) return;
+
+  // Reset classes
+  const header = toastEl.querySelector(".toast-header");
+  header.classList.remove("bg-primary","bg-success","bg-danger","bg-warning");
+
+  // Apply type color
+  switch (type) {
+    case "success": header.classList.add("bg-success","text-white"); break;
+    case "danger":  header.classList.add("bg-danger","text-white");  break;
+    case "warning": header.classList.add("bg-warning","text-dark");  break;
+    default:        header.classList.add("bg-primary","text-white"); break;
+  }
+
+  // Set message
+  toastBody.innerText = message;
+
+  // Show toast
+  const toast = new bootstrap.Toast(toastEl);
+  toast.show();
+}
+</script>
+
 
 <script>
 // ===== Filter/Search =====
@@ -455,7 +512,7 @@ function saveChanges() {
   const form = document.getElementById('physicalInventoryForm');
   const changedRows = [...form.querySelectorAll('tbody tr[data-changed="true"]')];
   if (changedRows.length === 0) {
-    alert('No changes detected.');
+    showToast("No changes detected.", "warning");
     return;
   }
 
@@ -466,18 +523,21 @@ function saveChanges() {
     const productId = row.querySelector('input[name="product_id[]"]').value;
     const physicalInput = row.querySelector('input.physical-count');
     const val = (physicalInput.value ?? '').trim();
-    // If left blank, you can choose to skip or send as null; here we send blank.
     formData.append(`physical_count[${productId}]`, val);
   });
 
   fetch('save_physical_inventory.php', { method:'POST', body: formData })
     .then(res => res.json())
     .then(data => {
-      alert(data.message || 'Saved successfully.');
-      location.reload();
+      showToast(data.message || "Saved successfully.", "success");
+      setTimeout(() => location.reload(), 1500); // reload after toast
     })
-    .catch(err => console.error(err));
+    .catch(err => {
+      console.error(err);
+      showToast("Error saving inventory. Please try again.", "danger");
+    });
 }
+
 
 // ===== Init =====
 document.addEventListener('DOMContentLoaded', () => {

@@ -30,7 +30,7 @@
 
 .dashboard-page .card:hover {
     transform: translateY(-6px);
-    box-shadow: 0 10px 25px rgba(0,0,0,0.12);
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.39);
 }
 
 .dashboard-page .card h3 {
@@ -53,6 +53,23 @@
 .dashboard-page .card.orange { background: linear-gradient(135deg, #ff9800, #ffb74d); color: #fff; }
 .dashboard-page .card.red { background: linear-gradient(135deg, #f44336, #e57373); color: #fff; }
 .dashboard-page .card.blue { background: linear-gradient(135deg, #2196f3, #64b5f6); color: #fff; }
+
+.card.green h3, .card.green p {
+    color: #fff; /* White text on green card */
+}
+
+.card.orange h3, .card.orange p {
+    color: #ffffff; /* Black text on orange card */
+}
+
+.card.red h3, .card.red p {
+    color: #fff; /* White text on red card */
+}
+
+.card.blue h3, .card.blue p {
+    color: #fff; /* White text on blue card */
+}
+
 
 /* SECTIONS */
 .dashboard-page .flex-sections {
