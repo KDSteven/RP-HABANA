@@ -7,8 +7,8 @@ if (!isset($_SESSION['user_id'])) {
 include 'config/db.php';
 include 'functions.php';
 
-$user_id = $_SESSION['user_id'];
-$role = $_SESSION['role'];
+$user_id   = $_SESSION['user_id'];
+$role      = $_SESSION['role'];
 $branch_id = $_SESSION['branch_id'] ?? null;
 
 // Pending notifications
@@ -19,11 +19,13 @@ if ($role === 'admin') {
 }
 
 // Branch selection
-$branches = $conn->query("SELECT branch_id, branch_name FROM branches");
+$branches        = $conn->query("SELECT branch_id, branch_name FROM branches");
 $selected_branch = ($role === 'admin') ? ($_GET['branch'] ?? $branch_id) : $branch_id;
-$branchCondition = " AND i.branch_id = " . intval($selected_branch);
+$selected_branch = (int)$selected_branch;
 
-// Export CSV
+// =====================
+// Export CSV (Admin)
+// =====================
 if (isset($_GET['export']) && $_GET['export'] === 'csv' && $role === 'admin') {
     header('Content-Type: text/csv; charset=utf-8');
     header('Content-Disposition: attachment; filename=physical_inventory_log.csv');
@@ -36,60 +38,82 @@ if (isset($_GET['export']) && $_GET['export'] === 'csv' && $role === 'admin') {
         'Category',
         'System Stock',
         'Physical Count',
-        'Discrepancy',
+        'Discrepancy',     // always positive
         'Status',
         'Counted By',
         'Branch',
         'Count Date'
     ]);
 
-    // Fetch data
+    // Latest counts per product for this branch + computed positive discrepancy
     $queryCSV = "
-        SELECT 
-            p.product_id,
-            p.product_name,
-            p.category,
-            i.stock AS system_stock,
-            COALESCE(pi.physical_count, i.stock) AS physical_count,
-            COALESCE(pi.discrepancy, 0) AS discrepancy,
-            COALESCE(pi.status, 'Pending') AS status,
-            u.username AS counted_by,
-            b.branch_name AS branch,
-            pi.count_date
-        FROM products p
-        JOIN inventory i ON p.product_id = i.product_id AND i.branch_id = ".intval($selected_branch)."
-        LEFT JOIN (
-            SELECT t1.*
-            FROM physical_inventory t1
-            INNER JOIN (
-                SELECT product_id, MAX(count_date) AS latest
-                FROM physical_inventory
-                WHERE branch_id = ".intval($selected_branch)."
-                GROUP BY product_id
-            ) t2 ON t1.product_id = t2.product_id AND t1.count_date = t2.latest
-        ) pi ON p.product_id = pi.product_id
-        LEFT JOIN users u ON pi.counted_by = u.id
-        LEFT JOIN branches b ON i.branch_id = b.branch_id
-        ORDER BY p.product_name ASC
-    ";
+    SELECT 
+        p.product_id,
+        p.product_name,
+        p.category,
+        i.stock AS system_stock,
+        COALESCE(pi.physical_count, i.stock) AS physical_count,
+        ABS(COALESCE(pi.physical_count, i.stock) - i.stock) AS discrepancy,
+        CASE
+            WHEN pi.physical_count IS NULL THEN 'Pending'
+            WHEN pi.physical_count > i.stock THEN 'Overstock'
+            WHEN pi.physical_count < i.stock THEN 'Understock'
+            ELSE 'Complete'
+        END AS status,
+        u.username AS counted_by,
+        b.branch_name AS branch,
+        pi.count_date
+    FROM products p
+    JOIN inventory i 
+        ON p.product_id = i.product_id 
+       AND i.branch_id = {$selected_branch}
+    LEFT JOIN (
+        SELECT t1.*
+        FROM physical_inventory t1
+        INNER JOIN (
+            SELECT product_id, MAX(count_date) AS latest
+            FROM physical_inventory
+            WHERE branch_id = {$selected_branch}
+            GROUP BY product_id
+        ) t2 ON t1.product_id = t2.product_id AND t1.count_date = t2.latest
+        WHERE t1.branch_id = {$selected_branch}
+    ) pi ON p.product_id = pi.product_id
+    LEFT JOIN users u   ON pi.counted_by = u.id
+    LEFT JOIN branches b ON i.branch_id = b.branch_id
+    ORDER BY p.product_name ASC
+";
 
-    $resultCSV = $conn->query($queryCSV);
-
-    if ($resultCSV && $resultCSV->num_rows > 0) {
-        while ($row = $resultCSV->fetch_assoc()) {
-            fputcsv($output, $row);
+    if ($resultCSV = $conn->query($queryCSV)) {
+        if ($resultCSV->num_rows > 0) {
+            while ($row = $resultCSV->fetch_assoc()) {
+                // Ensure output order matches headers
+                fputcsv($output, [
+                    $row['product_id'],
+                    $row['product_name'],
+                    $row['category'],
+                    $row['system_stock'],
+                    $row['physical_count'],
+                    $row['discrepancy'],   // already positive
+                    $row['status'],
+                    $row['counted_by'],
+                    $row['branch'],
+                    $row['count_date']
+                ]);
+            }
+        } else {
+            fputcsv($output, ['No data found']);
         }
     } else {
-        // If no data, you can still write an empty row or leave CSV empty
-        fputcsv($output, ['No data found']);
+        fputcsv($output, ['Query failed']);
     }
 
     fclose($output);
     exit;
 }
 
-
-// Fetch inventory data
+// =====================
+// Fetch inventory data (for page)
+// =====================
 $query = "
     SELECT 
         p.product_id,
@@ -97,38 +121,65 @@ $query = "
         p.category,
         i.stock AS system_stock,
         COALESCE(pi.physical_count, '') AS physical_count,
-        COALESCE(pi.discrepancy, 0) AS discrepancy,
-        COALESCE(pi.status, 'Pending') AS status
+        ABS(COALESCE(pi.physical_count, i.stock) - i.stock) AS discrepancy,
+        CASE
+            WHEN pi.physical_count IS NULL THEN 'Pending'
+            WHEN pi.physical_count > i.stock THEN 'Overstock'
+            WHEN pi.physical_count < i.stock THEN 'Understock'
+            ELSE 'Complete'
+        END AS status
     FROM products p
-    JOIN inventory i ON p.product_id = i.product_id AND i.branch_id = " . intval($selected_branch) . "
+    JOIN inventory i 
+        ON p.product_id = i.product_id 
+       AND i.branch_id = {$selected_branch}
     LEFT JOIN (
         SELECT t1.*
         FROM physical_inventory t1
         INNER JOIN (
             SELECT product_id, MAX(count_date) AS latest
             FROM physical_inventory
-            WHERE branch_id = " . intval($selected_branch) . "
+            WHERE branch_id = {$selected_branch}
             GROUP BY product_id
         ) t2 ON t1.product_id = t2.product_id AND t1.count_date = t2.latest
+        WHERE t1.branch_id = {$selected_branch}
     ) pi ON p.product_id = pi.product_id
     ORDER BY p.product_name ASC
 ";
 $result = $conn->query($query);
 
-// Get last saved timestamp for branch
-$lastSavedRow = $conn->query("SELECT MAX(count_date) AS last_saved FROM physical_inventory WHERE branch_id = ".intval($selected_branch))->fetch_assoc();
-$lastSaved = $lastSavedRow['last_saved'] ?? 'Never';
+// Last saved timestamp for this branch
+$lastSavedRow = $conn->query("
+    SELECT MAX(count_date) AS last_saved 
+    FROM physical_inventory 
+    WHERE branch_id = {$selected_branch}
+");
+$lastSaved = $lastSavedRow ? ($lastSavedRow->fetch_assoc()['last_saved'] ?? 'Never') : 'Never';
 
-// Compute inventory stats
-$totalProducts = $match = $mismatch = $pendingCount = 0;
-while($rowTemp = $result->fetch_assoc()){
-    $totalProducts++;
-    if($rowTemp['status']==='Match') $match++;
-    elseif($rowTemp['status']==='Mismatch') $mismatch++;
-    else $pendingCount++;
+// =====================
+// Compute inventory stats (map new labels)
+// =====================
+$totalProducts = 0;
+$stats = ['overstock' => 0, 'understock' => 0, 'complete' => 0, 'pending' => 0];
+
+if ($result) {
+    while ($rowTemp = $result->fetch_assoc()) {
+        $totalProducts++;
+        $status = $rowTemp['status'];
+
+        if ($status === 'Overstock')      $stats['overstock']++;
+        elseif ($status === 'Understock') $stats['understock']++;
+        elseif ($status === 'Complete')   $stats['complete']++;
+        else                               $stats['pending']++; // Pending or null
+    }
+
+    // if you will reuse $result to render the table:
+    $result->data_seek(0);
 }
-// Reset pointer to reuse $result for table display
-$result->data_seek(0);
+
+// Keep your existing card labels by mapping:
+$match        = $stats['complete'];                          // "Match" card = Complete
+$mismatch     = $stats['overstock'] + $stats['understock'];  // "Mismatch" card = Over+Under
+$pendingCount = $stats['pending'];
 
 
 ?>
@@ -138,7 +189,9 @@ $result->data_seek(0);
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Physical Inventory</title>
+<?php $pageTitle = 'Physical Inventory'; ?>
+<title><?= htmlspecialchars("RP Habana — $pageTitle") ?></title>
+<link rel="icon" href="img/R.P.png">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
 <link rel="stylesheet" href="css/sidebar.css">
@@ -175,6 +228,7 @@ $result->data_seek(0);
         <a href="accounts.php"><i class="fas fa-users"></i> Accounts</a>
         <a href="archive.php"><i class="fas fa-archive"></i> Archive</a>
         <a href="logs.php"><i class="fas fa-file-alt"></i> Logs</a>
+        <a href="/config/admin/backup_admin.php"><i class="fa-solid fa-database"></i> Backup and Restore</a>
     <?php endif; ?>
 
     <!-- Stockman Links -->
@@ -272,7 +326,7 @@ $result->data_seek(0);
       <input type="hidden" name="branch_id" value="<?= intval($selected_branch) ?>">
 
       <table class="table table-bordered align-middle" id="inventoryTable">
-        <thead class="table-dark sticky-top">
+        <thead class="table-dark sticky-top" id="inventoryTHead">
           <tr>
             <th>Product ID</th>
             <th>Product Name</th>
@@ -284,31 +338,42 @@ $result->data_seek(0);
           </tr>
         </thead>
         <tbody>
-          <?php while($row=$result->fetch_assoc()): ?>
-          <tr>
-            <td>
-              <?= $row['product_id'] ?>
-              <input type="hidden" name="product_id[]" value="<?= $row['product_id'] ?>">
-            </td>
-            <td><?= htmlspecialchars($row['product_name']) ?></td>
-            <td><?= htmlspecialchars($row['category']) ?></td>
-            <td class="system-stock"><?= $row['system_stock'] ?></td>
-            <td>
-              <input type="number" class="form-control physical-count"
-                     value="<?= htmlspecialchars($row['physical_count']) ?>" min="0"
-                     oninput="updateDiscrepancy(this); markChanged(this); updateMismatchCount();">
-            </td>
-            <td class="discrepancy"><?= $row['discrepancy'] ?></td>
-            <td>
-              <?php
+            <?php while ($row = $result->fetch_assoc()): 
+                $system = (int)$row['system_stock'];
+                $phys   = ($row['physical_count'] === '' ? '' : (int)$row['physical_count']);
+                $disc   = ($row['physical_count'] === '' ? 0 : abs($phys - $system));
                 $status = $row['status'];
-                $badge = ($status==='Match')?'success':(($status==='Mismatch')?'danger':'secondary');
-              ?>
-              <span class="badge bg-<?= $badge ?>"><?= $status ?></span>
-            </td>
-          </tr>
-          <?php endwhile; ?>
-        </tbody>
+                $class  = ($status === 'Overstock')  ? 'status-over'
+                    : (($status === 'Understock') ? 'status-under'
+                    : (($status === 'Complete')   ? 'status-complete'
+                    : 'status-pending'));
+            ?>
+            <tr>
+                <td>
+                <?= htmlspecialchars($row['product_id']) ?>
+                <input type="hidden" name="product_id[]" value="<?= htmlspecialchars($row['product_id']) ?>">
+                </td>
+                <td><?= htmlspecialchars($row['product_name']) ?></td>
+                <td><?= htmlspecialchars($row['category']) ?></td>
+                <td class="system-stock"><?= htmlspecialchars($system) ?></td>
+                <td>
+                <input
+                    type="number"
+                    min="0"
+                    class="form-control form-control-sm physical-count"
+                    value="<?= ($row['physical_count'] === '' ? '' : htmlspecialchars($phys)) ?>"
+                    placeholder="Count"
+                    oninput="updateDiscrepancy(this)"
+                >
+                </td>
+                <td class="discrepancy"><?= htmlspecialchars($disc) ?></td>
+                <td>
+                <span class="badge status-badge <?= $class ?>"><?= htmlspecialchars($status) ?></span>
+                </td>
+            </tr>
+            <?php endwhile; ?>
+            </tbody>
+
       </table>
 
       <div class="mt-3 d-flex gap-2">
@@ -320,136 +385,173 @@ $result->data_seek(0);
   </div>
 </div>
 
+<!-- Toast container -->
+<div class="toast-container position-fixed top-0 end-0 p-3" style="z-index:1100">
+  <div id="appToast" class="toast border-0 shadow-lg" role="alert" aria-live="assertive" aria-atomic="true">
+    <div class="toast-header bg-primary text-white">
+      <i class="fas fa-info-circle me-2"></i>
+      <strong class="me-auto">System Notice</strong>
+      <small class="text-muted">just now</small>
+      <button type="button" class="btn-close btn-close-white ms-2 mb-1" data-bs-dismiss="toast" aria-label="Close"></button>
+    </div>
+    <div class="toast-body" id="appToastBody">
+      Action completed.
+    </div>
+  </div>
+</div>
+
+<!-- add this BEFORE your showToast() script -->
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+
+
+<!-- Function for Toast -->
+<script>
+// Toast helper
+function showToast(message, type = "info") {
+  const toastEl = document.getElementById("appToast");
+  const toastBody = document.getElementById("appToastBody");
+  if (!toastEl || !toastBody) return;
+
+  // Reset classes
+  const header = toastEl.querySelector(".toast-header");
+  header.classList.remove("bg-primary","bg-success","bg-danger","bg-warning");
+
+  // Apply type color
+  switch (type) {
+    case "success": header.classList.add("bg-success","text-white"); break;
+    case "danger":  header.classList.add("bg-danger","text-white");  break;
+    case "warning": header.classList.add("bg-warning","text-dark");  break;
+    default:        header.classList.add("bg-primary","text-white"); break;
+  }
+
+  // Set message
+  toastBody.innerText = message;
+
+  // Show toast
+  const toast = new bootstrap.Toast(toastEl);
+  toast.show();
+}
+</script>
+
 
 <script>
 // ===== Filter/Search =====
 function filterTable() {
-    const input = document.getElementById('searchInput').value.toLowerCase();
-    const rows = document.querySelectorAll('#physicalInventoryForm tbody tr');
-    rows.forEach(row => {
-        const text = row.innerText.toLowerCase();
-        row.style.display = text.includes(input) ? '' : 'none';
-    });
+  const input = document.getElementById('searchInput')?.value.toLowerCase() || '';
+  document.querySelectorAll('#physicalInventoryForm tbody tr').forEach(row => {
+    const text = row.innerText.toLowerCase();
+    row.style.display = text.includes(input) ? '' : 'none';
+  });
 }
 
 // ===== Update Discrepancy & Badge =====
 function updateDiscrepancy(input) {
-    const row = input.closest('tr');
-    const systemStock = parseInt(row.querySelector('.system-stock').innerText) || 0;
-    const physicalCount = parseInt(input.value) || 0;
-    const discrepancy = physicalCount - systemStock;
+  const row = input.closest('tr');
+  const systemStockEl = row.querySelector('.system-stock');
+  const discrepancyEl = row.querySelector('.discrepancy');
+  const badge = row.querySelector('.status-badge');
 
-    // Update discrepancy cell
-    row.querySelector('.discrepancy').innerText = discrepancy;
+  const systemStock = parseInt(systemStockEl?.innerText) || 0;
+  const hasValue = input.value.trim() !== '';
+  const physicalCount = hasValue ? (parseInt(input.value) || 0) : null;
 
-    // Update status badge
-    const badge = row.querySelector('.badge');
-    if(input.value === '') {
-        badge.innerText = 'Pending';
-        badge.className = 'badge bg-secondary';
-    } else if(discrepancy === 0) {
-        badge.innerText = 'Match';
-        badge.className = 'badge bg-success';
-    } else {
-        badge.innerText = 'Mismatch';
-        badge.className = 'badge bg-danger';
-    }
+  let status = 'Pending';
+  let discrepancy = 0;
 
-    // Highlight row and update mismatch count
-    markChanged(input);
-    updateMismatchCount();
+  if (physicalCount === null) {
+    status = 'Pending';
+    discrepancy = 0;
+  } else if (physicalCount > systemStock) {
+    status = 'Overstock';
+    discrepancy = Math.abs(physicalCount - systemStock);
+  } else if (physicalCount < systemStock) {
+    status = 'Understock';
+    discrepancy = Math.abs(systemStock - physicalCount);
+  } else {
+    status = 'Complete';
+    discrepancy = 0;
+  }
+
+  // Update DOM
+  discrepancyEl.innerText = discrepancy;
+
+  // Reset and apply badge classes
+  badge.classList.remove('status-over','status-under','status-complete','status-pending');
+  badge.classList.add(
+    status === 'Overstock'  ? 'status-over'  :
+    status === 'Understock' ? 'status-under' :
+    status === 'Complete'   ? 'status-complete' : 'status-pending'
+  );
+  badge.innerText = status;
+
+  // Mark row changed + update count
+  markChanged(input);
+  updateMismatchCount();
 }
 
 // ===== Highlight Changed Rows =====
 function markChanged(input) {
-    const row = input.closest('tr');
-    row.dataset.changed = 'true';
-    row.classList.add('changed'); // Use .changed CSS for background
+  const row = input.closest('tr');
+  row.dataset.changed = 'true';
+  row.classList.add('changed');
 }
 
-// ===== Update Total Mismatch Count =====
+// ===== Update Total Mismatch (Under/Over) Count =====
 function updateMismatchCount() {
-    let total = 0;
-    document.querySelectorAll('#inventoryTable tbody tr').forEach(row => {
-        if(row.querySelector('.badge').classList.contains('bg-danger')) total++;
-    });
-    document.getElementById('totalMismatch').innerText = total;
+  let total = 0;
+  document.querySelectorAll('#inventoryTable tbody tr').forEach(row => {
+    const badge = row.querySelector('.status-badge');
+    if (!badge) return;
+    const isIssue = badge.classList.contains('status-over') || badge.classList.contains('status-under');
+    if (isIssue) total++;
+  });
+  const el = document.getElementById('totalMismatch');
+  if (el) el.innerText = total;
 }
 
 // ===== Save Only Changed Rows =====
 function saveChanges() {
-    const form = document.getElementById('physicalInventoryForm');
-    const changedRows = [...form.querySelectorAll('tr[data-changed="true"]')];
-    if(changedRows.length === 0){
-        alert('No changes detected.');
-        return;
-    }
+  const form = document.getElementById('physicalInventoryForm');
+  const changedRows = [...form.querySelectorAll('tbody tr[data-changed="true"]')];
+  if (changedRows.length === 0) {
+    showToast("No changes detected.", "warning");
+    return;
+  }
 
-    const formData = new FormData();
-    formData.append('branch_id', form.querySelector('input[name="branch_id"]').value);
+  const formData = new FormData();
+  formData.append('branch_id', form.querySelector('input[name="branch_id"]').value);
 
-    changedRows.forEach(row => {
-        const productId = row.querySelector('input[name="product_id[]"]').value;
-        const physicalCount = row.querySelector('input.physical-count').value.trim();
-        formData.append(`physical_count[${productId}]`, physicalCount);
+  changedRows.forEach(row => {
+    const productId = row.querySelector('input[name="product_id[]"]').value;
+    const physicalInput = row.querySelector('input.physical-count');
+    const val = (physicalInput.value ?? '').trim();
+    formData.append(`physical_count[${productId}]`, val);
+  });
+
+  fetch('save_physical_inventory.php', { method:'POST', body: formData })
+    .then(res => res.json())
+    .then(data => {
+      showToast(data.message || "Saved successfully.", "success");
+      setTimeout(() => location.reload(), 1500); // reload after toast
+    })
+    .catch(err => {
+      console.error(err);
+      showToast("Error saving inventory. Please try again.", "danger");
     });
-
-    fetch('save_physical_inventory.php', { method:'POST', body: formData })
-        .then(res => res.json())
-        .then(data => {
-            alert(data.message || 'Saved successfully.');
-            location.reload();
-        })
-        .catch(err => console.error(err));
 }
 
-// ===== Initialize mismatch count on page load =====
+
+// ===== Init =====
 document.addEventListener('DOMContentLoaded', () => {
-    updateMismatchCount();
+  updateMismatchCount();
+
+  // (Optional) live-recalc for any pre-filled inputs after load
+  document.querySelectorAll('input.physical-count').forEach(inp => {
+    if (inp.value.trim() !== '') updateDiscrepancy(inp);
+  });
 });
 </script>
 
-
-<script>
-document.getElementById('exportBtn').addEventListener('click', function() {
-    const table = document.getElementById('inventoryTable');
-    let csv = [];
-    
-    // Get headers
-    const headers = [];
-    table.querySelectorAll('thead th').forEach(th => {
-        headers.push('"' + th.innerText.trim() + '"');
-    });
-    csv.push(headers.join(','));
-
-    // Get rows
-    table.querySelectorAll('tbody tr').forEach(row => {
-        const rowData = [];
-        row.querySelectorAll('td').forEach(td => {
-            let text = '';
-
-            // If input exists, take its value
-            const input = td.querySelector('input');
-            if(input) {
-                text = input.value;
-            } else {
-                text = td.innerText.trim();
-            }
-            // Escape double quotes
-            text = text.replace(/"/g, '""');
-            rowData.push('"' + text + '"');
-        });
-        csv.push(rowData.join(','));
-    });
-
-    // Create CSV Blob and trigger download
-    const csvFile = new Blob([csv.join('\n')], { type: 'text/csv' });
-    const downloadLink = document.createElement('a');
-    downloadLink.href = URL.createObjectURL(csvFile);
-    downloadLink.download = 'physical_inventory_current.csv';
-    downloadLink.click();
-});
-</script>
 <script src="notifications.js"></script>
 </body>
 </html>

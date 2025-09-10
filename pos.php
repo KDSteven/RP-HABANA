@@ -285,7 +285,9 @@ if (isset($_POST['checkout'])) {
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Point of Sale - Staff</title>
+<?php $pageTitle = 'POS'; ?>
+<title><?= htmlspecialchars("RP Habana — $pageTitle") ?></title>
+<link rel="icon" href="img/R.P.png">
  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" >
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
   <link rel="stylesheet" href="css/notifications.css">
