@@ -13,6 +13,11 @@ if ($role !== 'admin') {
     exit;
 }
 
+if (isset($_POST['archive_service'])) {
+    $conn->query("UPDATE services SET archived = 1 WHERE service_id = " . (int)$_POST['service_id']);
+}
+
+
 // Handle Restore & Delete
 if (isset($_POST['restore_product'])) $conn->query("UPDATE inventory SET archived = 0 WHERE inventory_id = " . (int)$_POST['inventory_id']);
 if (isset($_POST['delete_product']))  $conn->query("DELETE FROM inventory WHERE inventory_id = " . (int)$_POST['inventory_id']);
@@ -46,6 +51,104 @@ $archived_users    = $conn->query("SELECT * FROM users WHERE archived = 1");
 
 // Notifications (Pending Approvals)
 $pending = $conn->query("SELECT COUNT(*) AS pending FROM transfer_requests WHERE status='Pending'")->fetch_assoc()['pending'];
+
+// Logs
+function logAction($conn, $action, $details, $user_id = null, $branch_id = null) {
+    if (!$user_id) $user_id = $_SESSION['user_id'] ?? null;
+    if (!$branch_id) $branch_id = $_SESSION['branch_id'] ?? null;
+
+    $stmt = $conn->prepare("
+        INSERT INTO logs (user_id, branch_id, action, details, timestamp) 
+        VALUES (?, ?, ?, ?, NOW())
+    ");
+    $stmt->bind_param("iiss", $user_id, $branch_id, $action, $details);
+    $stmt->execute();
+    $stmt->close();
+}
+
+/* ---------------------- HANDLE ACTIONS ---------------------- */
+
+// Restore / Delete Product
+if (isset($_POST['restore_product'])) {
+    $id = (int) $_POST['inventory_id'];
+    $conn->query("UPDATE inventory SET archived = 0 WHERE inventory_id = $id");
+
+    $prod = $conn->query("SELECT p.product_name, b.branch_id 
+                          FROM inventory i 
+                          JOIN products p ON i.product_id = p.product_id 
+                          JOIN branches b ON i.branch_id = b.branch_id 
+                          WHERE i.inventory_id = $id")->fetch_assoc();
+
+    logAction($conn, "Restore Product", "Restored product: {$prod['product_name']} (ID: $id)", null, $prod['branch_id']);
+}
+
+if (isset($_POST['delete_product'])) {
+    $id = (int) $_POST['inventory_id'];
+
+    $prod = $conn->query("SELECT p.product_name, b.branch_id 
+                          FROM inventory i 
+                          JOIN products p ON i.product_id = p.product_id 
+                          JOIN branches b ON i.branch_id = b.branch_id 
+                          WHERE i.inventory_id = $id")->fetch_assoc();
+
+    $conn->query("DELETE FROM inventory WHERE inventory_id = $id");
+
+    logAction($conn, "Delete Product", "Deleted product: {$prod['product_name']} (ID: $id)", null, $prod['branch_id']);
+}
+
+// Restore / Delete Branch
+if (isset($_POST['restore_branch'])) {
+    $id = (int) $_POST['branch_id'];
+    $conn->query("UPDATE branches SET archived = 0 WHERE branch_id = $id");
+
+    $branch = $conn->query("SELECT branch_name FROM branches WHERE branch_id = $id")->fetch_assoc();
+    logAction($conn, "Restore Branch", "Restored branch: {$branch['branch_name']} (ID: $id)", null, $id);
+}
+
+if (isset($_POST['delete_branch'])) {
+    $id = (int) $_POST['branch_id'];
+    $branch = $conn->query("SELECT branch_name FROM branches WHERE branch_id = $id")->fetch_assoc();
+
+    $conn->query("DELETE FROM branches WHERE branch_id = $id");
+
+    logAction($conn, "Delete Branch", "Deleted branch: {$branch['branch_name']} (ID: $id)", null, $id);
+}
+
+// Restore / Delete User
+if (isset($_POST['restore_user'])) {
+    $id = (int) $_POST['user_id'];
+    $conn->query("UPDATE users SET archived = 0 WHERE id = $id");
+
+    $user = $conn->query("SELECT username, branch_id FROM users WHERE id = $id")->fetch_assoc();
+    logAction($conn, "Restore User", "Restored user: {$user['username']} (ID: $id)", null, $user['branch_id']);
+}
+
+if (isset($_POST['delete_user'])) {
+    $id = (int) $_POST['user_id'];
+    $user = $conn->query("SELECT username, branch_id FROM users WHERE id = $id")->fetch_assoc();
+
+    $conn->query("DELETE FROM users WHERE id = $id");
+
+    logAction($conn, "Delete User", "Deleted user: {$user['username']} (ID: $id)", null, $user['branch_id']);
+}
+
+// Restore / Delete Service
+if (isset($_POST['restore_service'])) {
+    $id = (int) $_POST['service_id'];
+    $conn->query("UPDATE services SET archived = 0 WHERE service_id = $id");
+
+    $service = $conn->query("SELECT service_name, branch_id FROM services WHERE service_id = $id")->fetch_assoc();
+    logAction($conn, "Restore Service", "Restored service: {$service['service_name']} (ID: $id)", null, $service['branch_id']);
+}
+
+if (isset($_POST['delete_service'])) {
+    $id = (int) $_POST['service_id'];
+    $service = $conn->query("SELECT service_name, branch_id FROM services WHERE service_id = $id")->fetch_assoc();
+
+    $conn->query("DELETE FROM services WHERE service_id = $id");
+
+    logAction($conn, "Delete Service", "Deleted service: {$service['service_name']} (ID: $id)", null, $service['branch_id']);
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">

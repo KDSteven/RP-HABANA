@@ -22,6 +22,17 @@ if ($branch_id <= 0 || empty($_POST['physical_count']) || !is_array($_POST['phys
     echo json_encode(['success' => false, 'message' => 'Invalid request payload']);
     exit;
 }
+// logging
+function logAction($conn, $action, $details, $user_id = null, $branch_id = null) {
+    if (!$user_id && isset($_SESSION['user_id'])) $user_id = $_SESSION['user_id'];
+    if (!$branch_id && isset($_SESSION['branch_id'])) $branch_id = $_SESSION['branch_id'];
+
+    $stmt = $conn->prepare("INSERT INTO logs (user_id, action, details, timestamp, branch_id) VALUES (?, ?, ?, NOW(), ?)");
+    $stmt->bind_param("issi", $user_id, $action, $details, $branch_id);
+    $stmt->execute();
+    $stmt->close();
+}
+
 
 $saved = 0;
 $skipped = 0;
@@ -71,6 +82,7 @@ foreach ($_POST['physical_count'] as $product_id => $physical_count_raw) {
     $check->execute();
     $check->bind_result($last_count);
     $hasLast = $check->fetch();
+    
     $check->close();
 
     if ($hasLast && ((string)$last_count === (string)$physical_count_raw)) {
@@ -79,34 +91,49 @@ foreach ($_POST['physical_count'] as $product_id => $physical_count_raw) {
     }
 
     // Insert new log
-    $insert = $conn->prepare("
-        INSERT INTO physical_inventory
-            (product_id, system_stock, physical_count, discrepancy, status, counted_by, branch_id, count_date)
-        VALUES (?, ?, ?, ?, ?, ?, ?, NOW())
-    ");
-    // physical_count might be NULL → use i or set_null via mysqli: easiest is i with null coalesce
-    // but bind_param doesn't accept NULL for i; use set to null via ->bind_param and ->send_null is messy.
-    // Simpler: if null, set to NULL using dynamic SQL placeholder and 's' with null string? Better: use set_null
-    // Workaround: use 's' and pass null; MySQL will coerce — or use proper NULL by adjusting types:
-    // We'll use 'i' and replace with NULL explicitly:
-    $pc = $physical_count; // may be null
+$insert = $conn->prepare("
+    INSERT INTO physical_inventory
+        (product_id, system_stock, physical_count, discrepancy, status, counted_by, branch_id, count_date)
+    VALUES (?, ?, ?, ?, ?, ?, ?, NOW())
+");
+
+// Handle NULL properly
+$pc_param = $physical_count;
+if ($pc_param === null) {
+    // Bind NULL explicitly using 's' type (MySQL will coerce NULL)
     $insert->bind_param(
-        "iiiisii",
+        "iiisisi",
         $product_id,
         $system_stock,
-        $pc,
+        $pc_param,
         $discrepancy,
         $status,
         $user_id,
         $branch_id
     );
-    // If $pc is null, mysqli will send NULL correctly.
-    if ($insert->execute()) {
+} else {
+    // Normal integer bind
+    $insert->bind_param(
+        "iiiisii",
+        $product_id,
+        $system_stock,
+        $pc_param,
+        $discrepancy,
+        $status,
+        $user_id,
+        $branch_id
+    );
+}
+
+// Execute and check errors
+   if ($insert->execute()) {
         $saved++;
+        logAction($conn, "Physical Inventory Saved", "Saved product_id={$product_id}, physical_count={$physical_count}, status={$status}", $user_id, $branch_id);
     } else {
-        // if an error occurs, count as skipped and continue
         $skipped++;
+        logAction($conn, "Physical Inventory Error", "Failed to insert product_id={$product_id}: ".$insert->error, $user_id, $branch_id);
     }
+
     $insert->close();
 }
 

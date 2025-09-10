@@ -225,13 +225,7 @@ $services_result = $service_stmt->get_result();
   <p class="thank-you">*** Thank you for your purchase! ***</p>
 </div>
 
-<div class="print-btn">
-  <button onclick="window.print()">🖨️ Print Receipt</button>
-</div>
 
-<div class="back-link">
-  <a href="pos.php">← Back to POS</a>
-</div>
 
 </body>
 </html>

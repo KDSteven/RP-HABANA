@@ -156,6 +156,7 @@ if (!$ok) {
 }
 
 // Success: redirect back so the table refreshes
+logAction($conn, "Backup Created", "File: {$fname}", $_SESSION['user_id']);
 $_SESSION['flash_level'] = 'success';
 $_SESSION['flash_msg']   = 'Backup created successfully!';
 // pass the created filename so the page can auto-click the download link
@@ -256,7 +257,9 @@ if (isset($_POST['action']) && $_POST['action'] === 'restore') {
       $ok = false;
     }
   }
-
+if ($ok) {
+    logAction($conn, "Database Restored", "File: {$name}", $_SESSION['user_id']);
+}
   $_SESSION['flash_level'] = $ok ? 'success' : 'danger';
   $_SESSION['flash_msg']   = $ok ? 'Database successfully restored.' : 'Restore failed.';
   header("Location: $self"); exit;
@@ -296,6 +299,19 @@ function flash() {
     </script>";
   }
 }
+
+// logging
+function logAction($conn, $action, $details, $user_id = null, $branch_id = null) {
+    if (!$user_id && isset($_SESSION['user_id'])) $user_id = $_SESSION['user_id'];
+    if (!$branch_id && isset($_SESSION['branch_id'])) $branch_id = $_SESSION['branch_id'];
+
+    $stmt = $conn->prepare("INSERT INTO logs (user_id, action, details, timestamp, branch_id) VALUES (?, ?, ?, NOW(), ?)");
+    $stmt->bind_param("issi", $user_id, $action, $details, $branch_id);
+    $stmt->execute();
+    $stmt->close();
+}
+
+
 ?>
 <!DOCTYPE html>
 <html lang="en">

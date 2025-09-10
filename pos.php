@@ -694,7 +694,14 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 <?php endif; ?>
 </script>
-
+// Clear any leftover modal backdrops on page load
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  const backdrops = document.querySelectorAll('.modal-backdrop');
+  backdrops.forEach(b => b.remove());
+  document.body.classList.remove('modal-open');
+});
+</script>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 
 

@@ -97,16 +97,6 @@ if (!empty($params)) {
 $stmt->execute();
 $result = $stmt->get_result();
 
-// Handle Delete Branch
-if (isset($_POST['archive_branch'])) {
-    $branch_id = (int) $_POST['branch_id'];
-    $stmt = $conn->prepare("UPDATE branches SET archived = 1 WHERE branch_id = ?");
-    $stmt->bind_param("i", $branch_id);
-    $stmt->execute();
-    header("Location: inventory.php?archived=branch");
-    exit;
-}
-
 // Fetch branches
 if ($role === 'staff') {
     $stmt = $conn->prepare("SELECT * FROM branches WHERE branch_id = ?");
@@ -192,6 +182,66 @@ if (isset($_POST['archive_service'])) {
 
     logAction($conn, "Archive Service", "Archived service: $service_name (ID: $service_id)", null, $service_branch_id);
     header("Location: inventory.php?archived=service");
+    exit;
+}
+
+// stock log
+if (isset($_POST['add_stock'])) {
+    $inventory_id = (int) $_POST['inventory_id'];
+    $added_qty    = (int) $_POST['quantity'];
+
+    // Update stock
+    $stmt = $conn->prepare("UPDATE inventory SET stock = stock + ? WHERE inventory_id = ?");
+    $stmt->bind_param("ii", $added_qty, $inventory_id);
+    $stmt->execute();
+    $stmt->close();
+
+    // Get product info
+    $row = $conn->query("
+        SELECT p.product_name, i.branch_id 
+        FROM inventory i
+        JOIN products p ON i.product_id = p.product_id
+        WHERE i.inventory_id = $inventory_id
+    ")->fetch_assoc();
+
+    // Log action
+    logAction(
+        $conn,
+        "Add Stock",
+        "Added $added_qty stocks to {$row['product_name']} (Inventory ID: $inventory_id)",
+        null,
+        $row['branch_id']
+    );
+
+    $_SESSION['stock_message'] = "Successfully added $added_qty stock(s)!";
+    header("Location: inventory.php?stock=added");
+    exit;
+}
+// request transfer log
+if (isset($_POST['transfer_request'])) {
+    $product_id  = (int) $_POST['product_id'];
+    $from_branch = (int) $_POST['from_branch'];
+    $to_branch   = (int) $_POST['to_branch'];
+    $quantity    = (int) $_POST['quantity'];
+
+    $stmt = $conn->prepare("
+        INSERT INTO transfer_requests (product_id, from_branch, to_branch, quantity, status, requested_by, requested_at)
+        VALUES (?, ?, ?, ?, 'Pending', ?, NOW())
+    ");
+    $stmt->bind_param("iiiis", $product_id, $from_branch, $to_branch, $quantity, $_SESSION['user_id']);
+    $stmt->execute();
+    $stmt->close();
+
+    $product = $conn->query("SELECT product_name FROM products WHERE product_id = $product_id")->fetch_assoc();
+
+    logAction(
+        $conn,
+        "Stock Transfer Request",
+        "Requested transfer of $quantity {$product['product_name']} from Branch $from_branch to Branch $to_branch"
+    );
+
+    $_SESSION['stock_message'] = "Transfer request sent successfully!";
+    header("Location: inventory.php?transfer=requested");
     exit;
 }
 
@@ -417,6 +467,7 @@ if (isset($_SESSION['stock_message'])): ?>
                       <?php if ($inventory_id): ?>
                         <form id="archiveForm-<?= $inventory_id ?>" method="POST" style="display:inline-block;">
                           <input type="hidden" name="inventory_id" value="<?= $inventory_id ?>">
+                            <input type="hidden" name="archive_product" value="1">
                           <button
                             type="button"
                             name="archive_product"
@@ -494,6 +545,7 @@ if (isset($_SESSION['stock_message'])): ?>
                       <!-- Archive Service -->
                         <form id="archiveServiceForm-<?= $service['service_id'] ?>" method="POST" style="display:inline-block;">
                           <input type="hidden" name="service_id" value="<?= $service['service_id'] ?>">
+                            <input type="hidden" name="archive_service" value="1">
                           <button
                             type="button"
                             name="archive_service"
@@ -533,7 +585,8 @@ if (isset($_SESSION['stock_message'])): ?>
           <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
         </div>
 
-        <input type="hidden" name="branch_id" value="<?= htmlspecialchars($branch_id) ?>">
+      <input type="hidden" name="branch_id" value="<?= htmlspecialchars($current_branch_id) ?>">
+
 
         <div class="modal-body p-4">
           <div class="mb-3">
@@ -600,6 +653,14 @@ if (isset($_SESSION['stock_message'])): ?>
               </button>
             </div>
 
+            <!-- Barcode -->
+            <div class="col-md-6">
+              <label for="barcode" class="form-label">Barcode</label>
+              <input type="text" class="form-control" id="barcode" name="barcode" autofocus>
+              <div class="form-text">Scan or type the product barcode</div>
+            </div>
+
+            
             <!-- Product Name -->
             <div class="col-md-6">
               <label for="productName" class="form-label">Product Name</label>
@@ -821,7 +882,7 @@ if (isset($_SESSION['stock_message'])): ?>
 <div class="modal fade" id="addCategoryModal" tabindex="-1" aria-labelledby="addCategoryModalLabel" aria-hidden="true">
   <div class="modal-dialog">
     <div class="modal-content">
-      <form method="POST" action="add_category.php">
+      <form method="POST" action="add_brand.php">
         <div class="modal-header">
           <h5 class="modal-title" id="addCategoryModalLabel">Add New Category</h5>
           <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
@@ -987,7 +1048,7 @@ if (isset($_SESSION['stock_message'])): ?>
 <div class="modal fade" id="editServiceModal" tabindex="-1" aria-labelledby="editServiceModalLabel" aria-hidden="true">
   <div class="modal-dialog modal-dialog-centered">
     <div class="modal-content border-0 shadow-lg">
-      <form id="editServiceForm" action="edit_service.php" method="POST">
+      <form id="editServiceForm" action="update_service.php" method="POST">
         <div class="modal-header bg-warning text-dark">
           <h5 class="modal-title fw-bold" id="editServiceModalLabel">
             <i class="bi bi-pencil-square me-2"></i> Edit Service
@@ -997,7 +1058,8 @@ if (isset($_SESSION['stock_message'])): ?>
 
         <!-- Hidden input for service ID -->
         <input type="hidden" name="service_id" id="edit_service_id">
-        <input type="hidden" name="branch_id" value="<?= htmlspecialchars($branch_id) ?>">
+       <input type="hidden" name="branch_id" value="<?= htmlspecialchars($current_branch_id) ?>">
+
 
         <div class="modal-body p-4">
           <div class="mb-3">
@@ -1697,6 +1759,22 @@ function selectByBarcode(code) {
     }
   });
 })();
+
+// add barcode when adding product
+document.addEventListener("DOMContentLoaded", function() {
+  const barcodeInput = document.getElementById("barcode");
+
+  // Prevent form from auto-submitting when scanner presses Enter
+  barcodeInput.addEventListener("keypress", function(e) {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      // Move focus to Product Name after scanning
+      document.getElementById("productName").focus();
+    }
+  });
+});
+
+
 </script>
 <!-- dropdown script -->
 <script>
@@ -1797,6 +1875,45 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 })();
 </script>
+<script>
+(() => {
+  const modalEl  = document.getElementById('addProductModal');
+  const bcInput  = document.getElementById('barcode');
+  const nameInput = document.getElementById('productName');
 
+  let buffer = '';
+  let lastTs = 0;
+  let silenceTimer = null;
+  let listening = false;
+
+  const INTER_CHAR_MS = 50;
+  const SILENCE_MS    = 120;
+
+  function resetBuffer() { ... }
+  function finalizeScan() { ... }
+  function scheduleSilentFinalize() { ... }
+  function onKey(e) { ... }
+
+  modalEl.addEventListener('shown.bs.modal', () => {
+    listening = true;
+    resetBuffer();
+    bcInput.focus();
+  });
+  modalEl.addEventListener('hidden.bs.modal', () => {
+    listening = false;
+    resetBuffer();
+  });
+
+  document.addEventListener('keydown', onKey);
+
+  bcInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      buffer = bcInput.value;
+      finalizeScan();
+    }
+  });
+})();
+</script>
 </body>
 </html>
