@@ -9,17 +9,21 @@
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
   <style>
     body { height: 100vh; }
-    .left-section {
-      background-color: #fff;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      text-align: center;
-      background: url('img/ser.jpg') center/cover no-repeat;
-    }
+   .left-section {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  height: 100vh;
+
+  background: 
+    linear-gradient(rgba(0,0,0,0.2), rgba(0,0,0,0.2)),
+    url('img/index.jpg') center/cover no-repeat;
+}
+
     .left-section h1 { color: #f39200; font-weight: bold; font-size: 5em; }
-    .left-section p { font-size: 2em; }
-    .right-section { background: url('img/shrek.jpg') center/cover no-repeat; position: relative; }
+    .left-section p { font-size: 2em; color: #ffffff;}
+    .right-section { background: url('img/bg.jpg') center/cover no-repeat; position: relative; }
     .overlay {
       position: absolute; top: 0; left: 0; width: 100%; height: 100%;
       background-color: rgba(255, 153, 0, 0.7);
