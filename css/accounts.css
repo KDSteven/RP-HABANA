@@ -85,22 +85,23 @@
 }
 
 /* ---------------- Buttons ---------------- */
-.accounts-page button {
-    background: linear-gradient(90deg, #f7931e, #ffb347);
-    color: #fff;
-    padding: 12px 22px;
-    font-weight: 600;
-    border: none;
-    border-radius: 8px;
-    cursor: pointer;
-    margin-top: 10px;
-    transition: all 0.2s ease;
-    box-shadow: 0 4px 10px rgba(0,0,0,0.15);
+.accounts-page .acc-btn {
+  background: linear-gradient(90deg, #f7931e, #ffb347);
+  color: #fff;
+  padding: 12px 22px;
+  font-weight: 600;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  margin-top: 10px;
+  transition: all 0.2s ease;
+  box-shadow: 0 4px 10px rgba(0,0,0,0.15);
 }
-.accounts-page button:hover {
-    background: linear-gradient(90deg, #e67e00, #ffa500);
-    transform: translateY(-2px);
-    box-shadow: 0 6px 15px rgba(0,0,0,0.25);
+
+.accounts-page .acc-btn:hover {
+  background: linear-gradient(90deg, #e67e00, #ffa500);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 15px rgba(0,0,0,0.25);
 }
 /* Flex container for action buttons */
 .action-buttons {
