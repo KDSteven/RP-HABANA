@@ -18,19 +18,23 @@ function logAction($conn, $action, $details, $user_id = null, $branch_id = null)
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-   $barcode       = trim($_POST['barcode']);
-$productName   = trim($_POST['product_name'] ?? '');
-$category      = trim($_POST['category'] ?? '');
-$price         = floatval($_POST['price'] ?? 0);
-$markupPrice   = floatval($_POST['markup_price'] ?? 0);
-$retailPrice   = $price + ($price * ($markupPrice / 100));
-$ceilingPoint  = intval($_POST['ceiling_point'] ?? 0);
-$criticalPoint = intval($_POST['critical_point'] ?? 0);
-$vat           = floatval($_POST['vat'] ?? 0);
+    $barcode       = trim($_POST['barcode']);
+    $productName   = trim($_POST['product_name'] ?? '');
+    $category      = trim($_POST['category'] ?? '');
+    $price         = floatval($_POST['price'] ?? 0);
+    $markupPrice   = floatval($_POST['markup_price'] ?? 0);
+    $retailPrice   = $price + ($price * ($markupPrice / 100));
+    $ceilingPoint  = intval($_POST['ceiling_point'] ?? 0);
+    $criticalPoint = intval($_POST['critical_point'] ?? 0);
+    $vat           = floatval($_POST['vat'] ?? 0);
 $expirationDate = !empty($_POST['expiration_date']) ? $_POST['expiration_date'] : NULL;
-$brandName     = trim($_POST['brand_name'] ?? '');
+    $brandName     = trim($_POST['brand_name'] ?? '');
 
-    // 🔎 Pre-check: is barcode already used?
+    // ✅ Stocks & Branch ID
+    $stocks   = intval($_POST['stocks'] ?? 0);
+    $branchId = $_SESSION['branch_id'] ?? ($_POST['branch_id'] ?? null);
+
+    // Validate barcode uniqueness
     $check = $conn->prepare("SELECT product_id FROM products WHERE barcode = ?");
     $check->bind_param("s", $barcode);
     $check->execute();
@@ -63,25 +67,33 @@ $brandName     = trim($_POST['brand_name'] ?? '');
 
     try {
         // Insert into products
-        $stmt = $conn->prepare("INSERT INTO products 
-    (barcode, product_name, category, price, markup_price, retail_price, ceiling_point, critical_point, vat, expiration_date, brand_name) 
-    VALUES (?,?,?,?,?,?,?,?,?,?,?)");
-      $stmt->bind_param(
-    "issdddiidss", 
-    $barcode, 
-    $productName, 
-    $category, 
-    $price, 
-    $markupPrice, 
-    $retailPrice, 
-    $ceilingPoint, 
-    $criticalPoint, 
-    $vat, 
-    $expirationDate, 
-    $brandName
-);
-        $stmt->execute();
+        if ($expirationDate === null) {
+            $stmt = $conn->prepare("INSERT INTO products 
+                (barcode, product_name, category, price, markup_price, retail_price, ceiling_point, critical_point, vat, expiration_date, brand_name) 
+                VALUES (?,?,?,?,?,?,?,?,?,NULL,?)");
 
+            $stmt->bind_param(
+                "sssdddiids", 
+                $barcode, $productName, $category,
+                $price, $markupPrice, $retailPrice,
+                $ceilingPoint, $criticalPoint, $vat,
+                $brandName
+            );
+        } else {
+            $stmt = $conn->prepare("INSERT INTO products 
+                (barcode, product_name, category, price, markup_price, retail_price, ceiling_point, critical_point, vat, expiration_date, brand_name) 
+                VALUES (?,?,?,?,?,?,?,?,?,?,?)");
+
+            $stmt->bind_param(
+                "sssdddiidss", 
+                $barcode, $productName, $category,
+                $price, $markupPrice, $retailPrice,
+                $ceilingPoint, $criticalPoint, $vat,
+                $expirationDate, $brandName
+            );
+        }
+
+        $stmt->execute();
         $productId = $conn->insert_id;
         $stmt->close();
 
@@ -92,7 +104,7 @@ $brandName     = trim($_POST['brand_name'] ?? '');
         if ($stmt2->execute()) {
             $stmt2->close();
 
-            // Logging
+            // Log action
             logAction($conn, "Add Product", "Added product '$productName' (ID: $productId) with stock $stocks to branch ID $branchId");
 
             $_SESSION['stock_message'] = "✅ Product '$productName' added successfully with stock: $stocks (Branch ID: $branchId)";
@@ -110,4 +122,5 @@ $brandName     = trim($_POST['brand_name'] ?? '');
         exit();
     }
 }
+
 ?>
