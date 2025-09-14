@@ -107,6 +107,35 @@ button:hover {
     color: white;
 }
 
+.menu-toggle{
+  width:100%;
+  background:transparent;
+  border:0;
+  color:#fff;
+  display:flex; align-items:center; justify-content:space-between;
+  padding:10px 10px; cursor:pointer; text-align:left;
+  font-weight: normal;
+}
+.menu-toggle .caret{ transition: transform .2s ease; font-size:12px; opacity:.8; }
+.menu-toggle[aria-expanded="true"] .caret{ transform: rotate(90deg); }
+
+.submenu{
+  margin-left:16px;
+  padding-left:10px;
+  border-left:2px solid rgba(255,255,255,.25);
+}
+.submenu a{
+  display:block; color:#fff; text-decoration:none; padding:8px 0; opacity:.95;
+}
+.submenu a:hover{ opacity:1; text-decoration:underline; }
+
+.badge-pending{
+  background:red;color:#fff;border-radius:50%;
+  padding:3px 7px;font-size:12px;margin-left:6px;
+}
+
+
+
 /* Responsive */
 @media (max-width: 768px) {
     body {

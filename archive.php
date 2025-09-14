@@ -178,24 +178,71 @@ if (isset($_POST['delete_service'])) {
     <!-- Common -->
     <a href="dashboard.php" ><i class="fas fa-tv"></i> Dashboard</a>
 
-    <!-- Admin Links -->
-    <?php if ($role === 'admin'): ?>
-        <a href="inventory.php"><i class="fas fa-box"></i> Inventory</a>
-        <a href="physical_inventory.php"><i class="fas fa-warehouse"></i> Physical Inventory</a>
-        <a href="sales.php"><i class="fas fa-receipt"></i> Sales</a>
-        <a href="approvals.php"><i class="fas fa-check-circle"></i> Approvals
-            <?php if ($pending > 0): ?>
-                <span style="background:red;color:white;border-radius:50%;padding:3px 7px;font-size:12px;">
-                    <?= $pending ?>
-                </span>
-            <?php endif; ?>
-        </a>
-        <a href="accounts.php"><i class="fas fa-users"></i> Accounts</a>
-        <a href="archive.php" class="active"><i class="fas fa-archive"></i> Archive</a>
-        <a href="logs.php"><i class="fas fa-file-alt"></i> Logs</a>
-        <a href="/config/admin/backup_admin.php"><i class="fa-solid fa-database"></i> Backup and Restore</a>
-    <?php endif; ?>
+<?php
+    // put this once before the sidebar (top of file is fine)
+    $self = strtolower(basename(parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH)));
+    $isArchive = substr($self, 0, 7) === 'archive'; // matches archive.php, archive_view.php, etc.
+    $invOpen   = in_array($self, ['inventory.php','physical_inventory.php'], true);
+    $toolsOpen = ($self === 'backup_admin.php' || $isArchive);
+    ?>
 
+<!-- Admin Links -->
+<?php if ($role === 'admin'): ?>
+
+  <!-- Inventory group (unchanged) -->
+  <div class="menu-group has-sub">
+    <button class="menu-toggle" type="button" aria-expanded="<?= $invOpen ? 'true' : 'false' ?>">
+      <span><i class="fas fa-box"></i> Inventory</span>
+      <i class="fas fa-chevron-right caret"></i>
+    </button>
+    <div class="submenu" <?= $invOpen ? '' : 'hidden' ?>>
+      <a href="inventory.php" class="<?= $self === 'inventory.php' ? 'active' : '' ?>">
+        <i class="fas fa-list"></i> Inventory List
+      </a>
+      <a href="physical_inventory.php" class="<?= $self === 'physical_inventory.php' ? 'active' : '' ?>">
+        <i class="fas fa-warehouse"></i> Physical Inventory
+      </a>
+    </div>
+  </div>
+
+  <!-- Sales (normal link with active state) -->
+  <a href="sales.php" class="<?= $self === 'sales.php' ? 'active' : '' ?>">
+    <i class="fas fa-receipt"></i> Sales
+  </a>
+
+  <!-- Approvals -->
+  <a href="approvals.php" class="<?= $self === 'approvals.php' ? 'active' : '' ?>">
+    <i class="fas fa-check-circle"></i> Approvals
+    <?php if ($pending > 0): ?>
+      <span class="badge-pending"><?= $pending ?></span>
+    <?php endif; ?>
+  </a>
+
+  <a href="accounts.php" class="<?= $self === 'accounts.php' ? 'active' : '' ?>">
+    <i class="fas fa-users"></i> Accounts
+  </a>
+
+  <!-- NEW: Backup & Restore group with Archive inside -->
+  <div class="menu-group has-sub">
+    <button class="menu-toggle" type="button" aria-expanded="<?= $toolsOpen ? 'true' : 'false' ?>">
+      <span><i class="fas fa-screwdriver-wrench me-2"></i> Data Tools</span>
+      <i class="fas fa-chevron-right caret"></i>
+    </button>
+    <div class="submenu" <?= $toolsOpen ? '' : 'hidden' ?>>
+      <a href="/config/admin/backup_admin.php" class="<?= $self === 'backup_admin.php' ? 'active' : '' ?>">
+        <i class="fa-solid fa-database"></i> Backup & Restore
+      </a>
+      <a href="archive.php" class="<?= $isArchive ? 'active' : '' ?>">
+        <i class="fas fa-archive"></i> Archive
+      </a>
+    </div>
+  </div>
+
+  <a href="logs.php" class="<?= $self === 'logs.php' ? 'active' : '' ?>">
+    <i class="fas fa-file-alt"></i> Logs
+  </a>
+
+<?php endif; ?>
     <!-- Stockman Links -->
     <?php if ($role === 'stockman'): ?>
         <a href="transfer.php"><i class="fas fa-exchange-alt"></i> Transfer
@@ -354,6 +401,34 @@ if (isset($_POST['delete_service'])) {
     </table>
     <?php else: ?><p class="empty-msg">No archived users.</p><?php endif; ?>
   </div>
+  
+<script>
+(function(){
+  const groups = document.querySelectorAll('.menu-group.has-sub');
+
+  groups.forEach((g, idx) => {
+    const btn = g.querySelector('.menu-toggle');
+    const panel = g.querySelector('.submenu');
+    if (!btn || !panel) return;
+
+    // Optional: restore last state from localStorage
+    const key = 'sidebar-sub-' + idx;
+    const saved = localStorage.getItem(key);
+    if (saved === 'open') {
+      btn.setAttribute('aria-expanded', 'true');
+      panel.hidden = false;
+    }
+
+    btn.addEventListener('click', () => {
+      const expanded = btn.getAttribute('aria-expanded') === 'true';
+      btn.setAttribute('aria-expanded', String(!expanded));
+      panel.hidden = expanded;
+      localStorage.setItem(key, expanded ? 'closed' : 'open');
+    });
+  });
+})();
+</script>
+
 <script src="notifications.js"></script>
 </div>
 </body>
