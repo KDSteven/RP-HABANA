@@ -112,14 +112,13 @@ if ($role === 'staff') {
 $brand_result = $conn->query("SELECT brand_id, brand_name FROM brands ORDER BY brand_name ASC");
 
 $category_result = $conn->query("SELECT DISTINCT category FROM products ORDER BY category ASC");
-
 // Archive product for specific branch
 if (isset($_POST['archive_product'])) {
     $inventory_id = (int) $_POST['inventory_id'];
 
-    // Fetch product name and branch_id from inventory
+    // Fetch product info from inventory
     $stmt = $conn->prepare("
-        SELECT i.inventory_id, p.product_name, i.branch_id
+        SELECT i.inventory_id, i.product_id, p.product_name, i.branch_id
         FROM inventory i
         JOIN products p ON i.product_id = p.product_id
         WHERE i.inventory_id = ?
@@ -127,18 +126,33 @@ if (isset($_POST['archive_product'])) {
     ");
     $stmt->bind_param("i", $inventory_id);
     $stmt->execute();
-    $stmt->bind_result($inv_id, $product_name, $branch_id);
-    
+    $stmt->bind_result($inv_id, $product_id, $product_name, $branch_id);
+
     if ($stmt->fetch()) {
         $stmt->close();
 
-        // Archive this inventory row only
-        $stmt = $conn->prepare("UPDATE inventory SET archived = 1 WHERE inventory_id = ?");
+        // 1️⃣ Update inventory as archived
+       $stmt = $conn->prepare("UPDATE inventory SET archived = 1, archived_at = NOW() WHERE inventory_id = ?");
+
         $stmt->bind_param("i", $inventory_id);
         $stmt->execute();
         $stmt->close();
 
-        // Log action
+        // 2️⃣ Insert inventory movement for archive
+        $dateNow = date('Y-m-d H:i:s');
+       $userId = $_SESSION['user_id']; // the currently logged-in admin/staff
+
+$stmt = $conn->prepare("
+    INSERT INTO inventory_movements 
+    (product_id, branch_id, movement_type, quantity, created_at, user_id)
+    VALUES (?, ?, 'archive', 0, ?, ?)
+");
+$stmt->bind_param("iisi", $product_id, $branch_id, $dateNow, $userId);
+$stmt->execute();
+$stmt->close();
+
+
+        // 3️⃣ Log action
         logAction($conn, "Archive Product", "Archived product: $product_name (Inventory ID: $inventory_id)", null, $branch_id);
 
         header("Location: inventory.php?archived=success");
@@ -148,6 +162,7 @@ if (isset($_POST['archive_product'])) {
         echo "Inventory not found!";
     }
 }
+
 
 // Determine current branch for services
 $current_branch_id = $_GET['branch'] ?? $_SESSION['current_branch_id'] ?? $branch_id ?? 0;

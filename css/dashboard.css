@@ -1,6 +1,82 @@
 /* =========================
    MODERN DASHBOARD STYLES
 ========================= */
+/* Combined Filter Form */
+.combined-filter {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+    align-items: center;
+    margin-bottom: 2rem;
+    background: #f9f9f9;
+    padding: 1rem;
+    border-radius: 10px;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+}
+
+.combined-filter div {
+    display: flex;
+    flex-direction: column;
+}
+
+.combined-filter label {
+    font-weight: bold;
+    margin-bottom: 0.3rem;
+}
+
+.combined-filter select,
+.combined-filter input {
+    padding: 0.4rem 0.6rem;
+    border-radius: 5px;
+    border: 1px solid #ccc;
+    min-width: 150px;
+}
+
+.combined-filter button {
+    padding: 0.5rem 1rem;
+    border: none;
+    border-radius: 5px;
+    background-color: #007BFF;
+    color: white;
+    cursor: pointer;
+    font-weight: bold;
+    align-self: flex-end;
+    transition: background-color 0.2s;
+}
+
+.combined-filter button:hover {
+    background-color: #0056b3;
+}
+
+/* Summary Cards */
+.cards {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+    margin-bottom: 2rem;
+}
+
+.card {
+    flex: 1 1 200px;
+    padding: 1rem 1.5rem;
+    border-radius: 10px;
+    color: white;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+}
+
+.card.green { background-color: #28a745; }
+.card.orange { background-color: #fd7e14; }
+.card.red { background-color: #dc3545; }
+
+.card h3 { margin-top: 0; font-size: 1.2rem; }
+.card p { font-size: 2rem; margin: 0.3rem 0; }
+.card small { display: block; margin-top: 0.5rem; font-weight: normal; }
+
+/* Responsive */
+@media (max-width: 768px) {
+    .combined-filter { flex-direction: column; }
+    .cards { flex-direction: column; }
+}
 .dashboard-page {
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
     color: #333;

@@ -245,28 +245,65 @@ if (isset($_POST['checkout'])) {
             $sale_id = $conn->insert_id;
 
             // Step 2: Insert sale items/services & update stock
-            foreach ($_SESSION['cart'] as $item) {
-                if ($item['type'] === 'product') {
-                    $price_stmt = $conn->prepare("SELECT price, markup_price FROM products WHERE product_id = ?");
-                    $price_stmt->bind_param("i", $item['product_id']);
-                    $price_stmt->execute();
-                    $product = $price_stmt->get_result()->fetch_assoc();
-                    $price = $product['price'] * (1 + $product['markup_price'] / 100);
+           foreach ($_SESSION['cart'] as $item) {
+    if ($item['type'] === 'product') {
+        // 1. Get product price with markup
+        $price_stmt = $conn->prepare("SELECT price, markup_price FROM products WHERE product_id = ?");
+        $price_stmt->bind_param("i", $item['product_id']);
+        $price_stmt->execute();
+        $product = $price_stmt->get_result()->fetch_assoc();
+        $price_stmt->close();
 
-                    $update_stock = $conn->prepare("UPDATE inventory SET stock = stock - ? WHERE product_id = ? AND branch_id = ?");
-                    $update_stock->bind_param("iii", $item['stock'], $item['product_id'], $branch_id);
-                    $update_stock->execute();
+        $price = $product['price'] * (1 + $product['markup_price'] / 100);
 
-                    $item_stmt = $conn->prepare("INSERT INTO sales_items (sale_id, product_id, quantity, price) VALUES (?, ?, ?, ?)");
-                    $item_stmt->bind_param("iiid", $sale_id, $item['product_id'], $item['stock'], $price);
-                    $item_stmt->execute();
-                } else {
-                    $service_stmt = $conn->prepare("INSERT INTO sales_services (sale_id, service_id, price) VALUES (?, ?, ?)");
-                    $service_stmt->bind_param("iid", $sale_id, $item['service_id'], $item['price']);
-                    $service_stmt->execute();
-                }
-            }
+        // 2. Update inventory stock
+        $update_stock = $conn->prepare("
+            UPDATE inventory 
+            SET stock = stock - ? 
+            WHERE product_id = ? AND branch_id = ?
+        ");
+        $update_stock->bind_param("iii", $item['stock'], $item['product_id'], $branch_id);
+        $update_stock->execute();
+        $update_stock->close();
 
+        // 3. Insert into sales_items
+        $item_stmt = $conn->prepare("
+            INSERT INTO sales_items (sale_id, product_id, quantity, price) 
+            VALUES (?, ?, ?, ?)
+        ");
+        $item_stmt->bind_param("iiid", $sale_id, $item['product_id'], $item['stock'], $price);
+        $item_stmt->execute();
+        $item_stmt->close();
+
+        // 4. Log movement in inventory_movements
+        $movement_stmt = $conn->prepare("
+            INSERT INTO inventory_movements 
+                (product_id, branch_id, quantity, movement_type, reference_id, user_id, notes) 
+            VALUES (?, ?, ?, 'SALE', ?, ?, ?)
+        ");
+        $notes = "Sale via POS (Sale ID: $sale_id)";
+        $movement_stmt->bind_param(
+            "iiiiss", 
+            $item['product_id'], 
+            $branch_id, 
+            $item['stock'], 
+            $sale_id, 
+            $staff_id, 
+            $notes
+        );
+        $movement_stmt->execute();
+        $movement_stmt->close();
+    } else {
+        // Service handling (no inventory movement)
+        $service_stmt = $conn->prepare("
+            INSERT INTO sales_services (sale_id, service_id, price) 
+            VALUES (?, ?, ?)
+        ");
+        $service_stmt->bind_param("iid", $sale_id, $item['service_id'], $item['price']);
+        $service_stmt->execute();
+        $service_stmt->close();
+    }
+}
             $conn->commit();
             $_SESSION['cart'] = [];
             $showReceiptModal = true;

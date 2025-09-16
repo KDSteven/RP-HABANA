@@ -28,63 +28,97 @@ if (isset($_POST['action']) && isset($_POST['request_id'])) {
     $request_id = (int) $_POST['request_id'];
 
     if (in_array($action, ['approved', 'rejected'])) {
-       if ($action === 'approved') {
-    // Get transfer details
-    $stmt = $conn->prepare("SELECT product_id, source_branch, destination_branch, quantity FROM transfer_requests WHERE request_id = ?");
-    $stmt->bind_param("i", $request_id);
-    $stmt->execute();
-    $transfer = $stmt->get_result()->fetch_assoc();
-    
-    $product_id = $transfer['product_id'];
-    $source_branch = $transfer['source_branch'];
-    $destination_branch = $transfer['destination_branch'];
-    $quantity = $transfer['quantity'];
 
-    // 1. Reduce stock from source branch
-    $stmt = $conn->prepare("UPDATE inventory SET stock = stock - ? WHERE product_id = ? AND branch_id = ?");
-    $stmt->bind_param("iii", $quantity, $product_id, $source_branch);
-    $stmt->execute();
+        if ($action === 'approved') {
+            // Get transfer details
+            $stmt = $conn->prepare("
+                SELECT product_id, source_branch, destination_branch, quantity 
+                FROM transfer_requests 
+                WHERE request_id = ?
+            ");
+            $stmt->bind_param("i", $request_id);
+            $stmt->execute();
+            $transfer = $stmt->get_result()->fetch_assoc();
+            
+            $product_id = $transfer['product_id'];
+            $source_branch = $transfer['source_branch'];
+            $destination_branch = $transfer['destination_branch'];
+            $quantity = $transfer['quantity'];
 
-    // 2. Check if destination branch has the product
-    $stmt = $conn->prepare("SELECT stock FROM inventory WHERE product_id = ? AND branch_id = ?");
-    $stmt->bind_param("ii", $product_id, $destination_branch);
-    $stmt->execute();
-    $result = $stmt->get_result();
+            // 1️⃣ Reduce stock from source branch
+            $stmt = $conn->prepare("UPDATE inventory SET stock = stock - ? WHERE product_id = ? AND branch_id = ?");
+            $stmt->bind_param("iii", $quantity, $product_id, $source_branch);
+            $stmt->execute();
 
-    if ($result->num_rows > 0) {
-        // Update stock
-        $stmt = $conn->prepare("UPDATE inventory SET stock = stock + ? WHERE product_id = ? AND branch_id = ?");
-        $stmt->bind_param("iii", $quantity, $product_id, $destination_branch);
-        $stmt->execute();
-    } else {
-        // Insert new record
-        $stmt = $conn->prepare("INSERT INTO inventory (product_id, branch_id, stock) VALUES (?, ?, ?)");
-        $stmt->bind_param("iii", $product_id, $destination_branch, $quantity);
-        $stmt->execute();
-    }
+            // Record stock out
+            $movement_stmt = $conn->prepare("
+                INSERT INTO inventory_movements 
+                    (product_id, branch_id, quantity, movement_type, reference_id, user_id, notes, created_at)
+                VALUES (?, ?, ?, 'TRANSFER_OUT', ?, ?, ?, NOW())
+            ");
+            $notes_out = "Transfer to branch #$destination_branch (Request ID: $request_id)";
+            $movement_stmt->bind_param("iiisss", $product_id, $source_branch, $quantity, $request_id, $_SESSION['user_id'], $notes_out);
+            $movement_stmt->execute();
+            $movement_stmt->close();
 
-    // 3. Update transfer request status and decision date
-    $stmt = $conn->prepare("UPDATE transfer_requests SET status = ?, decision_date = NOW(), decided_by = ? WHERE request_id = ?");
-    $stmt->bind_param("sii", $action, $_SESSION['user_id'], $request_id);
-    $stmt->execute();
+            // 2️⃣ Add stock to destination branch
+            // Check if destination branch has the product
+            $stmt = $conn->prepare("SELECT stock FROM inventory WHERE product_id = ? AND branch_id = ?");
+            $stmt->bind_param("ii", $product_id, $destination_branch);
+            $stmt->execute();
+            $result = $stmt->get_result();
 
-    header("Location: approvals.php?success=approved");
-    exit;
-}   elseif ($action === 'rejected') {
-        // Simply mark as rejected, record who decided
-        $stmt = $conn->prepare("
-            UPDATE transfer_requests 
-            SET status = 'rejected', decision_date = NOW(), decided_by = ? 
-            WHERE request_id = ?
-        ");
-        $stmt->bind_param("ii", $_SESSION['user_id'], $request_id);
-        $stmt->execute();
+            if ($result->num_rows > 0) {
+                // Update stock
+                $stmt = $conn->prepare("UPDATE inventory SET stock = stock + ? WHERE product_id = ? AND branch_id = ?");
+                $stmt->bind_param("iii", $quantity, $product_id, $destination_branch);
+                $stmt->execute();
+            } else {
+                // Insert new record
+                $stmt = $conn->prepare("INSERT INTO inventory (product_id, branch_id, stock) VALUES (?, ?, ?)");
+                $stmt->bind_param("iii", $product_id, $destination_branch, $quantity);
+                $stmt->execute();
+            }
 
-        header("Location: approvals.php?success=rejected");
-        exit;
-    }
+            // Record stock in
+            $movement_stmt = $conn->prepare("
+                INSERT INTO inventory_movements 
+                    (product_id, branch_id, quantity, movement_type, reference_id, user_id, notes, created_at)
+                VALUES (?, ?, ?, 'TRANSFER_IN', ?, ?, ?, NOW())
+            ");
+            $notes_in = "Received from branch #$source_branch (Request ID: $request_id)";
+            $movement_stmt->bind_param("iiisss", $product_id, $destination_branch, $quantity, $request_id, $_SESSION['user_id'], $notes_in);
+            $movement_stmt->execute();
+            $movement_stmt->close();
+
+            // 3️⃣ Update transfer request status
+            $stmt = $conn->prepare("
+                UPDATE transfer_requests 
+                SET status = ?, decision_date = NOW(), decided_by = ? 
+                WHERE request_id = ?
+            ");
+            $stmt->bind_param("sii", $action, $_SESSION['user_id'], $request_id);
+            $stmt->execute();
+
+            header("Location: approvals.php?success=approved");
+            exit;
+
+        } elseif ($action === 'rejected') {
+            // Simply mark as rejected
+            $stmt = $conn->prepare("
+                UPDATE transfer_requests 
+                SET status = 'rejected', decision_date = NOW(), decided_by = ? 
+                WHERE request_id = ?
+            ");
+            $stmt->bind_param("ii", $_SESSION['user_id'], $request_id);
+            $stmt->execute();
+
+            header("Location: approvals.php?success=rejected");
+            exit;
+        }
     }
 }
+
 
 // Fetch Pending Transfer Requests
 $requests = $conn->query("
