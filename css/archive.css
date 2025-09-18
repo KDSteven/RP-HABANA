@@ -118,3 +118,11 @@
 .table-container::-webkit-scrollbar-thumb:hover {
     background: #999;
 }
+
+.modal-footer button:hover,
+.modal-footer button:focus,
+.modal-footer button:active {
+  color: white !important;   /* keep text white */
+  transform: translateY(-2px);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+}

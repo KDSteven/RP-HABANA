@@ -8,10 +8,38 @@ if (!isset($_SESSION['user_id'])) {
 
 include 'config/db.php';
 
+
 // -------------------- USER INFO --------------------
 $user_id   = $_SESSION['user_id'];
 $role      = $_SESSION['role'] ?? '';
 $branch_id = $_SESSION['branch_id'] ?? null;
+
+
+
+
+// Notifications (Pending Approvals)
+$pending = $conn->query("SELECT COUNT(*) AS pending FROM transfer_requests WHERE status='Pending'")->fetch_assoc()['pending'];
+
+$pendingTransfers = 0;
+if ($role === 'admin') {
+    $result = $conn->query("SELECT COUNT(*) AS pending FROM transfer_requests WHERE status='pending'");
+    if ($result) {
+        $row = $result->fetch_assoc();
+        $pendingTransfers = (int)($row['pending'] ?? 0);
+    }
+}
+
+$pendingStockIns = 0;
+if ($role === 'admin') {
+    $result = $conn->query("SELECT COUNT(*) AS pending FROM stock_in_requests WHERE status='pending'");
+    if ($result) {
+        $row = $result->fetch_assoc();
+        $pendingStockIns = (int)($row['pending'] ?? 0);
+    }
+}
+
+$pendingTotalInventory = $pendingTransfers + $pendingStockIns;
+
 
 // -------------------- FILTERS --------------------
 $filters = [
@@ -228,6 +256,13 @@ $stmt->execute();
 $serviceJobData = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
 $stmt->close();
 if(empty($serviceJobData)) $serviceJobData[]=['service_name'=>'No Services Sold','count'=>0];
+
+// compute $pendingResets count (put near the query)
+$pendingResetsCount = 0;
+if ($role === 'admin') {
+  $res = $conn->query("SELECT COUNT(*) AS c FROM password_resets WHERE status='pending'");
+  $pendingResetsCount = $res ? (int)$res->fetch_assoc()['c'] : 0;
+}
 ?>
 
 
@@ -271,37 +306,40 @@ $toolsOpen = ($self === 'backup_admin.php' || $isArchive);
 <?php if ($role === 'admin'): ?>
 
   <!-- Inventory group (unchanged) -->
-  <div class="menu-group has-sub">
-    <button class="menu-toggle" type="button" aria-expanded="<?= $invOpen ? 'true' : 'false' ?>">
-      <span><i class="fas fa-box"></i> Inventory</span>
-      <i class="fas fa-chevron-right caret"></i>
-    </button>
-    <div class="submenu" <?= $invOpen ? '' : 'hidden' ?>>
-      <a href="inventory.php" class="<?= $self === 'inventory.php' ? 'active' : '' ?>">
-        <i class="fas fa-list"></i> Inventory List
-      </a>
-      <a href="physical_inventory.php" class="<?= $self === 'physical_inventory.php' ? 'active' : '' ?>">
-        <i class="fas fa-warehouse"></i> Physical Inventory
-      </a>
-    </div>
+<div class="menu-group has-sub">
+  <button class="menu-toggle" type="button" aria-expanded="<?= $invOpen ? 'true' : 'false' ?>">
+  <span><i class="fas fa-box"></i> Inventory
+    <?php if ($pendingTotalInventory > 0): ?>
+      <span class="badge-pending"><?= $pendingTotalInventory ?></span>
+    <?php endif; ?>
+  </span>
+    <i class="fas fa-chevron-right caret"></i>
+  </button>
+  <div class="submenu" <?= $invOpen ? '' : 'hidden' ?>>
+    <a href="inventory.php#pending-requests" class="<?= $self === 'inventory.php#pending-requests' ? 'active' : '' ?>">
+      <i class="fas fa-list"></i> Inventory List
+        <?php if ($pendingTotalInventory > 0): ?>
+          <span class="badge-pending"><?= $pendingTotalInventory ?></span>
+        <?php endif; ?>
+    </a>
+    <a href="physical_inventory.php" class="<?= $self === 'physical_inventory.php' ? 'active' : '' ?>">
+      <i class="fas fa-warehouse"></i> Physical Inventory
+    </a>
   </div>
+</div>
 
   <!-- Sales (normal link with active state) -->
   <a href="sales.php" class="<?= $self === 'sales.php' ? 'active' : '' ?>">
     <i class="fas fa-receipt"></i> Sales
   </a>
 
-  <!-- Approvals -->
-  <a href="approvals.php" class="<?= $self === 'approvals.php' ? 'active' : '' ?>">
-    <i class="fas fa-check-circle"></i> Approvals
-    <?php if ($pending > 0): ?>
-      <span class="badge-pending"><?= $pending ?></span>
-    <?php endif; ?>
-  </a>
 
-  <a href="accounts.php" class="<?= $self === 'accounts.php' ? 'active' : '' ?>">
-    <i class="fas fa-users"></i> Accounts
-  </a>
+<a href="accounts.php" class="<?= $self === 'accounts.php' ? 'active' : '' ?>">
+  <i class="fas fa-users"></i> Accounts
+  <?php if ($pendingResetsCount > 0): ?>
+    <span class="badge-pending"><?= $pendingResetsCount ?></span>
+  <?php endif; ?>
+</a>
 
   <!-- NEW: Backup & Restore group with Archive inside -->
   <div class="menu-group has-sub">

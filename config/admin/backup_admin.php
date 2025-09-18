@@ -310,6 +310,32 @@ function logAction($conn, $action, $details, $user_id = null, $branch_id = null)
     $stmt->execute();
     $stmt->close();
 }
+$pendingResetsCount = 0;
+if ($role === 'admin') {
+  $res = $conn->query("SELECT COUNT(*) AS c FROM password_resets WHERE status='pending'");
+  $pendingResetsCount = $res ? (int)$res->fetch_assoc()['c'] : 0;
+}
+
+$pendingTransfers = 0;
+if ($role === 'admin') {
+    $result = $conn->query("SELECT COUNT(*) AS pending FROM transfer_requests WHERE status='pending'");
+    if ($result) {
+        $row = $result->fetch_assoc();
+        $pendingTransfers = (int)($row['pending'] ?? 0);
+    }
+}
+
+$pendingStockIns = 0;
+if ($role === 'admin') {
+    $result = $conn->query("SELECT COUNT(*) AS pending FROM stock_in_requests WHERE status='pending'");
+    if ($result) {
+        $row = $result->fetch_assoc();
+        $pendingStockIns = (int)($row['pending'] ?? 0);
+    }
+}
+
+$pendingTotalInventory = $pendingTransfers + $pendingStockIns;
+
 
 
 ?>
@@ -399,20 +425,27 @@ function logAction($conn, $action, $details, $user_id = null, $branch_id = null)
 <?php if ($role === 'admin'): ?>
 
   <!-- Inventory group (unchanged) -->
-  <div class="menu-group has-sub">
-    <button class="menu-toggle" type="button" aria-expanded="<?= $invOpen ? 'true' : 'false' ?>">
-      <span><i class="fas fa-box"></i> Inventory</span>
-      <i class="fas fa-chevron-right caret"></i>
-    </button>
-    <div class="submenu" <?= $invOpen ? '' : 'hidden' ?>>
-      <a href="../../inventory.php" class="<?= $self === 'inventory.php' ? 'active' : '' ?>">
-        <i class="fas fa-list"></i> Inventory List
-      </a>
-      <a href="../../Physical_inventory.php" class="<?= $self === 'physical_inventory.php' ? 'active' : '' ?>">
-        <i class="fas fa-warehouse"></i> Physical Inventory
-      </a>
-    </div>
+<div class="menu-group has-sub">
+  <button class="menu-toggle" type="button" aria-expanded="<?= $invOpen ? 'true' : 'false' ?>">
+  <span><i class="fas fa-box"></i> Inventory
+    <?php if ($pendingTotalInventory > 0): ?>
+      <span class="badge-pending"><?= $pendingTotalInventory ?></span>
+    <?php endif; ?>
+  </span>
+    <i class="fas fa-chevron-right caret"></i>
+  </button>
+  <div class="submenu" <?= $invOpen ? '' : 'hidden' ?>>
+    <a href="../../inventory.php#pending-requests" class="<?= $self === 'inventory.php#pending-requests' ? 'active' : '' ?>">
+      <i class="fas fa-list"></i> Inventory List
+        <?php if ($pendingTotalInventory > 0): ?>
+          <span class="badge-pending"><?= $pendingTotalInventory ?></span>
+        <?php endif; ?>
+    </a>
+    <a href="../../Physical_inventory.php" class="<?= $self === 'physical_inventory.php' ? 'active' : '' ?>">
+      <i class="fas fa-warehouse"></i> Physical Inventory
+    </a>
   </div>
+</div>
 
   <!-- Sales (normal link with active state) -->
   <a href="../../sales.php" class="<?= $self === 'sales.php' ? 'active' : '' ?>">
@@ -420,16 +453,12 @@ function logAction($conn, $action, $details, $user_id = null, $branch_id = null)
   </a>
 
   <!-- Approvals -->
-  <a href="../../approvals.php" class="<?= $self === 'approvals.php' ? 'active' : '' ?>">
-    <i class="fas fa-check-circle"></i> Approvals
-    <?php if ($pending > 0): ?>
-      <span class="badge-pending"><?= $pending ?></span>
-    <?php endif; ?>
-  </a>
-
-  <a href="../../accounts.php" class="<?= $self === 'accounts.php' ? 'active' : '' ?>">
-    <i class="fas fa-users"></i> Accounts
-  </a>
+<a href="../../accounts.php" class="<?= $self === 'accounts.php' ? 'active' : '' ?>">
+  <i class="fas fa-users"></i> Accounts
+  <?php if ($pendingResetsCount > 0): ?>
+    <span class="badge-pending"><?= $pendingResetsCount ?></span>
+  <?php endif; ?>
+</a>
 
   <!-- NEW: Backup & Restore group with Archive inside -->
   <div class="menu-group has-sub">

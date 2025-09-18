@@ -26,8 +26,8 @@ body {
     align-items: center;
     background: #fff;
     padding: 0.6rem 1rem;
-    border-radius: 10px;
-    box-shadow: 0 3px 10px rgba(0,0,0,0.08);
+    border-radius: 7px;
+    box-shadow: 0 3px 10px rgba(0, 0, 0, 0.377);
     margin-bottom: 20px;
     flex-wrap: wrap;
 }
@@ -60,25 +60,63 @@ body {
 .logs-feed {
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: 10px;
 }
+
 
 .log-card {
-    background: #fff;
-    border-radius: 10px;
-    padding: 10px 14px;
-    box-shadow: 0 3px 12px rgba(0,0,0,0.06);
-    font-size: 0.88rem;
-    display: flex;
-    gap: 12px;
-    align-items: flex-start;
-    transition: transform 0.2s ease, box-shadow 0.2s ease;
+  background: #fff;
+  border-left: 5px solid #2196f3; /* default accent */
+  border-radius: 8px;
+  padding: 10px 16px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.63); /* softer */
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
 }
+/* Left accent per action */
+.log-card { position: relative; border-left: 6px solid transparent; }
+.log-card.accent-create  { border-left-color: #4caf50; }   /* green */
+.log-card.accent-update  { border-left-color: #2196f3; }   /* blue */
+.log-card.accent-delete  { border-left-color: #f44336; }   /* red */
+.log-card.accent-login   { border-left-color: #ff9800; }   /* orange */
+.log-card.accent-transfer{ border-left-color: #6f42c1; }   /* purple */
+.log-card.accent-request { border-left-color: #0d6efd; }   /* bootstrap primary */
+.log-card.accent-other   { border-left-color: #6c757d; }   /* gray */
 
-.log-card:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 5px 18px rgba(0,0,0,0.1);
+/* Role-tinted avatar ring */
+.avatar-ring {
+  width: 36px; height: 36px; border-radius: 50%;
+  display: grid; place-items: center; flex-shrink: 0;
+  background: #fff; border: 2px solid #e5e7eb;
+  font-weight: 700; color: #555;
 }
+.avatar-ring.role-admin    { border-color: #0d6efd33; color:#0d6efd; }
+.avatar-ring.role-stockman { border-color: #19875433; color:#198754; }
+.avatar-ring.role-staff    { border-color: #6f42c133; color:#6f42c1; }
+.avatar-ring.role-other    { border-color: #6c757d33; color:#6c757d; }
+
+/* Layout inside card */
+.log-main { flex: 1 1 auto; }
+.log-top  { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:2px; }
+.log-top .who { display:flex; align-items:center; gap:6px; }
+.log-top .who .branch { color:#6b7280; font-size:.85rem; }
+.log-top .who .sep { color:#9ca3af; }
+
+/* Make the badge a clean pill (uses your existing badge colors) */
+.log-card .badge { border-radius:999px; font-weight:600; }
+
+/* Make toggle button look like a link but align with your style */
+.toggle-details {
+  background:none; border:none; padding:0; margin-top:2px;
+  color:#0d6efd; font-size:.85rem; cursor:pointer;
+}
+.toggle-details:hover { text-decoration: underline; }
+
+/* Slightly tighter card padding to compensate for left stripe */
+.log-card { padding-left: 12px; }
+
 
 /* STATUS DOT */
 .log-card .status-dot {
@@ -91,20 +129,50 @@ body {
 
 /* BADGES */
 .log-card .badge {
-    font-size: 0.78rem;
-    padding: 0.25em 0.55em;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    border-radius: 4px;
+  font-size: 0.75rem;
+  padding: 0.3em 0.7em;
+  border-radius: 50px;
+  font-weight: 500;
 }
+
+.badge-create { background: #e8f5e9; color: #388e3c; }
+.badge-update { background: #e3f2fd; color: #1565c0; }
+.badge-delete { background: #ffebee; color: #c62828; }
+.badge-login  { background: #fff3e0; color: #ef6c00; }
+.badge-secondary { background: #f2f2f2; color: #555; }
+.badge-transfer { background: #7c3aed; color: #fff; }
+.badge-request  { background: #a855f7; color: #fff; }
+.badge-stockin { background:#10b981; color:#fff; }  /* green */
+.log-card.accent-stockin { border-left:6px solid #10b981; }
+
+
+/* AVATAR */
+.avatar {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+  color: #fff;
+}
+
+.avatar.admin   { background: #1976d2; }
+.avatar.staff   { background: #43a047; }
+.avatar.stockman { background: #f57c00; }
+
 
 /* TIMELINE TIME */
 .timeline-time {
-    font-size: 0.74rem;
-    color: #666;
-    margin-bottom: 2px;
-    display: block;
+  font-size: 0.75rem;
+  color: #888;
 }
+
+.log-details {
+  flex: 1;
+}
+
 
 /* LOG DETAILS */
 .log-details p {
@@ -146,6 +214,53 @@ body {
 .copy-log:hover {
     color: #000;
 }
+.filters-bar button {
+  background: linear-gradient(135deg,#ff9d2f,#ff6a00);
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  font-weight: 500;
+}
+.filters-bar button:hover {
+  opacity: 0.9;
+}
+
+/* More compact log cards */
+.log-card {
+  padding: 8px 12px;        /* was probably larger */
+  border-radius: 8px;       /* slightly smaller corners */
+}
+
+/* Avatar size smaller */
+.avatar-ring {
+  width: 32px;
+  height: 32px;
+  font-size: 14px;          /* smaller letter inside */
+}
+
+/* Main content more compact */
+.log-main {
+  font-size: 14px;          /* shrink text a bit */
+  line-height: 1.3;         /* tighter spacing */
+}
+
+/* Details list */
+.log-details {
+  margin-top: 4px;          /* less gap from header */
+}
+.log-details ul.log-meta {
+  margin: 0;
+  padding-left: 18px;       /* keep bullets aligned */
+  font-size: 13px;          /* smaller details font */
+  line-height: 1.3;
+}
+
+/* Timeline time smaller */
+.timeline-time {
+  font-size: 12px;
+  color: #666;
+}
+
 
 /* RESPONSIVE */
 @media(max-width:768px){
