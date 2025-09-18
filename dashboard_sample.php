@@ -22,67 +22,6 @@ if ($filterBranch !== '') {
     $branchCondition = " AND s.branch_id = " . intval($filterBranch);
 }
 
-$reportType = $_GET['report'] ?? 'daily'; // daily | weekly | monthly | branch | category
-$selectedMonth = $_GET['month'] ?? date('Y-m');
-$startDate = $selectedMonth . "-01";
-$endDate = date("Y-m-t", strtotime($startDate));
-
-// Add role and branch condition
-$branchCondition = '';
-if ($role === 'admin') {
-    if (!empty($_GET['branch_id']) && is_numeric($_GET['branch_id'])) {
-        $branch_id = intval($_GET['branch_id']);
-        $branchCondition = " AND s.branch_id = $branch_id";
-    }
-    // Show branch dropdown
-    // Branch filter comes from user selection ($_GET['branch_id'])
-} else if ($role === 'staff') {
-    // No branch dropdown; filter by session branch_id automatically
-    $branch_id = $_SESSION['branch_id'];
-    $branchCondition = " AND s.branch_id = $branch_id";
-}
-
-
-// Get grouped label based on report type
-switch ($reportType) {
-    case 'weekly':
-        $groupLabel = "CONCAT('Week ', WEEK(s.sale_date), ' - ', YEAR(s.sale_date))";
-        break;
-    case 'monthly':
-        $groupLabel = "CONCAT(MONTHNAME(s.sale_date), ' ', YEAR(s.sale_date))";
-        break;
-    case 'branch':
-        $groupLabel = "b.branch_name";
-        break;
-    case 'category':
-        $groupLabel = "p.category";
-        break;
-    default: // daily
-        $groupLabel = "DATE(s.sale_date)";
-}
-
-// Full sales report
-$salesReportQuery = "
-    SELECT 
-        s.sale_id,
-        s.sale_date,
-        $groupLabel AS period,
-        b.branch_name,
-        p.product_name,
-        p.category,
-        si.quantity,
-        si.price,
-        (si.quantity * si.price) AS total_amount
-    FROM sales s
-    JOIN sales_items si ON s.sale_id = si.sale_id
-    JOIN products p ON si.product_id = p.product_id
-    LEFT JOIN branches b ON s.branch_id = b.branch_id
-    WHERE s.sale_date BETWEEN '$startDate' AND '$endDate'
-    $branchCondition
-    ORDER BY s.sale_date DESC
-";
-
-$salesReportResult = $conn->query($salesReportQuery);
 
 
 // Summary stats
@@ -118,96 +57,155 @@ if ($role === 'staff') {
 
 
 
-// Total Sales
+// Total Sales (sum only within selected month and (optionally) branch)
 if ($role === 'staff') {
-    $stmt = $conn->prepare("SELECT IFNULL(SUM(total), 0) AS total_sales FROM sales WHERE branch_id = ?");
-    $stmt->bind_param("i", $branch_id);
+    $stmt = $conn->prepare("
+        SELECT IFNULL(SUM(total), 0) AS total_sales
+        FROM sales
+        WHERE branch_id = ? AND sale_date BETWEEN ? AND ?
+    ");
+    $stmt->bind_param("iss", $branch_id, $startDate, $endDate);
 } else {
-    $stmt = $conn->prepare("SELECT IFNULL(SUM(total), 0) AS total_sales FROM sales");
+    if (!empty($filterBranch)) {
+        $stmt = $conn->prepare("
+            SELECT IFNULL(SUM(total), 0) AS total_sales
+            FROM sales
+            WHERE branch_id = ? AND sale_date BETWEEN ? AND ?
+        ");
+        $stmt->bind_param("iss", $filterBranch, $startDate, $endDate);
+    } else {
+        $stmt = $conn->prepare("
+            SELECT IFNULL(SUM(total), 0) AS total_sales
+            FROM sales
+            WHERE sale_date BETWEEN ? AND ?
+        ");
+        $stmt->bind_param("ss", $startDate, $endDate);
+    }
 }
+
 $stmt->execute();
 $result = $stmt->get_result();
 $totalSales = $result->fetch_assoc()['total_sales'] ?? 0;
 
+
 // Fetch fast moving products
-$fastMovingQuery = "
+$WINDOW_DAYS = (new DateTime($startDate))->diff(new DateTime($endDate))->days + 1;
+$SLOW_THRESHOLD_PER_DAY = 0.1; // ≈ 3 per 30-day month
+$FAST_MIN_QTY_THIS_MONTH = (int)ceil($SLOW_THRESHOLD_PER_DAY * $WINDOW_DAYS); // e.g., 3
+
+$fastSql = "
 SELECT p.product_name, SUM(si.quantity) AS total_qty, si.product_id
 FROM sales_items si
 JOIN products p ON si.product_id = p.product_id
-JOIN sales s ON si.sale_id = s.sale_id
-WHERE s.sale_date BETWEEN '$startDate' AND '$endDate'
-$branchCondition
+JOIN sales s    ON si.sale_id = s.sale_id
+WHERE s.sale_date BETWEEN ? AND ?
+" . (!empty($filterBranch) ? " AND s.branch_id = ?" : ($role === 'staff' ? " AND s.branch_id = ?" : "")) . "
 GROUP BY si.product_id
+HAVING SUM(si.quantity) >= ?
 ORDER BY total_qty DESC
 LIMIT 5
 ";
-$fastMovingResult = $conn->query($fastMovingQuery);
+
+// --- Bind depending on scope ---
+if ($role === 'staff' || !empty($filterBranch)) {
+    $stmt = $conn->prepare($fastSql);
+    $b = ($role === 'staff') ? (int)$branch_id : (int)$filterBranch;
+    // 4 params: startDate, endDate, branch, minQty
+    $stmt->bind_param("ssii", $startDate, $endDate, $b, $FAST_MIN_QTY_THIS_MONTH);
+} else {
+    $stmt = $conn->prepare($fastSql);
+    // 3 params: startDate, endDate, minQty
+    $stmt->bind_param("ssi", $startDate, $endDate, $FAST_MIN_QTY_THIS_MONTH);
+}
+
+$stmt->execute();
+$fastMovingResult = $stmt->get_result();
 
 $fastMovingProductIds = [];
 $fastItems = [];
 while ($row = $fastMovingResult->fetch_assoc()) {
     $fastItems[] = $row;
-    $fastMovingProductIds[] = $row['product_id'];
+    $fastMovingProductIds[] = (int)$row['product_id'];
 }
-
-// Prepare product IDs string to exclude from slow moving
 $excludeFastIds = !empty($fastMovingProductIds) ? implode(',', $fastMovingProductIds) : '0';
 
-// Fetch slow moving products excluding fast moving ones
 
-$branchFilter = '';
-if (isset($_GET['branch_id']) && is_numeric($_GET['branch_id'])) {
-    $branchId = intval($_GET['branch_id']);
-    $branchFilter = "AND s.branch_id = $branchId";
+// === Slow Moving Items (sold > 0 in selected month, not in fast list, branch-aware) ===
+$branchJoin = '';
+$params = [$startDate, $endDate];
+$types  = 'ss';
+
+if ($role === 'staff') {
+    $branchJoin = " AND s.branch_id = ? ";
+    $params[] = (int)$branch_id; 
+    $types   .= 'i';
+} elseif (!empty($filterBranch)) {
+    $branchJoin = " AND s.branch_id = ? ";
+    $params[] = (int)$filterBranch; 
+    $types   .= 'i';
 }
-$slowMovingQuery = "
+
+$slowSql = "
 SELECT 
+    p.product_id,
     p.product_name,
-    SUM(CASE 
-        WHEN s.sale_date BETWEEN '$startDate' AND '$endDate' THEN si.quantity 
-        ELSE 0 
-    END) AS total_qty
+    COALESCE(SUM(CASE WHEN s.sale_date BETWEEN ? AND ? $branchJoin THEN si.quantity ELSE 0 END), 0) AS total_qty
 FROM products p
-LEFT JOIN sales_items si ON p.product_id = si.product_id
-LEFT JOIN sales s ON si.sale_id = s.sale_id
+LEFT JOIN sales_items si ON si.product_id = p.product_id
+LEFT JOIN sales s        ON s.sale_id = si.sale_id
 WHERE p.product_id NOT IN ($excludeFastIds)
-" . ($branchFilter ? " AND s.branch_id = $branchId" : "") . "
 GROUP BY p.product_id
-ORDER BY total_qty ASC
+HAVING total_qty > 0            -- exclude non-moving here
+ORDER BY total_qty ASC, p.product_name
 LIMIT 5
 ";
 
-$slowMovingResult = $conn->query($slowMovingQuery);
+$stmt = $conn->prepare($slowSql);
+$stmt->bind_param($types, ...$params);
+$stmt->execute();
+$slowMovingResult = $stmt->get_result();
+
 $slowItems = [];
 while ($row = $slowMovingResult->fetch_assoc()) {
     $slowItems[] = $row;
 }
 
 
-// Not Moving Items (not sold in selected month)
-$notMovingQuery = "
-SELECT p.product_name
+
+$nonSql = "
+SELECT DISTINCT p.product_id, p.product_name
 FROM inventory i
-JOIN products p ON i.product_id = p.product_id
-WHERE i.product_id NOT IN (
+JOIN products p ON p.product_id = i.product_id
+LEFT JOIN (
     SELECT si.product_id
     FROM sales_items si
-    JOIN sales s ON si.sale_id = s.sale_id
-    WHERE s.sale_date BETWEEN '$startDate' AND '$endDate'
-    " . ($role === 'staff' ? " AND s.branch_id = $branch_id" : (!empty($filterBranch) ? " AND s.branch_id = $filterBranch" : "")) . "
-)
+    JOIN sales s ON s.sale_id = si.sale_id
+    WHERE s.sale_date BETWEEN ? AND ?
+    " . ($role === 'staff' ? " AND s.branch_id = ? " : (!empty($filterBranch) ? " AND s.branch_id = ? " : "")) . "
+) sold ON sold.product_id = i.product_id
+WHERE sold.product_id IS NULL
+" . ($role === 'staff' ? " AND i.branch_id = ? " : (!empty($filterBranch) ? " AND i.branch_id = ? " : "")) . "
+ORDER BY p.product_name
 ";
-if ($role === 'staff') {
-    $notMovingQuery .= " AND i.branch_id = $branch_id";
-} elseif (!empty($filterBranch)) {
-    $notMovingQuery .= " AND i.branch_id = $filterBranch";
-}
 
-$notMovingResult = $conn->query($notMovingQuery);
+if ($role === 'staff') {
+    $stmt = $conn->prepare($nonSql);
+    $stmt->bind_param("ssii", $startDate, $endDate, $branch_id, $branch_id);
+} elseif (!empty($filterBranch)) {
+    $b = (int)$filterBranch;
+    $stmt = $conn->prepare($nonSql);
+    $stmt->bind_param("ssii", $startDate, $endDate, $b, $b);
+} else {
+    $stmt = $conn->prepare($nonSql);
+    $stmt->bind_param("ss", $startDate, $endDate);
+}
+$stmt->execute();
+$res = $stmt->get_result();
 $notMovingItems = [];
-while ($row = $notMovingResult->fetch_assoc()) {
+while ($row = $res->fetch_assoc()) {
     $notMovingItems[] = $row['product_name'];
 }
+
 
 // Notifications (Pending Approvals)
 $pending = $conn->query("SELECT COUNT(*) AS pending FROM transfer_requests WHERE status='Pending'")->fetch_assoc()['pending'];
@@ -260,21 +258,43 @@ if ($role === 'staff') {
 $recentSalesQuery .= " ORDER BY sale_date DESC LIMIT 5";
 $recentSales = $conn->query($recentSalesQuery);
 
-// pie chart 
-$serviceJobData = [];
-$serviceJobResult = $conn->query("
+// pie chart $serviceJobData = [];
+
+$query = "
     SELECT s.service_name, COUNT(*) as count
     FROM sales_services ss
     JOIN services s ON ss.service_id = s.service_id
     JOIN sales sa ON ss.sale_id = sa.sale_id
-    WHERE sa.sale_date BETWEEN '$startDate' AND '$endDate'
-    " . ($role === 'staff' ? " AND sa.branch_id = $branch_id" : (!empty($filterBranch) ? " AND sa.branch_id = $filterBranch" : "")) . "
-    GROUP BY s.service_name
-");
+    WHERE 1
+";
+
+if (!empty($startDate) && !empty($endDate)) {
+    $query .= " AND sa.sale_date BETWEEN '$startDate' AND '$endDate'";
+}
+
+if ($role === 'staff' && !empty($branch_id)) {
+    $query .= " AND sa.branch_id = $branch_id";
+} elseif (!empty($filterBranch)) {
+    $query .= " AND sa.branch_id = $filterBranch";
+}
+
+$query .= " GROUP BY s.service_name ORDER BY count DESC";
+
+$serviceJobResult = $conn->query($query);
+
+if (!$serviceJobResult) {
+    die("Query Error: " . $conn->error . "<br>SQL: $query");
+}
 
 while ($row = $serviceJobResult->fetch_assoc()) {
     $serviceJobData[] = $row;
 }
+
+// If no services sold, add a placeholder
+if (empty($serviceJobData)) {
+    $serviceJobData[] = ['service_name' => 'No Services Sold', 'count' => 0];
+}
+
 
 
 ?>
@@ -282,10 +302,12 @@ while ($row = $serviceJobResult->fetch_assoc()) {
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title><?= strtoupper($role) ?> Dashboard</title>
+<?php $pageTitle =''; ?>
+<title><?= htmlspecialchars("RP Habana — $pageTitle") ?><?= strtoupper($role) ?> Dashboard</title>
+<link rel="icon" href="img/R.P.png">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
-<link rel="stylesheet" href="css/dashboard.css">
+<link rel="stylesheet" href="css/dashboard.css?v=<?= filemtime('css/dashboard.css') ?>">
 <link rel="stylesheet" href="css/notifications.css">
 <link rel="stylesheet" href="css/sidebar.css">
 <audio id="notifSound" src="img/notif.mp3" preload="auto"></audio>
@@ -304,30 +326,94 @@ while ($row = $serviceJobResult->fetch_assoc()) {
     <!-- Common -->
     <a href="dashboard.php" class="active"><i class="fas fa-tv"></i> Dashboard</a>
 
-    <!-- Admin Links -->
-    <?php if ($role === 'admin'): ?>
-        <a href="inventory.php"><i class="fas fa-box"></i> Inventory</a>
-        <a href="approvals.php"><i class="fas fa-check-circle"></i> Approvals
-            <?php if ($pending > 0): ?>
-                <span style="background:red;color:white;border-radius:50%;padding:3px 7px;font-size:12px;">
-                    <?= $pending ?>
-                </span>
-            <?php endif; ?>
-        </a>
-        <a href="accounts.php"><i class="fas fa-users"></i> Accounts</a>
-        <a href="archive.php"><i class="fas fa-archive"></i> Archive</a>
-        <a href="logs.php"><i class="fas fa-file-alt"></i> Logs</a>
+    <?php
+// put this once before the sidebar (top of file is fine)
+$self = strtolower(basename(parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH)));
+$isArchive = substr($self, 0, 7) === 'archive'; // matches archive.php, archive_view.php, etc.
+$invOpen   = in_array($self, ['inventory.php','physical_inventory.php'], true);
+$toolsOpen = ($self === 'backup_admin.php' || $isArchive);
+?>
+
+<!-- Admin Links -->
+<?php if ($role === 'admin'): ?>
+
+  <!-- Inventory group (unchanged) -->
+  <div class="menu-group has-sub">
+    <button class="menu-toggle" type="button" aria-expanded="<?= $invOpen ? 'true' : 'false' ?>">
+      <span><i class="fas fa-box"></i> Inventory</span>
+      <i class="fas fa-chevron-right caret"></i>
+    </button>
+    <div class="submenu" <?= $invOpen ? '' : 'hidden' ?>>
+      <a href="inventory.php" class="<?= $self === 'inventory.php' ? 'active' : '' ?>">
+        <i class="fas fa-list"></i> Inventory List
+      </a>
+      <a href="physical_inventory.php" class="<?= $self === 'physical_inventory.php' ? 'active' : '' ?>">
+        <i class="fas fa-warehouse"></i> Physical Inventory
+      </a>
+    </div>
+  </div>
+
+  <!-- Sales (normal link with active state) -->
+  <a href="sales.php" class="<?= $self === 'sales.php' ? 'active' : '' ?>">
+    <i class="fas fa-receipt"></i> Sales
+  </a>
+
+  <!-- Approvals -->
+  <a href="approvals.php" class="<?= $self === 'approvals.php' ? 'active' : '' ?>">
+    <i class="fas fa-check-circle"></i> Approvals
+    <?php if ($pending > 0): ?>
+      <span class="badge-pending"><?= $pending ?></span>
     <?php endif; ?>
+  </a>
+
+  <a href="accounts.php" class="<?= $self === 'accounts.php' ? 'active' : '' ?>">
+    <i class="fas fa-users"></i> Accounts
+  </a>
+
+  <!-- NEW: Backup & Restore group with Archive inside -->
+  <div class="menu-group has-sub">
+    <button class="menu-toggle" type="button" aria-expanded="<?= $toolsOpen ? 'true' : 'false' ?>">
+      <span><i class="fas fa-screwdriver-wrench me-2"></i> Data Tools</span>
+      <i class="fas fa-chevron-right caret"></i>
+    </button>
+    <div class="submenu" <?= $toolsOpen ? '' : 'hidden' ?>>
+      <a href="/config/admin/backup_admin.php" class="<?= $self === 'backup_admin.php' ? 'active' : '' ?>">
+        <i class="fa-solid fa-database"></i> Backup & Restore
+      </a>
+      <a href="archive.php" class="<?= $isArchive ? 'active' : '' ?>">
+        <i class="fas fa-archive"></i> Archive
+      </a>
+    </div>
+  </div>
+
+  <a href="logs.php" class="<?= $self === 'logs.php' ? 'active' : '' ?>">
+    <i class="fas fa-file-alt"></i> Logs
+  </a>
+
+<?php endif; ?>
+
+
 
     <!-- Stockman Links -->
+     <?php
+        $transferNotif = $transferNotif ?? 0; // if not set, default to 0
+        ?>
     <?php if ($role === 'stockman'): ?>
-        <a href="transfer.php"><i class="fas fa-exchange-alt"></i> Transfer
-            <?php if ($transferNotif > 0): ?>
-                <span style="background:red;color:white;border-radius:50%;padding:3px 7px;font-size:12px;">
-                    <?= $transferNotif ?>
-                </span>
-            <?php endif; ?>
-        </a>
+  <!-- Inventory group (unchanged) -->
+  <div class="menu-group has-sub">
+    <button class="menu-toggle" type="button" aria-expanded="<?= $invOpen ? 'true' : 'false' ?>">
+      <span><i class="fas fa-box"></i> Inventory</span>
+      <i class="fas fa-chevron-right caret"></i>
+    </button>
+    <div class="submenu" <?= $invOpen ? '' : 'hidden' ?>>
+      <a href="inventory.php" class="<?= $self === 'inventory.php' ? 'active' : '' ?>">
+        <i class="fas fa-list"></i> Inventory List
+      </a>
+      <a href="physical_inventory.php" class="<?= $self === 'physical_inventory.php' ? 'active' : '' ?>">
+        <i class="fas fa-warehouse"></i> Physical Inventory
+      </a>
+    </div>
+  </div>
     <?php endif; ?>
     <!-- Staff Links -->
     <?php if ($role === 'staff'): ?>
@@ -347,51 +433,35 @@ while ($row = $serviceJobResult->fetch_assoc()) {
         <div class="card red"><h3>Out of Stocks</h3><p><?= $outOfStocks ?></p></div>
         <div class="card blue"><h3>Total Sales</h3><p>₱<?= number_format($totalSales,2) ?></p></div>
     </div>
-
 <div class="Report">
-   <form method="GET" style="margin-bottom:5px;">
-    <?php
-        // Convert YYYY-MM to readable Month Year
-        $monthLabel = date("F Y", strtotime($selectedMonth . "-01"));
+    <form method="GET">
+        <label for="month">View Reports for:</label>
+        <input type="month" id="month" name="month" value="<?= htmlspecialchars($_GET['month'] ?? date('Y-m')) ?>">
 
-        // Get branch name if filtered
-        $branchName = "All Branches";
-        if (!empty($filterBranch)) {
-            $bName = $conn->query("SELECT branch_name FROM branches WHERE branch_id = " . intval($filterBranch))->fetch_assoc();
-            if ($bName) {
-                $branchName = htmlspecialchars($bName['branch_name']);
-            }
-        }
+        <?php if ($role === 'stockman' || $role === 'staff'): 
+            $branchData = $conn->query("SELECT branch_name FROM branches WHERE branch_id = $branch_id")->fetch_assoc();
+            $branchName = $branchData ? htmlspecialchars($branchData['branch_name']) : 'Your Branch';
         ?>
-    <label for="month">View Reports for:</label>
-    <input type="month" id="month" name="month" value="<?= htmlspecialchars($_GET['month'] ?? date('Y-m')) ?>">
+            <input type="hidden" name="branch_id" value="<?= $branch_id ?>">
+            <select id="branch" name="branch_id" disabled>
+                <option value="<?= $branch_id ?>" selected><?= $branchName ?></option>
+            </select>
 
-    <?php if ($role === 'staff'): ?>
-        <?php
-        // Fetch the staff's branch name
-        $staffBranch = $conn->query("SELECT branch_name FROM branches WHERE branch_id = $branch_id")->fetch_assoc();
-        $staffBranchName = $staffBranch ? htmlspecialchars($staffBranch['branch_name']) : 'Your Branch';
-        ?>
-        <input type="hidden" name="branch_id" value="<?= $branch_id ?>">
-        <select id="branch" name="branch_id" disabled>
-            <option value="<?= $branch_id ?>" selected><?= $staffBranchName ?></option>
-        </select>
-    <?php else: ?>
-        <select id="branch" name="branch_id">
-            <option value="">All Branches</option>
-            <?php
+        <?php else: 
             $branches = $conn->query("SELECT branch_id, branch_name FROM branches");
-            while ($b = $branches->fetch_assoc()):
-            ?>
-                <option value="<?= $b['branch_id'] ?>" <?= (isset($_GET['branch_id']) && $_GET['branch_id'] == $b['branch_id']) ? 'selected' : '' ?>>
-                    <?= htmlspecialchars($b['branch_name']) ?>
-                </option>
-            <?php endwhile; ?>
-        </select>
-    <?php endif; ?>
+        ?>
+            <select id="branch" name="branch_id">
+                <option value="">All Branches</option>
+                <?php while ($b = $branches->fetch_assoc()): ?>
+                    <option value="<?= $b['branch_id'] ?>" <?= (isset($_GET['branch_id']) && $_GET['branch_id'] == $b['branch_id']) ? 'selected' : '' ?>>
+                        <?= htmlspecialchars($b['branch_name']) ?>
+                    </option>
+                <?php endwhile; ?>
+            </select>
+        <?php endif; ?>
 
-    <button type="submit">Filter</button>
-</form>
+        <button type="submit">Filter</button>
+    </form>
 </div>
 
 <div class="sections" style="display:flex; gap:20px; flex-wrap:wrap; align-items:flex-start;">
@@ -410,11 +480,9 @@ while ($row = $serviceJobResult->fetch_assoc()) {
 </div>
 
 
-
-<!-- Bottom Sections -->
-<div class="bottom" style="display:flex; gap:20px; flex-wrap:wrap; padding-top:20px;">
-<!-- Fast Moving Items -->
-    <section style="flex:1; min-width:300px;">
+<div class="dashboard-page bottom flex-sections">
+    <!-- Fast Moving Items -->
+    <section class="fast-moving">
         <h2>Fast Moving Items</h2>
         <div class="scrollable-list">
             <ul>
@@ -423,13 +491,13 @@ while ($row = $serviceJobResult->fetch_assoc()) {
                 foreach ($fastItems as $item):
                     $percentage = ($maxQty > 0) ? ($item['total_qty'] / $maxQty) * 100 : 0;
                 ?>
-                <li>
-                    <div style="display:flex; justify-content:space-between;">
-                        <span><?= htmlspecialchars($item['product_name']) ?></span>
-                        <span><?= $item['total_qty'] ?> sold</span>
+                <li class="item-card">
+                    <div class="item-row">
+                        <span class="item-name"><?= htmlspecialchars($item['product_name']) ?></span>
+                        <span class="item-qty"><?= $item['total_qty'] ?> sold</span>
                     </div>
                     <div class="progress-bar">
-                        <div class="progress" style="width:<?= round($percentage) ?>%; background:#28a745;"></div>
+                        <div class="progress" style="width:<?= round($percentage) ?>%; background: #28a745;"></div>
                     </div>
                 </li>
                 <?php endforeach; ?>
@@ -438,7 +506,7 @@ while ($row = $serviceJobResult->fetch_assoc()) {
     </section>
 
     <!-- Slow Moving Items -->
-    <section style="flex:1; min-width:300px;">
+    <section class="slow-moving">
         <h2>Slow Moving Items</h2>
         <div class="scrollable-list">
             <ul>
@@ -447,99 +515,49 @@ while ($row = $serviceJobResult->fetch_assoc()) {
                 foreach ($slowItems as $item):
                     $percentage = ($slowMax > 0) ? ($item['total_qty'] / $slowMax) * 100 : 0;
                 ?>
-                <li>
-                    <div style="display:flex; justify-content:space-between;">
-                        <span><?= htmlspecialchars($item['product_name']) ?></span>
-                        <span><?= $item['total_qty'] ?> sold</span>
+                <li class="item-card">
+                    <div class="item-row">
+                        <span class="item-name"><?= htmlspecialchars($item['product_name']) ?></span>
+                        <span class="item-qty"><?= $item['total_qty'] ?> sold</span>
                     </div>
                     <div class="progress-bar">
-                        <div class="progress" style="width:<?= round($percentage) ?>%; background:#ffc107;"></div>
+                        <div class="progress" style="width:<?= round($percentage) ?>%; background: #ffc107;"></div>
                     </div>
                 </li>
                 <?php endforeach; ?>
             </ul>
         </div>
     </section>
+
     <!-- Not Moving Items -->
-        <section style="flex: 1; min-width: 300px;">
+    <section class="not-moving">
         <h2>Not Moving Items</h2>
-            <div class="scrollable-list">
-        <ul>
-            
-            <?php if (!empty($notMovingItems)): ?>
-            <?php foreach ($notMovingItems as $item): ?>
-                <li><?= htmlspecialchars($item) ?></li>
-            <?php endforeach; ?>
-            <?php else: ?>
-            <li>No items found.</li>
-            <?php endif; ?>
-        </ul>
-        </div>
-        </section>
-    
-</div>
- <!-- Sales Report -->
-      <section style="width:100%; margin-top:20px;">
-        <h2>Sales Report</h2>
         <div class="scrollable-list">
-            <form method="get" style="margin-bottom:10px;">
-                <label for="report">View:</label>
-                <select name="report" id="report" onchange="this.form.submit()" style="padding:3px 6px; font-size:14px;">
-                    <option value="daily" <?= $reportType === 'daily' ? 'selected' : '' ?>>Daily</option>
-                    <option value="weekly" <?= $reportType === 'weekly' ? 'selected' : '' ?>>Weekly</option>
-                    <option value="monthly" <?= $reportType === 'monthly' ? 'selected' : '' ?>>Monthly</option>
-                </select>
-
-                <?php if (!empty($_GET['month'])): ?>
-                    <input type="hidden" name="month" value="<?= htmlspecialchars($_GET['month']) ?>">
+            <ul>
+                <?php if (!empty($notMovingItems)): ?>
+                    <?php foreach ($notMovingItems as $item): ?>
+                        <li class="item-card">
+                            <div class="item-row">
+                                <span class="item-name"><?= htmlspecialchars($item) ?></span>
+                                <span class="item-qty">0 sold</span>
+                            </div>
+                            <div class="progress-bar">
+                                <div class="progress" style="width:0%; background: #dc3545;"></div>
+                            </div>
+                        </li>
+                    <?php endforeach; ?>
+                <?php else: ?>
+                    <li class="item-card">No items found.</li>
                 <?php endif; ?>
-                <?php if (!empty($_GET['branch_id'])): ?>
-                    <input type="hidden" name="branch_id" value="<?= htmlspecialchars($_GET['branch_id']) ?>">
-                <?php endif; ?>
-            </form>
-
-            <table border="1" cellpadding="5" cellspacing="0" style="width:100%; font-size:14px; border-collapse:collapse;">
-                <thead style="background-color:#f2f2f2;">
-                    <tr>
-                        <th>Sale ID</th>
-                        <th>Date</th>
-                        <th>Period</th>
-                        <th>Branch Name</th>
-                        <th>Product Name</th>
-                        <th>Category</th>
-                        <th>Quantity Sold</th>
-                        <th>Price</th>
-                        <th>Total Amount</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <?php if ($salesReportResult && $salesReportResult->num_rows > 0): ?>
-                        <?php while ($row = $salesReportResult->fetch_assoc()): ?>
-                            <tr>
-                                <td><?= htmlspecialchars($row['sale_id']) ?></td>
-                                <td><?= htmlspecialchars(date('Y-m-d', strtotime($row['sale_date']))) ?></td>
-                                <td><?= htmlspecialchars($row['period']) ?></td>
-                                <td><?= htmlspecialchars($row['branch_name'] ?? 'N/A') ?></td>
-                                <td><?= htmlspecialchars($row['product_name']) ?></td>
-                                <td><?= htmlspecialchars($row['category']) ?></td>
-                                <td><?= (int)$row['quantity'] ?></td>
-                                <td>₱<?= number_format($row['price'],2) ?></td>
-                                <td>₱<?= number_format($row['total_amount'],2) ?></td>
-                            </tr>
-                        <?php endwhile; ?>
-                    <?php else: ?>
-                        <tr><td colspan="9" style="text-align:center;">No sales data found for this period.</td></tr>
-                    <?php endif; ?>
-                </tbody>
-            </table>
+            </ul>
         </div>
     </section>
 </div>
+
 <!-- NOTIFICATIONS -->
 <script src="notifications.js"></script>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-
 <script>
 // Fetch Monthly Sales for Chart 
 // FIX BY BRANCH
@@ -580,34 +598,36 @@ fetch(`monthly_sale.php?month=${selectedMonth}&branch_id=${selectedBranch}`)
 });
 
 </script>
+<script>
+console.log(<?= json_encode($serviceJobData) ?>);
+</script>
 
 <script>
-const serviceJobData = <?= json_encode($serviceJobData) ?>;
+const serviceJobData = <?= json_encode($serviceJobData) ?> || [];
 
-if (serviceJobData && serviceJobData.length > 0) {
+if (serviceJobData.length > 0) {
     const ctx = document.getElementById('serviceJobChart').getContext('2d');
+    ctx.canvas.height = serviceJobData.length * 50; // adjust height
+
     const labels = serviceJobData.map(item => item.service_name);
-    const data = serviceJobData.map(item => item.count);
+    const data = serviceJobData.map(item => item.count || 0);
+
+    const colors = labels.map(() => `hsl(${Math.floor(Math.random()*360)}, 70%, 60%)`);
 
     new Chart(ctx, {
-        type: 'bar',           // Change from 'pie' to 'bar'
+        type: 'bar',
         data: {
             labels: labels,
             datasets: [{
-                label: 'Service Jobs',
+                label: 'Services',
                 data: data,
-                backgroundColor: [
-                    '#FF6384', '#36A2EB', '#FFCE56',
-                    '#8e44ad', '#2ecc71', '#e67e22'
-                ]
+                backgroundColor: colors
             }]
         },
         options: {
-            indexAxis: 'y',   // Makes the bars horizontal
+            indexAxis: 'y',
             responsive: true,
-            plugins: {
-                legend: { position: 'bottom' }
-            },
+            plugins: { legend: { display: false } },
             scales: {
                 x: { beginAtZero: true },
                 y: { ticks: { autoSkip: false } }
@@ -615,6 +635,33 @@ if (serviceJobData && serviceJobData.length > 0) {
         }
     });
 }
+</script>
+
+<script>
+(function(){
+  const groups = document.querySelectorAll('.menu-group.has-sub');
+
+  groups.forEach((g, idx) => {
+    const btn = g.querySelector('.menu-toggle');
+    const panel = g.querySelector('.submenu');
+    if (!btn || !panel) return;
+
+    // Optional: restore last state from localStorage
+    const key = 'sidebar-sub-' + idx;
+    const saved = localStorage.getItem(key);
+    if (saved === 'open') {
+      btn.setAttribute('aria-expanded', 'true');
+      panel.hidden = false;
+    }
+
+    btn.addEventListener('click', () => {
+      const expanded = btn.getAttribute('aria-expanded') === 'true';
+      btn.setAttribute('aria-expanded', String(!expanded));
+      panel.hidden = expanded;
+      localStorage.setItem(key, expanded ? 'closed' : 'open');
+    });
+  });
+})();
 </script>
 
 
