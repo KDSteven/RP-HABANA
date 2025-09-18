@@ -18,19 +18,121 @@ if (isset($_POST['archive_service'])) {
 }
 
 
-// Handle Restore & Delete
-if (isset($_POST['restore_product'])) $conn->query("UPDATE inventory SET archived = 0 WHERE inventory_id = " . (int)$_POST['inventory_id']);
-if (isset($_POST['delete_product']))  $conn->query("DELETE FROM inventory WHERE inventory_id = " . (int)$_POST['inventory_id']);
+/* ---------------------- HANDLE ACTIONS (SAFE) ---------------------- */
 
-if (isset($_POST['restore_branch']))  $conn->query("UPDATE branches SET archived = 0 WHERE branch_id = " . (int)$_POST['branch_id']);
-if (isset($_POST['delete_branch']))   $conn->query("DELETE FROM branches WHERE branch_id = " . (int)$_POST['branch_id']);
+function fetch_one_assoc(mysqli $conn, string $sql): ?array {
+    $res = $conn->query($sql);
+    if ($res && $res->num_rows) return $res->fetch_assoc();
+    return null;
+}
+function go_back_with_toast(string $msg, string $type='success') {
+    $_SESSION['toast'] = ['msg'=>$msg, 'type'=>$type];
+    header("Location: archive.php");
+    exit;
+}
 
-if (isset($_POST['restore_user']))    $conn->query("UPDATE users SET archived = 0 WHERE id = " . (int)$_POST['user_id']);
-if (isset($_POST['delete_user']))     $conn->query("DELETE FROM users WHERE id = " . (int)$_POST['user_id']);
+/* ---------- PRODUCTS ---------- */
+if (isset($_POST['restore_product'])) {
+    $id = (int)($_POST['inventory_id'] ?? 0);
+    $prod = fetch_one_assoc($conn, "
+        SELECT p.product_name, b.branch_id
+        FROM inventory i
+        JOIN products p ON i.product_id = p.product_id
+        JOIN branches b ON i.branch_id  = b.branch_id
+        WHERE i.inventory_id = $id
+    ");
+    $conn->query("UPDATE inventory SET archived = 0 WHERE inventory_id = $id");
+    $name = $prod['product_name'] ?? "inventory_id $id";
+    $bid  = $prod['branch_id']    ?? ($_SESSION['branch_id'] ?? null);
+    logAction($conn, "Restore Product", "Restored product: {$name} (ID: $id)", null, $bid);
+    go_back_with_toast("Product restored: {$name}", "success");
 
-if (isset($_POST['restore_service'])) {$conn->query("UPDATE services SET archived = 0 WHERE service_id = " . (int)$_POST['service_id']);}
+}
 
-if (isset($_POST['delete_service']))  {$conn->query("DELETE FROM services WHERE service_id = " . (int)$_POST['service_id']);}
+if (isset($_POST['delete_product'])) {
+    $id = (int)($_POST['inventory_id'] ?? 0);
+    $prod = fetch_one_assoc($conn, "
+        SELECT p.product_name, b.branch_id
+        FROM inventory i
+        JOIN products p ON i.product_id = p.product_id
+        JOIN branches b ON i.branch_id  = b.branch_id
+        WHERE i.inventory_id = $id
+    ");
+    $conn->query("DELETE FROM inventory WHERE inventory_id = $id");
+    $name = $prod['product_name'] ?? "inventory_id $id";
+    $bid  = $prod['branch_id']    ?? ($_SESSION['branch_id'] ?? null);
+    logAction($conn, "Delete Product", "Deleted product: {$name} (ID: $id)", null, $bid);
+    go_back_with_toast("Product Deleted: {$name}","danger");
+
+}
+
+/* ---------- BRANCHES ---------- */
+if (isset($_POST['restore_branch'])) {
+    $id = (int)($_POST['branch_id'] ?? 0);
+    $branch = fetch_one_assoc($conn, "SELECT branch_name FROM branches WHERE branch_id = $id");
+    $conn->query("UPDATE branches SET archived = 0 WHERE branch_id = $id");
+    $name = $branch['branch_name'] ?? "branch_id $id";
+    logAction($conn, "Restore Branch", "Restored branch: {$name} (ID: $id)", null, $id);
+    go_back_with_toast("Branch Restored: {$name}", "success");
+
+}
+
+if (isset($_POST['delete_branch'])) {
+    $id = (int)($_POST['branch_id'] ?? 0);
+    $branch = fetch_one_assoc($conn, "SELECT branch_name FROM branches WHERE branch_id = $id");
+    $conn->query("DELETE FROM branches WHERE branch_id = $id");
+    $name = $branch['branch_name'] ?? "branch_id $id";
+    logAction($conn, "Delete Branch", "Deleted branch: {$name} (ID: $id)", null, $id);
+    go_back_with_toast("Branch Deleted: {$name}","danger");
+
+}
+
+/* ---------- USERS ---------- */
+if (isset($_POST['restore_user'])) {
+    $id = (int)($_POST['user_id'] ?? 0);
+    $user = fetch_one_assoc($conn, "SELECT username, branch_id FROM users WHERE id = $id");
+    $conn->query("UPDATE users SET archived = 0 WHERE id = $id");
+    $name = $user['username']  ?? "user_id $id";
+    $bid  = $user['branch_id'] ?? ($_SESSION['branch_id'] ?? null);
+    logAction($conn, "Restore User", "Restored user: {$name} (ID: $id)", null, $bid);
+    go_back_with_toast("User Restored: {$name}", "success");
+
+}
+
+if (isset($_POST['delete_user'])) {
+    $id = (int)($_POST['user_id'] ?? 0);
+    $user = fetch_one_assoc($conn, "SELECT username, branch_id FROM users WHERE id = $id");
+    $conn->query("DELETE FROM users WHERE id = $id");
+    $name = $user['username']  ?? "user_id $id";
+    $bid  = $user['branch_id'] ?? ($_SESSION['branch_id'] ?? null);
+    logAction($conn, "Delete User", "Deleted user: {$name} (ID: $id)", null, $bid);
+    go_back_with_toast("User Deleted: {$name}","danger");
+
+}
+
+/* ---------- SERVICES ---------- */
+if (isset($_POST['restore_service'])) {
+    $id = (int)($_POST['service_id'] ?? 0);
+    $svc = fetch_one_assoc($conn, "SELECT service_name, branch_id FROM services WHERE service_id = $id");
+    $conn->query("UPDATE services SET archived = 0 WHERE service_id = $id");
+    $name = $svc['service_name'] ?? "service_id $id";
+    $bid  = $svc['branch_id']    ?? ($_SESSION['branch_id'] ?? null);
+    logAction($conn, "Restore Service", "Restored service: {$name} (ID: $id)", null, $bid);
+    go_back_with_toast("Service Restored: {$name}", "success");
+
+}
+
+if (isset($_POST['delete_service'])) {
+    $id = (int)($_POST['service_id'] ?? 0);
+    $svc = fetch_one_assoc($conn, "SELECT service_name, branch_id FROM services WHERE service_id = $id");
+    $conn->query("DELETE FROM services WHERE service_id = $id");
+    $name = $svc['service_name'] ?? "service_id $id";
+    $bid  = $svc['branch_id']    ?? ($_SESSION['branch_id'] ?? null);
+    logAction($conn, "Delete Service", "Deleted service: {$name} (ID: $id)", null, $bid);
+    go_back_with_toast("Service Deleted: {$name}","danger");
+
+}
+
 
 
 // Fetch data
@@ -149,6 +251,32 @@ if (isset($_POST['delete_service'])) {
 
     logAction($conn, "Delete Service", "Deleted service: {$service['service_name']} (ID: $id)", null, $service['branch_id']);
 }
+$pendingResetsCount = 0;
+if ($role === 'admin') {
+  $res = $conn->query("SELECT COUNT(*) AS c FROM password_resets WHERE status='pending'");
+  $pendingResetsCount = $res ? (int)$res->fetch_assoc()['c'] : 0;
+}
+
+$pendingTransfers = 0;
+if ($role === 'admin') {
+    $result = $conn->query("SELECT COUNT(*) AS pending FROM transfer_requests WHERE status='pending'");
+    if ($result) {
+        $row = $result->fetch_assoc();
+        $pendingTransfers = (int)($row['pending'] ?? 0);
+    }
+}
+
+$pendingStockIns = 0;
+if ($role === 'admin') {
+    $result = $conn->query("SELECT COUNT(*) AS pending FROM stock_in_requests WHERE status='pending'");
+    if ($result) {
+        $row = $result->fetch_assoc();
+        $pendingStockIns = (int)($row['pending'] ?? 0);
+    }
+}
+
+$pendingTotalInventory = $pendingTransfers + $pendingStockIns;
+
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -188,39 +316,41 @@ if (isset($_POST['delete_service'])) {
 
 <!-- Admin Links -->
 <?php if ($role === 'admin'): ?>
-
+  
   <!-- Inventory group (unchanged) -->
-  <div class="menu-group has-sub">
-    <button class="menu-toggle" type="button" aria-expanded="<?= $invOpen ? 'true' : 'false' ?>">
-      <span><i class="fas fa-box"></i> Inventory</span>
-      <i class="fas fa-chevron-right caret"></i>
-    </button>
-    <div class="submenu" <?= $invOpen ? '' : 'hidden' ?>>
-      <a href="inventory.php" class="<?= $self === 'inventory.php' ? 'active' : '' ?>">
-        <i class="fas fa-list"></i> Inventory List
-      </a>
-      <a href="physical_inventory.php" class="<?= $self === 'physical_inventory.php' ? 'active' : '' ?>">
-        <i class="fas fa-warehouse"></i> Physical Inventory
-      </a>
-    </div>
+<div class="menu-group has-sub">
+  <button class="menu-toggle" type="button" aria-expanded="<?= $invOpen ? 'true' : 'false' ?>">
+  <span><i class="fas fa-box"></i> Inventory
+    <?php if ($pendingTotalInventory > 0): ?>
+      <span class="badge-pending"><?= $pendingTotalInventory ?></span>
+    <?php endif; ?>
+  </span>
+    <i class="fas fa-chevron-right caret"></i>
+  </button>
+  <div class="submenu" <?= $invOpen ? '' : 'hidden' ?>>
+    <a href="inventory.php#pending-requests" class="<?= $self === 'inventory.php#pending-requests' ? 'active' : '' ?>">
+      <i class="fas fa-list"></i> Inventory List
+        <?php if ($pendingTotalInventory > 0): ?>
+          <span class="badge-pending"><?= $pendingTotalInventory ?></span>
+        <?php endif; ?>
+    </a>
+    <a href="physical_inventory.php" class="<?= $self === 'physical_inventory.php' ? 'active' : '' ?>">
+      <i class="fas fa-warehouse"></i> Physical Inventory
+    </a>
   </div>
+</div>
 
   <!-- Sales (normal link with active state) -->
   <a href="sales.php" class="<?= $self === 'sales.php' ? 'active' : '' ?>">
     <i class="fas fa-receipt"></i> Sales
   </a>
 
-  <!-- Approvals -->
-  <a href="approvals.php" class="<?= $self === 'approvals.php' ? 'active' : '' ?>">
-    <i class="fas fa-check-circle"></i> Approvals
-    <?php if ($pending > 0): ?>
-      <span class="badge-pending"><?= $pending ?></span>
-    <?php endif; ?>
-  </a>
-
-  <a href="accounts.php" class="<?= $self === 'accounts.php' ? 'active' : '' ?>">
-    <i class="fas fa-users"></i> Accounts
-  </a>
+<a href="accounts.php" class="<?= $self === 'accounts.php' ? 'active' : '' ?>">
+  <i class="fas fa-users"></i> Accounts
+  <?php if ($pendingResetsCount > 0): ?>
+    <span class="badge-pending"><?= $pendingResetsCount ?></span>
+  <?php endif; ?>
+</a>
 
   <!-- NEW: Backup & Restore group with Archive inside -->
   <div class="menu-group has-sub">
@@ -288,14 +418,25 @@ if (isset($_POST['delete_service'])) {
         <td><?= htmlspecialchars($p['category']) ?></td>
         <td><?= number_format($p['price'], 2) ?></td>
          <td><?= htmlspecialchars($p['branch_name']) ?></td>
-    
-        <td>
-          <form method="POST" style="display:inline-block;">
-            <input type="hidden" name="inventory_id" value="<?= $p['inventory_id'] ?>">
-            <button class="btn btn-restore" name="restore_product"><i class="fas fa-trash-restore"></i>Restore</button>
-            <button class="btn btn-delete" name="delete_product" onclick="return confirm('Delete permanently?')"><i class="fa fa-trash" aria-hidden="true"></i>Delete</button>
-          </form>
-        </td>
+          <td>
+            <button type="button"
+                    class="btn btn-restore confirm-action"
+                    data-action="restore_product"
+                    data-id="<?= $p['inventory_id'] ?>"
+                    data-entity="product"
+                    data-name="<?= htmlspecialchars($p['product_name']) ?>">
+              <i class="fas fa-trash-restore"></i> Restore
+            </button>
+
+            <button type="button"
+                    class="btn btn-delete confirm-action"
+                    data-action="delete_product"
+                    data-id="<?= $p['inventory_id'] ?>"
+                    data-entity="product"
+                    data-name="<?= htmlspecialchars($p['product_name']) ?>">
+              <i class="fa fa-trash"></i> Delete
+            </button>
+          </td>
       </tr>
       <?php endwhile; ?>
       </tbody>
@@ -324,13 +465,25 @@ if (isset($_POST['delete_service'])) {
             <td><?= htmlspecialchars($s['service_name']) ?></td>
             <td>₱<?= number_format($s['price'], 2) ?></td>
             <td><?= htmlspecialchars($s['description']) ?: '<em>No description</em>' ?></td>
-            <td>
-              <form method="POST" style="display:inline-block;">
-                <input type="hidden" name="service_id" value="<?= $s['service_id'] ?>">
-                <button class="btn btn-restore" name="restore_service"><i class="fas fa-trash-restore"></i>Restore</button>
-                <button class="btn btn-delete" name="delete_service" onclick="return confirm('Delete permanently?')"><i class="fa fa-trash" aria-hidden="true"></i>Delete</button>
-              </form>
-            </td>
+              <td>
+                <button type="button"
+                        class="btn btn-restore confirm-action"
+                        data-action="restore_service"
+                        data-id="<?= $s['service_id'] ?>"
+                        data-entity="service"
+                        data-name="<?= htmlspecialchars($s['service_name']) ?>">
+                  <i class="fas fa-trash-restore"></i> Restore
+                </button>
+
+                <button type="button"
+                        class="btn btn-delete confirm-action"
+                        data-action="delete_service"
+                        data-id="<?= $s['service_id'] ?>"
+                        data-entity="service"
+                        data-name="<?= htmlspecialchars($s['service_name']) ?>">
+                  <i class="fa fa-trash"></i> Delete
+                </button>
+              </td>
           </tr>
         <?php endwhile; ?>
       </tbody>
@@ -358,13 +511,25 @@ if (isset($_POST['delete_service'])) {
         <td><?= htmlspecialchars($b['branch_name']) ?></td>
         <td><?= htmlspecialchars($b['branch_location']) ?></td>
         <td><?= htmlspecialchars($b['branch_email']) ?></td>
-        <td>
-          <form method="POST" style="display:inline-block;">
-            <input type="hidden" name="branch_id" value="<?= $b['branch_id'] ?>">
-            <button class="btn btn-restore" name="restore_branch"><i class="fas fa-trash-restore"></i>Restore</button>
-            <button class="btn btn-delete" name="delete_branch" onclick="return confirm('Delete permanently?')"><i class="fa fa-trash" aria-hidden="true"></i>Delete</button>
-          </form>
-        </td>
+          <td>
+            <button type="button"
+                    class="btn btn-restore confirm-action"
+                    data-action="restore_branch"
+                    data-id="<?= $b['branch_id'] ?>"
+                    data-entity="branch"
+                    data-name="<?= htmlspecialchars($b['branch_name']) ?>">
+              <i class="fas fa-trash-restore"></i> Restore
+            </button>
+
+            <button type="button"
+                    class="btn btn-delete confirm-action"
+                    data-action="delete_branch"
+                    data-id="<?= $b['branch_id'] ?>"
+                    data-entity="branch"
+                    data-name="<?= htmlspecialchars($b['branch_name']) ?>">
+              <i class="fa fa-trash"></i> Delete
+            </button>
+          </td>
       </tr>
       <?php endwhile; ?>
       </tbody>
@@ -388,13 +553,25 @@ if (isset($_POST['delete_service'])) {
       <tr>
         <td><?= htmlspecialchars($u['username']) ?></td>
         <td><?= htmlspecialchars($u['role']) ?></td>
-        <td>
-          <form method="POST" style="display:inline-block;">
-            <input type="hidden" name="user_id" value="<?= $u['id'] ?>">
-            <button class="btn btn-restore" name="restore_user"><i class="fas fa-trash-restore"></i>Restore</button>
-            <button class="btn btn-delete" name="delete_user" onclick="return confirm('Delete permanently?')"><i class="fa fa-trash" aria-hidden="true"></i>Delete</button>
-          </form>
-        </td>
+          <td>
+            <button type="button"
+                    class="btn btn-restore confirm-action"
+                    data-action="restore_user"
+                    data-id="<?= $u['id'] ?>"
+                    data-entity="user"
+                    data-name="<?= htmlspecialchars($u['username']) ?>">
+              <i class="fas fa-trash-restore"></i> Restore
+            </button>
+
+            <button type="button"
+                    class="btn btn-delete confirm-action"
+                    data-action="delete_user"
+                    data-id="<?= $u['id'] ?>"
+                    data-entity="user"
+                    data-name="<?= htmlspecialchars($u['username']) ?>">
+              <i class="fa fa-trash"></i> Delete
+            </button>
+          </td>
       </tr>
       <?php endwhile; ?>
       </tbody>
@@ -402,6 +579,61 @@ if (isset($_POST['delete_service'])) {
     <?php else: ?><p class="empty-msg">No archived users.</p><?php endif; ?>
   </div>
   
+<!-- Confirm Action Modal (Delete / Restore) -->
+<div class="modal fade" id="confirmActionModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content border-0 shadow-lg">
+      <div class="modal-header text-white" id="confirmActionHeader">
+        <h5 class="modal-title">
+          <i class="fa-solid me-2" id="confirmActionIcon"></i>
+          <span id="confirmActionTitle">Confirm Action</span>
+        </h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+
+      <div class="modal-body">
+        <div id="confirmActionBody">
+          You’re about to perform this action.
+        </div>
+        <div class="small text-muted mt-2" id="confirmActionNote">
+          This action can be undone only if you choose Restore (delete is permanent).
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn" id="confirmActionBtn">
+          Proceed
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Toast container -->
+<div class="toast-container position-fixed top-0 end-0 p-3" style="z-index:1100">
+  <div id="appToast" class="toast border-0 shadow-lg" role="alert" aria-live="assertive" aria-atomic="true">
+    <div class="toast-header bg-primary text-white">
+      <i class="fas fa-info-circle me-2"></i>
+      <strong class="me-auto">System Notice</strong>
+      <small>just now</small>
+      <button type="button" class="btn-close btn-close-white ms-2 mb-1" data-bs-dismiss="toast" aria-label="Close"></button>
+    </div>
+    <div class="toast-body" id="appToastBody">
+      Action completed.
+    </div>
+  </div>
+</div>
+
+<?php if (!empty($_SESSION['toast'])): ?>
+<script>
+document.addEventListener("DOMContentLoaded", () => {
+  showToast("<?= $_SESSION['toast']['msg'] ?>", "<?= $_SESSION['toast']['type'] ?>");
+});
+</script>
+<?php unset($_SESSION['toast']); endif; ?>
+
+
 <script>
 (function(){
   const groups = document.querySelectorAll('.menu-group.has-sub');
@@ -427,6 +659,121 @@ if (isset($_POST['delete_service'])) {
     });
   });
 })();
+</script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+
+<!-- Modal For Restore and Delete -->
+<script>
+function styleModal(action) {
+  const header = document.getElementById('confirmActionHeader');
+  const icon   = document.getElementById('confirmActionIcon');
+  const title  = document.getElementById('confirmActionTitle');
+  const btn    = document.getElementById('confirmActionBtn');
+
+  header.className = 'modal-header text-white';
+  btn.className = 'btn';
+
+  if (action.startsWith('delete')) {
+    header.classList.add('bg-danger');
+    icon.className = 'fa-solid fa-trash';
+    title.textContent = 'Confirm Delete';
+    btn.classList.add('btn-danger');
+    btn.textContent = 'Yes, Delete';
+  } else {
+    header.classList.add('bg-success');
+    icon.className = 'fa-solid fa-trash-restore';
+    title.textContent = 'Confirm Restore';
+    btn.classList.add('btn-success');
+    btn.textContent = 'Yes, Restore';
+  }
+}
+
+function idField(action) {
+  if (action.includes('product')) return 'inventory_id';
+  if (action.includes('service')) return 'service_id';
+  if (action.includes('branch'))  return 'branch_id';
+  if (action.includes('user'))    return 'user_id';
+  return 'id';
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  const modalEl = document.getElementById('confirmActionModal');
+  const modal = new bootstrap.Modal(modalEl);
+  const bodyEl = document.getElementById('confirmActionBody');
+  const noteEl = document.getElementById('confirmActionNote');
+  const confirmBtn = document.getElementById('confirmActionBtn');
+
+  let pending = { action: '', id: '', label: '' };
+
+  document.querySelectorAll('.confirm-action').forEach(btn => {
+    btn.addEventListener('click', () => {
+      pending.action = btn.dataset.action;
+      pending.id     = btn.dataset.id;
+      pending.label  = btn.dataset.name;
+
+      styleModal(pending.action);
+      bodyEl.innerHTML = `You’re about to <strong>${pending.action.split('_')[0]}</strong> <strong>${pending.label}</strong>.`;
+      noteEl.style.display = pending.action.startsWith('delete') ? '' : 'none';
+
+      modal.show();
+    });
+  });
+
+  confirmBtn.addEventListener('click', () => {
+    if (!pending.action || !pending.id) return;
+
+    const form = document.createElement('form');
+    form.method = 'POST';
+    form.style.display = 'none';
+
+    const a = document.createElement('input');
+    a.name = pending.action;    // e.g., restore_product
+    a.value = '1';
+    form.appendChild(a);
+
+    const hidden = document.createElement('input');
+    hidden.name = idField(pending.action); // inventory_id / service_id / branch_id / user_id
+    hidden.value = pending.id;
+    form.appendChild(hidden);
+
+    document.body.appendChild(form);
+    form.submit();
+  });
+});
+</script>
+
+<script>
+function showToast(message, type = "info") {
+  const toastEl   = document.getElementById("appToast");
+  const toastBody = document.getElementById("appToastBody");
+  if (!toastEl || !toastBody) return;
+
+  // Reset classes
+  const header = toastEl.querySelector(".toast-header");
+  header.className = "toast-header"; // reset
+  header.classList.add("text-white");
+
+  // Pick color
+switch (type) {
+  case "success": // ✅ Restore
+    header.classList.add("bg-success", "text-white");
+    break;
+  case "danger":  // ✅ Delete
+    header.classList.add("bg-danger", "text-white");
+    break;
+  case "warning":
+    header.classList.add("bg-warning", "text-dark");
+    break;
+  default:
+    header.classList.add("bg-primary", "text-white");
+}
+
+
+  toastBody.innerText = message;
+
+  const bsToast = new bootstrap.Toast(toastEl);
+  bsToast.show();
+}
 </script>
 
 <script src="notifications.js"></script>

@@ -21,15 +21,19 @@
     display: flex;
 }
 
+/* Modal Header */
+.accounts-page .modal-header {
+    background:linear-gradient(135deg,#ff9d2f,#ff6a00);
+}
+
 /* ---------------- Modal content box ---------------- */
 .accounts-page .modal-content,
 .accounts-page .edit-modal-content {
     background: #fff;
-    border-radius: 15px;
+    border-radius: 10px;
     width: 100%;
     max-width: 480px;
     margin: auto;
-    padding: 30px 25px;
     box-shadow: 0 15px 35px rgba(0,0,0,0.3);
     position: relative;
     max-height: 90vh;
@@ -37,6 +41,27 @@
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
     color: #333;
 }
+
+.modal-footer button:hover,
+.modal-footer button:focus,
+.modal-footer button:active {
+  color: white !important;   /* keep text white */
+  transform: translateY(-2px);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+}
+
+#archiveConfirmModal .modal-content {
+  padding: 0 !important;
+}
+.accounts-page #archiveConfirmModal .modal-header {
+  background: none; /* or bg-danger like you already set */
+}
+
+/* If some global rule is forcing normal weight, override it for strong here */
+#archiveConfirmModal #archiveConfirmText strong {
+  font-weight: 700 !important;
+}
+
 
 /* Pop-in animation */
 @keyframes fadeIn {

@@ -41,11 +41,18 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                     $_SESSION['role'] = $user['role'];
                     $_SESSION['branch_id'] = $user['branch_id'] ?? null;
 
-                    // 🔔 Insert login log (no IP address)
+                    // 🔔 Insert login log WITH branch
                     $action = "Login successful";
-                    $logStmt = $conn->prepare("INSERT INTO logs (user_id, action) VALUES (?, ?)");
-                    $logStmt->bind_param("is", $user['id'], $action);
+                    $branchForLog = $user['branch_id'] ?? null;
+
+                    $logStmt = $conn->prepare("
+                        INSERT INTO logs (user_id, action, details, timestamp, branch_id)
+                        VALUES (?, ?, '', NOW(), ?)
+                    ");
+                    $logStmt->bind_param("isi", $user['id'], $action, $branchForLog);
                     $logStmt->execute();
+                    $logStmt->close();
+
 
                     // Force password change if required
                     if ((int)$user['must_change_password'] === 1) {
@@ -69,9 +76,13 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
     // ❌ Failed login attempt log (no IP address)
     if (!empty($username)) {
         $action = "Login failed for username: $username";
-        $logStmt = $conn->prepare("INSERT INTO logs (user_id, action) VALUES (0, ?)");
+        $logStmt = $conn->prepare("
+            INSERT INTO logs (user_id, action, details, timestamp, branch_id)
+            VALUES (NULL, ?, '', NOW(), NULL)
+        ");
         $logStmt->bind_param("s", $action);
         $logStmt->execute();
+        $logStmt->close();
     }
 }
 
