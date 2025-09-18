@@ -108,12 +108,12 @@ $expirationDate = !empty($_POST['expiration_date']) ? $_POST['expiration_date'] 
             logAction($conn, "Add Product", "Added product '$productName' (ID: $productId) with stock $stocks to branch ID $branchId");
 
             $_SESSION['stock_message'] = "✅ Product '$productName' added successfully with stock: $stocks (Branch ID: $branchId)";
-            header("Location: inventory.php?stock=success");
+            header('Location: inventory.php?ap=added');
             exit();
         } else {
             $_SESSION['stock_message'] = "❌ Error adding to inventory: " . $stmt2->error;
             $stmt2->close();
-            header("Location: inventory.php?stock=error");
+            header('Location: inventory.php?ap=error');
             exit();
         }
     } catch (mysqli_sql_exception $e) {

@@ -14,8 +14,8 @@ $branch_id = $_SESSION['branch_id'] ?? null;
 // Pending notifications
 $pending = 0;
 if ($role === 'admin') {
-    $result = $conn->query("SELECT COUNT(*) AS pending FROM transfer_requests WHERE status='Pending'");
-    $pending = $result ? (int)($result->fetch_assoc()['pending'] ?? 0) : 0;
+  $resPT  = $conn->query("SELECT COUNT(*) AS pending FROM transfer_requests WHERE status='pending'");
+  $pendingTransfers = $resPT ? (int)($resPT->fetch_assoc()['pending'] ?? 0) : 0;
 }
 
 // Branch selection
@@ -145,7 +145,11 @@ $query = "
     ) pi ON p.product_id = pi.product_id
     ORDER BY p.product_name ASC
 ";
-$result = $conn->query($query);
+$inventoryRes = $conn->query($query);
+if (!$inventoryRes) {
+    die('Inventory query failed: ' . $conn->error);
+}
+
 
 // Last saved timestamp for this branch
 $lastSavedRow = $conn->query("
@@ -161,8 +165,8 @@ $lastSaved = $lastSavedRow ? ($lastSavedRow->fetch_assoc()['last_saved'] ?? 'Nev
 $totalProducts = 0;
 $stats = ['overstock' => 0, 'understock' => 0, 'complete' => 0, 'pending' => 0];
 
-if ($result) {
-    while ($rowTemp = $result->fetch_assoc()) {
+if ($inventoryRes) {
+    while ($rowTemp = $inventoryRes->fetch_assoc()) {
         $totalProducts++;
         $status = $rowTemp['status'];
 
@@ -172,14 +176,39 @@ if ($result) {
         else                               $stats['pending']++; // Pending or null
     }
 
-    // if you will reuse $result to render the table:
-    $result->data_seek(0);
+    // rewind for table render
+    $inventoryRes->data_seek(0);
 }
+
 
 // Keep your existing card labels by mapping:
 $match        = $stats['complete'];                          // "Match" card = Complete
 $mismatch     = $stats['overstock'] + $stats['understock'];  // "Mismatch" card = Over+Under
 $pendingCount = $stats['pending'];
+
+// ----- Badges used in the sidebar (compute ONCE) -----
+$pendingResetsCount   = 0;
+$pendingTransfers     = 0;
+$pendingStockIns      = 0;
+$pendingTotalInventory = 0;
+
+if ($role === 'admin') {
+    // Password reset requests
+    if ($res = $conn->query("SELECT COUNT(*) AS c FROM password_resets WHERE LOWER(status)='pending'")) {
+        $pendingResetsCount = (int)($res->fetch_assoc()['c'] ?? 0);
+    }
+
+    // Transfer + Stock-in requests
+    if ($res = $conn->query("SELECT COUNT(*) AS c FROM transfer_requests WHERE LOWER(status)='pending'")) {
+        $pendingTransfers = (int)($res->fetch_assoc()['c'] ?? 0);
+    }
+    if ($res = $conn->query("SELECT COUNT(*) AS c FROM stock_in_requests WHERE LOWER(status)='pending'")) {
+        $pendingStockIns = (int)($res->fetch_assoc()['c'] ?? 0);
+    }
+
+    $pendingTotalInventory = $pendingTransfers + $pendingStockIns;
+}
+
 
 
 ?>
@@ -225,37 +254,39 @@ $pendingCount = $stats['pending'];
 <?php if ($role === 'admin'): ?>
 
   <!-- Inventory group (unchanged) -->
-  <div class="menu-group has-sub">
-    <button class="menu-toggle" type="button" aria-expanded="<?= $invOpen ? 'true' : 'false' ?>">
-      <span><i class="fas fa-box"></i> Inventory</span>
-      <i class="fas fa-chevron-right caret"></i>
-    </button>
-    <div class="submenu" <?= $invOpen ? '' : 'hidden' ?>>
-      <a href="inventory.php" class="<?= $self === 'inventory.php' ? 'active' : '' ?>">
+<div class="menu-group has-sub">
+  <button class="menu-toggle" type="button" aria-expanded="<?= $invOpen ? 'true' : 'false' ?>">
+  <span><i class="fas fa-box"></i> Inventory
+    <?php if ($pendingTotalInventory > 0): ?>
+      <span class="badge-pending"><?= $pendingTotalInventory ?></span>
+    <?php endif; ?>
+  </span>
+    <i class="fas fa-chevron-right caret"></i>
+  </button>
+  <div class="submenu" <?= $invOpen ? '' : 'hidden' ?>>
+    <a href="inventory.php" class="<?= $self === 'inventory.php' ? 'active' : '' ?>">
         <i class="fas fa-list"></i> Inventory List
-      </a>
-      <a href="physical_inventory.php" class="<?= $self === 'physical_inventory.php' ? 'active' : '' ?>">
-        <i class="fas fa-warehouse"></i> Physical Inventory
-      </a>
-    </div>
+        <?php if ($pendingTotalInventory > 0): ?>
+          <span class="badge-pending"><?= $pendingTotalInventory ?></span>
+        <?php endif; ?>
+    </a>
+    <a href="physical_inventory.php" class="<?= $self === 'physical_inventory.php' ? 'active' : '' ?>">
+      <i class="fas fa-warehouse"></i> Physical Inventory
+    </a>
   </div>
+</div>
 
   <!-- Sales (normal link with active state) -->
   <a href="sales.php" class="<?= $self === 'sales.php' ? 'active' : '' ?>">
     <i class="fas fa-receipt"></i> Sales
   </a>
 
-  <!-- Approvals -->
-  <a href="approvals.php" class="<?= $self === 'approvals.php' ? 'active' : '' ?>">
-    <i class="fas fa-check-circle"></i> Approvals
-    <?php if ($pending > 0): ?>
-      <span class="badge-pending"><?= $pending ?></span>
-    <?php endif; ?>
-  </a>
-
-  <a href="accounts.php" class="<?= $self === 'accounts.php' ? 'active' : '' ?>">
-    <i class="fas fa-users"></i> Accounts
-  </a>
+<a href="accounts.php" class="<?= $self === 'accounts.php' ? 'active' : '' ?>">
+  <i class="fas fa-users"></i> Accounts
+  <?php if ($pendingResetsCount > 0): ?>
+    <span class="badge-pending"><?= $pendingResetsCount ?></span>
+  <?php endif; ?>
+</a>
 
   <!-- NEW: Backup & Restore group with Archive inside -->
   <div class="menu-group has-sub">
@@ -364,11 +395,15 @@ $pendingCount = $stats['pending'];
 <div class="d-flex gap-2 mb-3 flex-wrap align-items-center shadow-sm p-2 rounded" style="background-color:#f8f9fa; position: sticky; top:0; z-index: 10;">
     <input type="text" id="searchInput" class="form-control w-auto" placeholder="Search products..." onkeyup="filterTable()">
     
-    <?php if($role==='admin'): ?>
-        <button id="exportBtn" class="btn btn-success">
-            <i class="fas fa-file-csv"></i> Export CSV
-        </button>
+    <?php if ($role==='admin'): ?>
+      <a
+        class="btn btn-success"
+        href="?export=csv&branch=<?= urlencode((string)$selected_branch) ?>"
+      >
+        <i class="fas fa-file-csv"></i> Export CSV
+      </a>
     <?php endif; ?>
+        
     
     <div class="ms-auto fw-bold">
         Total Mismatch: <span id="totalMismatch"><?= $mismatch ?></span>
@@ -393,7 +428,7 @@ $pendingCount = $stats['pending'];
           </tr>
         </thead>
         <tbody>
-            <?php while ($row = $result->fetch_assoc()): 
+            <?php while ($row = $inventoryRes->fetch_assoc()): 
                 $system = (int)$row['system_stock'];
                 $phys   = ($row['physical_count'] === '' ? '' : (int)$row['physical_count']);
                 $disc   = ($row['physical_count'] === '' ? 0 : abs($phys - $system));
