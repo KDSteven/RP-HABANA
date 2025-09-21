@@ -18,11 +18,22 @@ if (Notification.permission !== "granted") Notification.requestPermission();
 // ===============================
 function fetchNotifications() {
     console.log("⏳ Running fetchNotifications...");
-fetch('../../get_notifications.php')
+    fetch('../../get_notifications.php')
         .then(r => r.json())
         .then(data => {
             updateBadge(data.count);
             latestNotifications = data.items;
+
+            // ====== NEAR EXPIRY ======
+            const nearExpiryItems = data.items.filter(item => {
+                if (!item.expiry_date) return false;
+                const today = new Date();
+                const expiry = new Date(item.expiry_date);
+                const diffDays = Math.ceil((expiry - today) / (1000 * 60 * 60 * 24));
+                return diffDays >= 0 && diffDays <= 7; // expiring in 7 days
+            }).map(item => ({ ...item, category: 'expiry' }));
+
+            const allItems = [...latestNotifications, ...nearExpiryItems];
 
             const now = Date.now();
             const newNotifications = data.count > lastCount;
@@ -31,7 +42,7 @@ fetch('../../get_notifications.php')
                 console.log("✅ Triggering popup now...");
                 lastPopupTime = now;
                 localStorage.setItem('lastPopupTime', now);
-                openNotificationModal(data.items);
+                openNotificationModal(allItems);
                 playSound();
                 showDesktopNotification("Stock Alert", "You have new stock alerts!");
                 broadcastPopup();
@@ -42,6 +53,7 @@ fetch('../../get_notifications.php')
         })
         .catch(err => console.error('Notification fetch error:', err));
 }
+
 
 // ===============================
 // UPDATE BADGE
@@ -89,9 +101,9 @@ function openNotificationModal(items) {
     const overlay = document.createElement('div');
     overlay.id = 'notifModalOverlay';
 
-    // Categorize items
     const outItems = items.filter(i => i.category === 'out');
     const criticalItems = items.filter(i => i.category === 'critical');
+    const expiryItems = items.filter(i => i.category === 'expiry'); // NEW
 
     overlay.innerHTML = `
         <div class="notif-modal modern">
@@ -99,6 +111,7 @@ function openNotificationModal(items) {
             <div class="notif-tabs">
                 <div class="notif-tab active" data-tab="out">Out (${outItems.length})</div>
                 <div class="notif-tab" data-tab="critical">Critical (${criticalItems.length})</div>
+                <div class="notif-tab" data-tab="expiry">Expiring Soon (${expiryItems.length})</div>
             </div>
             <div class="notif-content" id="notifContent"></div>
         </div>
@@ -107,7 +120,6 @@ function openNotificationModal(items) {
 
     renderTable('out');
 
-    // Switch Tabs
     document.querySelectorAll('.notif-tab').forEach(tab => {
         tab.addEventListener('click', () => {
             document.querySelectorAll('.notif-tab').forEach(t => t.classList.remove('active'));
@@ -120,22 +132,33 @@ function openNotificationModal(items) {
     document.addEventListener('keydown', escClose);
 
     function renderTable(type) {
-        const content = document.getElementById('notifContent');
-        const rows = type === 'out' ? outItems : criticalItems;
+    const content = document.getElementById('notifContent');
+    const rows = type === 'out' ? outItems 
+               : type === 'critical' ? criticalItems 
+               : type === 'expiry' ? latestNotifications.filter(i => i.category === 'expiry')
+               : latestNotifications.filter(i => i.category === 'expired');
 
-        const html = rows.length
-            ? `<table class="notif-table">
-                ${rows.map(item => `
-                    <tr class="${type}-row">
-                        <td>${item.product_name}</td>
-                        <td style="text-align:center;">${item.stock}</td>
-                        <td>${item.branch}</td>
-                    </tr>`).join('')}
-               </table>`
-            : `<p>No ${type} stock items.</p>`;
+    const html = rows.length
+        ? `<table class="notif-table">
+            <tr>
+                <th>Product</th>
+                <th>Stock</th>
+                <th>Branch</th>
+                <th>Expiration</th>
+            </tr>
+            ${rows.map(item => `
+                <tr class="${type}-row">
+                    <td>${item.product_name}</td>
+                    <td style="text-align:center;">${item.stock}</td>
+                    <td>${item.branch}</td>
+                    <td>${item.expiration_date ? 'Exp: ' + item.expiration_date : '-'}</td>
+                </tr>`).join('')}
+           </table>`
+        : `<p>No ${type} stock items.</p>`;
 
-        content.innerHTML = html;
-    }
+    content.innerHTML = html;
+}
+
 
     function closeModal() {
         overlay.remove();
@@ -147,6 +170,7 @@ function openNotificationModal(items) {
         if (e.key === 'Escape') closeModal();
     }
 }
+
 
 // ===============================
 // SYNC BETWEEN TABS

@@ -1,193 +1,217 @@
-/* Base Styles (keep your current styles) */
-* {
-  margin: 0;
-  padding: 0;
-  box-sizing: border-box;
-  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-}
-
-body {
-  display: flex;
-  min-height: 100vh;
-  background: #f9f9f9;
-  color: #333;
-  flex-direction: row;
-}
-
-/* Sidebar */
-.sidebar {
-  width: 220px;
-  background-color: #f7931e;
-  padding: 30px 15px;
-  color: white;
-}
-.sidebar h2 {
-  margin-bottom: 30px;
-  font-size: 22px;
-  text-align: center;
-}
-.sidebar a {
-  display: flex;
-  align-items: center;
-  text-decoration: none;
-  color: white;
-  padding: 12px 15px;
-  margin: 6px 0;
-  border-radius: 8px;
-  transition: background 0.2s;
-}
-.sidebar a:hover,
-.sidebar a.active { background-color: #e67e00; }
-.sidebar a i { margin-right: 10px; font-size: 16px; }
-
-/* POS Wrapper */
+/* ================= POS Layout ================= */
 .pos-wrapper {
   display: flex;
-  gap: 20px;
-  padding: 20px;
+  gap: 16px;
+  padding: 16px;
   width: 100%;
   align-items: flex-start;
   flex-wrap: nowrap;
+  background: #f5f6fa;
+  min-height: 100vh;
+  font-family: 'Segoe UI', Tahoma, sans-serif;
+  overflow: hidden; /* prevent unwanted scroll */
 }
 
-/* Cart Section */
+/* ================= Cart Section ================= */
 .cart-section {
-  flex: 1.2;
-  max-width: 650px;
+  flex: 1.3;
+  max-width: 600px;
   width: 100%;
   position: sticky;
   top: 20px;
+  display: flex;
+  flex-direction: column;
+  height: 80vh;
 }
 .cart-box {
-  background: #ffffff;
-  padding: 20px;
+  background: #fff;
   border-radius: 12px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.47);
-  max-height: 85vh;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.12);
   overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  padding: 10px;
+  flex: 1;
 }
 .cart-box table {
   width: 100%;
   border-collapse: collapse;
-  table-layout: fixed;
+  font-size: 13px;
 }
 .cart-box th {
-  background: linear-gradient(135deg, #f7931e, #ffb84d);
-  color: white;
+  background: linear-gradient(135deg, #f7931e, #ffa84d);
+  color: #fff;
   font-weight: 600;
-  padding: 10px 12px;
+  padding: 8px;
   text-align: left;
   position: sticky;
   top: 0;
+  font-size: 14px;
 }
 .cart-box td {
-  padding: 10px 12px;
+  padding: 6px 8px;
   border-bottom: 1px solid #eee;
+  font-size: 13px;
 }
-.cart-box tbody tr:nth-child(even) { background-color: #fafafa; }
-.cart-box tbody tr:hover { background-color: #f1f3f5; transition: 0.2s; }
-
-/* Qty & Remove Buttons */
-.qty-btn {
-  background: #f7931e;
-  color: white;
-  border: none;
-  padding: 4px 8px;
-  margin: 0 4px;
-  border-radius: 3px;
-  cursor: pointer;
-}
-.qty-btn:hover { background: #e67e00; }
-.remove-btn {
-  background-color: #e74c3c;
-  padding: 5px 10px;
-  border: none;
-  color: white;
-  border-radius: 3px;
-  cursor: pointer;
-}
-.remove-btn:hover { background-color: #c0392b; }
-.qty-control {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 6px;
+.cart-box tbody tr:hover {
+  background: #fdf2e9;
 }
 
-.qty-control form {
-    display: inline-block; /* ensures buttons stay horizontal */
-    margin: 0;
-}
-
-.qty-control span.qty-display {
-    min-width: 25px;
-    text-align: center;
-    font-weight: bold;
-}
-
-/* Controls Section */
+/* ================= Controls Section ================= */
 .controls-section {
   flex: 1;
   min-width: 280px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-height: 80vh;
   overflow-y: auto;
-  max-height: 90vh;
-  padding-right: 10px;
+}
+.controls-section .card {
+  background: #fff;
+  padding: 10px;
+  border-radius: 10px;
+  box-shadow: 0 4px 10px rgba(0,0,0,0.08);
+}
+
+/* ================= Quick Add Buttons ================= */
+.quick-btn-form {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(90px, 1fr));
+  gap: 6px;
 }
 .quick-btn-form button {
-  min-width: 100px;
-  height: 50px;
-  font-size: 0.85rem;
+  height: auto;
+  min-height: 50px;
+  font-size: 13px;
+  font-weight: 500;
+  border-radius: 6px;
+  background: #ff8800;
+  color: #fff;
+  border: none;
+  padding: 6px 4px;
   text-align: center;
-  padding: 4px;
-}
-.quick-add-products h5 { margin-bottom: 4px; margin-top: 10px; }
-
-/* Forms and inputs */
-input, select, button { padding: 10px; border-radius: 5px; border: 1px solid #aaa; margin-bottom: 15px; }
-button { background-color: #f7931e; color: white; font-weight: bold; border: none; cursor: pointer; }
-button:hover { background-color: #e67e00; }
-
-/* Table responsiveness */
-.table-wrapper {
-  width: 100%;
-  overflow-x: auto;
-}
-.table-wrapper th, .table-wrapper td {
-  word-wrap: break-word;
-  overflow-wrap: break-word;
+  cursor: pointer;
+  transition: 0.2s ease;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
   white-space: normal;
+  line-height: 1.2;
+}
+.quick-btn-form button:hover {
+  background: #ff6600;
 }
 
-/* Toasts */
-.toast { font-size: 14px; min-width: 220px; max-width: 260px; padding: 8px 12px; border-radius: 6px; opacity: 0.95; }
-.toast-body { font-weight: 500; }
-.toast .btn-close { filter: brightness(0) invert(1); }
-
-/* Modal headers */
-.modal-header {
-  font-size: 20px;
-  font-weight: 600;
-  margin-bottom: 15px;
-  background: linear-gradient(90deg, #f7931e, #ffb347);
-  color: white;
+/* ================= Totals ================= */
+.totals-box {
+  background: #fff6eb;
+  border: 2px solid #f7931e;
+  border-radius: 10px;
+  padding: 10px;
+  font-size: 14px;
+}
+.totals-box h5, .totals-box h4 {
   display: flex;
   justify-content: space-between;
+  margin: 4px 0;
+}
+.totals-box .final-total {
+  font-size: 18px;
+  color: #d35400;
+  font-weight: bold;
+  border-top: 1px solid #ddd;
+  padding-top: 6px;
 }
 
-/* ===== Responsive Breakpoints ===== */
-@media (max-width: 1200px) {
-  .pos-wrapper { flex-wrap: wrap; }
-  .cart-section { max-width: 100%; position: relative; top: auto; margin-bottom: 20px; }
-  .controls-section { max-width: 100%; padding-right: 0; }
+/* ================= Checkout Buttons ================= */
+.checkout-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+}
+.checkout-buttons button {
+  font-size: 14px;
+  padding: 10px;
+  border-radius: 6px;
+  font-weight: bold;
+  border: none;
+  transition: 0.2s;
+}
+.checkout-buttons .pay-btn {
+  background: #27ae60;
+  color: #fff;
+}
+.checkout-buttons .pay-btn:hover {
+  background: #1e874b;
+}
+.checkout-buttons .cancel-btn {
+  background: #e74c3c;
+  color: #fff;
+}
+.checkout-buttons .cancel-btn:hover {
+  background: #c0392b;
 }
 
-@media (max-width: 768px) {
-  body { flex-direction: column; }
-  .sidebar { width: 100%; display: flex; flex-direction: row; overflow-x: auto; padding: 10px; }
-  .sidebar h2 { font-size: 18px; margin-bottom: 0; padding-right: 10px; }
-  .sidebar a { flex-shrink: 0; padding: 8px 12px; margin: 0 5px; font-size: 0.85rem; }
-  .pos-wrapper { flex-direction: column; padding: 10px; }
-  .cart-box { max-height: 50vh; }
-  .controls-section { max-height: 50vh; }
-  .quick-btn-form button { font-size: 0.8rem; height: 45px; }
+/* ================= Discount Form ================= */
+.discount-form {
+  display: flex;
+  gap: 6px;
+}
+.discount-form input {
+  flex: 1;
+  font-size: 13px;
+  padding: 6px;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+}
+.discount-form button {
+  background: #ffb84d;
+  font-weight: bold;
+  border: none;
+  padding: 6px 10px;
+  border-radius: 6px;
+}
+.discount-form button:hover {
+  background: #f39c12;
+}
+/* ================= Toast Overrides ================= */
+.toast-container {
+  position: fixed !important;
+  top: 1rem;
+  right: 1rem;
+  z-index: 2000;           /* Always above POS layout */
+  pointer-events: none;    /* Clicks pass through except toast itself */
+}
+
+.toast {
+  min-width: 280px;
+  margin-bottom: 0.5rem;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  pointer-events: auto;    /* Allow clicks on close button */
+}
+
+/* ================= Responsive ================= */
+@media (max-width: 992px) {
+  .pos-wrapper {
+    flex-wrap: wrap;
+  }
+  .cart-section, .controls-section {
+    max-width: 100%;
+    height: auto;
+    position: relative;
+    top: auto;
+    margin-bottom: 16px;
+  }
+}
+@media (max-width: 600px) {
+  .pos-wrapper {
+    flex-direction: column;
+    padding: 8px;
+  }
+  .cart-box, .controls-section {
+    max-height: none;
+  }
 }

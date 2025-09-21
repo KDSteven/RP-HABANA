@@ -115,7 +115,7 @@ if ($role === 'admin') {
 
     <?php if ($role === 'staff'): ?>
         <a href="pos.php"><i class="fas fa-cash-register"></i> Point of Sale</a>
-        <a href="history.php"><i class="fas fa-history"></i> Sales History</a>
+        <a href="history.php" class="active"><i class="fas fa-history"></i> Sales History</a>
     <?php endif; ?>
 
     <?php if ($role === 'admin'): ?>
