@@ -11,10 +11,63 @@ $branch_id = $_SESSION['branch_id'] ?? null;
 
 include 'config/db.php';
 
-// Month selector
-$selectedMonth = $_GET['month'] ?? date('Y-m'); // default: current month
-$startDate = $selectedMonth . "-01";
-$endDate = date("Y-m-t", strtotime($startDate)); // last day of the month
+/* =========================
+   PERIOD RESOLUTION (NEW)
+   ========================= */
+$FISCAL_START_MONTH = 1; // 1=Jan; change to 7 if FY starts in July
+$mode = $_GET['period'] ?? 'month'; // 'month' | 'range' | 'fiscal'
+
+// Month selector (kept for compatibility; used when $mode === 'month')
+$selectedMonth = $_GET['month'] ?? date('Y-m');
+
+$startDate = null;
+$endDate   = null;
+$periodLabel = '';
+
+if ($mode === 'range') {
+    $from = $_GET['from'] ?? '';
+    $to   = $_GET['to']   ?? '';
+    $fromOk = preg_match('/^\d{4}-\d{2}-\d{2}$/', $from);
+    $toOk   = preg_match('/^\d{4}-\d{2}-\d{2}$/', $to);
+
+    if ($fromOk && $toOk) {
+        $startDate = $from;
+        $endDate   = $to;
+        $periodLabel = ' — ' . date('M d, Y', strtotime($startDate)) . ' to ' . date('M d, Y', strtotime($endDate));
+    } else {
+        $startDate = $selectedMonth . "-01";
+        $endDate = date("Y-m-t", strtotime($startDate));
+        $periodLabel = ' — ' . date('F Y', strtotime($startDate));
+    }
+} elseif ($mode === 'fiscal') {
+    $fy = (int)($_GET['fy'] ?? date('Y'));
+    $fyStart = DateTime::createFromFormat('Y-n-j', $fy . '-' . $FISCAL_START_MONTH . '-1');
+    $fyEnd   = (clone $fyStart)->modify('+1 year')->modify('-1 day');
+    $startDate = $fyStart->format('Y-m-d');
+    $endDate   = $fyEnd->format('Y-m-d');
+    $periodLabel = sprintf(
+        ' — FY%d (%s–%s)',
+        $fy,
+        $fyStart->format('M d, Y'),
+        $fyEnd->format('M d, Y')
+    );
+} else {
+    // default: current month
+    $startDate = $selectedMonth . "-01";
+    $endDate = date("Y-m-t", strtotime($startDate)); // last day of the month
+    $periodLabel = ' — ' . date('F Y', strtotime($startDate));
+}
+
+/* Inventory label:
+ * - fiscal mode: show "(Jan 01, 2025–Dec 31, 2025)" (no FY prefix)
+ * - other modes: show “as of <end date>”
+ */
+$inventoryAsOfLabel = ' — as of ' . date('M d, Y', strtotime($endDate));
+$inventoryLabel = ($mode === 'fiscal')
+    ? ' — (' . date('M d, Y', strtotime($startDate)) . '–' . date('M d, Y', strtotime($endDate)) . ')'
+    : $inventoryAsOfLabel;
+
+
 
 $filterBranch = $_GET['branch_id'] ?? '';
 $branchCondition = '';
@@ -24,40 +77,159 @@ if ($filterBranch !== '') {
 
 
 
-// Summary stats
-if ($role === 'staff') {
-    $totalProducts = $conn->query("SELECT COUNT(*) AS count FROM inventory WHERE branch_id = $branch_id")->fetch_assoc()['count'];
-    $lowStocks = $conn->query("
-        SELECT COUNT(*) AS count 
-        FROM inventory 
-        INNER JOIN products ON inventory.product_id = products.product_id
-        WHERE inventory.branch_id = $branch_id AND inventory.stock <= products.critical_point
-    ")->fetch_assoc()['count'];
-    $outOfStocks = $conn->query("
-        SELECT COUNT(*) AS count 
-        FROM inventory 
-        INNER JOIN products ON inventory.product_id = products.product_id
-        WHERE inventory.branch_id = $branch_id AND inventory.stock = 0
-    ")->fetch_assoc()['count'];
-} else {
-    $totalProducts = $conn->query("SELECT COUNT(*) AS count FROM inventory")->fetch_assoc()['count'];
-    $lowStocks = $conn->query("
-        SELECT COUNT(*) AS count 
-        FROM inventory 
-        INNER JOIN products ON inventory.product_id = products.product_id
-        WHERE inventory.stock <= products.critical_point
-    ")->fetch_assoc()['count'];
-    $outOfStocks = $conn->query("
-        SELECT COUNT(*) AS count 
-        FROM inventory 
-        INNER JOIN products ON inventory.product_id = products.product_id
-        WHERE inventory.stock = 0
-    ")->fetch_assoc()['count'];
+// Summary stats (non-overlapping: OOS = stock=0; Low = stock>0 and <= critical_point>0)
+// Detect historical columns once (safe if they don't exist)
+$hasCreatedAt   = false;
+$hasArchivedAt  = false;
+if ($res = $conn->query("SHOW COLUMNS FROM inventory LIKE 'created_at'")) {
+    $hasCreatedAt = ($res->num_rows > 0);
+    $res->free();
+}
+if ($res = $conn->query("SHOW COLUMNS FROM inventory LIKE 'archived_at'")) {
+    $hasArchivedAt = ($res->num_rows > 0);
+    $res->free();
+}
+
+$asOf = $endDate . ' 23:59:59';
+
+// Prefer product-level visibility (created_at / archived / archived_at on p.*)
+$hasPArchived   = false;
+$hasPCreatedAt  = false;
+$hasPArchivedAt = false;
+
+if ($res = $conn->query("SHOW COLUMNS FROM products LIKE 'archived'"))    { $hasPArchived   = ($res->num_rows > 0); $res->free(); }
+if ($res = $conn->query("SHOW COLUMNS FROM products LIKE 'created_at'"))  { $hasPCreatedAt  = ($res->num_rows > 0); $res->free(); }
+if ($res = $conn->query("SHOW COLUMNS FROM products LIKE 'archived_at'")) { $hasPArchivedAt = ($res->num_rows > 0); $res->free(); }
+
+$visibilityWhere = "1=1";
+$bindTypes = "";
+$bindVals  = [];
+
+// Always exclude archived products if the flag exists
+if ($hasPArchived) {
+  $visibilityWhere .= " AND p.archived = 0";
+}
+
+// As-of end date logic (use product timestamps if present)
+if ($hasPCreatedAt) {
+  $visibilityWhere .= " AND p.created_at <= ?";
+  $bindTypes .= "s";
+  $bindVals[] = $asOf;
+}
+if ($hasPArchivedAt) {
+  $visibilityWhere .= " AND (p.archived_at IS NULL OR p.archived_at > ?)";
+  $bindTypes .= "s";
+  $bindVals[] = $asOf;
+}
+
+// Optional fallback: if product timestamps don't exist but inventory ones do
+if (!$hasPCreatedAt && $hasCreatedAt) {
+  $visibilityWhere .= " AND i.created_at <= ?";
+  $bindTypes .= "s";
+  $bindVals[] = $asOf;
+}
+if (!$hasPArchivedAt && $hasArchivedAt) {
+  $visibilityWhere .= " AND (i.archived_at IS NULL OR i.archived_at > ?)";
+  $bindTypes .= "s";
+  $bindVals[] = $asOf;
+}
+if (!$hasPArchived) {
+  // if products.archived doesn't exist, fall back to inventory flag if present
+  if ($res = $conn->query("SHOW COLUMNS FROM inventory LIKE 'archived'")) {
+    if ($res->num_rows > 0) $visibilityWhere .= " AND i.archived = 0";
+    $res->free();
+  }
 }
 
 
+// /* ---------- TOTAL PRODUCTS (as-of end date if possible) ---------- */
+// if ($hasCreatedAt) {
+//     // Build base + optional branch filter
+//     $tpSql   = "SELECT COUNT(*) AS c
+//                 FROM inventory i
+//                 WHERE i.created_at <= ?
+//                   AND (i.archived = 0 " . ($hasArchivedAt ? "OR i.archived_at IS NULL OR i.archived_at > ?" : "") . ")";
+//     $types   = "s";
+//     $params  = [$asOf];
 
-// Total Sales (sum only within selected month and (optionally) branch)
+//     if ($hasArchivedAt) { $types .= "s"; $params[] = $asOf; }
+
+//     if ($role === 'staff' || $role === 'stockman') {
+//         $tpSql .= " AND i.branch_id = ?";
+//         $types .= "i";
+//         $params[] = (int)$branch_id;
+//     } elseif (!empty($filterBranch)) {
+//         $tpSql .= " AND i.branch_id = ?";
+//         $types .= "i";
+//         $params[] = (int)$filterBranch;
+//     }
+//     $stmt = $conn->prepare($tpSql);
+//     $stmt->bind_param($types, ...$params);
+//     $stmt->execute();
+//     $totalProducts = (int)($stmt->get_result()->fetch_assoc()['c'] ?? 0);
+//     $stmt->close();
+// } else {
+//     // Fallback: current snapshot count (your original behavior)
+//     if ($role === 'staff' || $role === 'stockman') {
+//         $stmt = $conn->prepare("SELECT COUNT(*) AS c FROM inventory WHERE branch_id = ?");
+//         $stmt->bind_param("i", $branch_id);
+//         $stmt->execute();
+//         $totalProducts = (int)$stmt->get_result()->fetch_assoc()['c'];
+//         $stmt->close();
+//     } elseif (!empty($filterBranch)) {
+//         $fb = (int)$filterBranch;
+//         $stmt = $conn->prepare("SELECT COUNT(*) AS c FROM inventory WHERE branch_id = ?");
+//         $stmt->bind_param("i", $fb);
+//         $stmt->execute();
+//         $totalProducts = (int)$stmt->get_result()->fetch_assoc()['c'];
+//         $stmt->close();
+//     } else {
+//         $totalProducts = (int)($conn->query("SELECT COUNT(*) AS c FROM inventory")->fetch_assoc()['c'] ?? 0);
+//     }
+// }
+$baseSql = "
+  SELECT
+    COUNT(*) AS totalProducts,
+    SUM(CASE WHEN i.stock = 0 THEN 1 ELSE 0 END) AS outOfStocks,
+    SUM(CASE 
+          WHEN i.stock > 0 
+           AND i.stock <= GREATEST(COALESCE(p.critical_point, 0), 0)
+           AND GREATEST(COALESCE(p.critical_point, 0), 0) > 0
+        THEN 1 ELSE 0 END) AS lowStocks
+  FROM inventory i
+  JOIN products p ON p.product_id = i.product_id
+  WHERE $visibilityWhere
+";
+
+$types = $bindTypes;
+$vals  = $bindVals;
+
+// branch scope
+if ($role === 'staff' || $role === 'stockman') {
+    $baseSql .= " AND i.branch_id = ?";
+    $types   .= "i";
+    $vals[]   = (int)$branch_id;
+} elseif (!empty($filterBranch)) {
+    $baseSql .= " AND i.branch_id = ?";
+    $types   .= "i";
+    $vals[]   = (int)$filterBranch;
+}
+
+$stmt = $conn->prepare($baseSql);
+if ($types !== "") { $stmt->bind_param($types, ...$vals); }
+$stmt->execute();
+$row = $stmt->get_result()->fetch_assoc() ?: ['totalProducts'=>0,'outOfStocks'=>0,'lowStocks'=>0];
+$stmt->close();
+
+$totalProducts = (int)$row['totalProducts'];
+$outOfStocks   = (int)$row['outOfStocks'];
+$lowStocks     = (int)$row['lowStocks'];
+
+
+
+
+
+// Total Sales (sum only within selected period and (optionally) branch)
 if ($role === 'staff') {
     $stmt = $conn->prepare("
         SELECT IFNULL(SUM(total), 0) AS total_sales
@@ -90,9 +262,12 @@ $totalSales = $result->fetch_assoc()['total_sales'] ?? 0;
 
 // Fetch fast moving products
 $WINDOW_DAYS = (new DateTime($startDate))->diff(new DateTime($endDate))->days + 1;
-$SLOW_THRESHOLD_PER_DAY = 0.1; // ≈ 3 per 30-day month
-$FAST_MIN_QTY_THIS_MONTH = (int)ceil($SLOW_THRESHOLD_PER_DAY * $WINDOW_DAYS); // e.g., 3
+// ----- Tunable thresholds (fixed) -----
+$FAST_MIN_QTY = 6; // Fast = sold 6 or more in the period
+$SLOW_MAX_QTY = 5; // Slow = sold 1..5 in the period
 
+
+// FAST
 $fastSql = "
 SELECT p.product_name, SUM(si.quantity) AS total_qty, si.product_id
 FROM sales_items si
@@ -106,17 +281,15 @@ ORDER BY total_qty DESC
 LIMIT 5
 ";
 
-// --- Bind depending on scope ---
 if ($role === 'staff' || !empty($filterBranch)) {
     $stmt = $conn->prepare($fastSql);
     $b = ($role === 'staff') ? (int)$branch_id : (int)$filterBranch;
-    // 4 params: startDate, endDate, branch, minQty
-    $stmt->bind_param("ssii", $startDate, $endDate, $b, $FAST_MIN_QTY_THIS_MONTH);
+    $stmt->bind_param("ssii", $startDate, $endDate, $b, $FAST_MIN_QTY);
 } else {
     $stmt = $conn->prepare($fastSql);
-    // 3 params: startDate, endDate, minQty
-    $stmt->bind_param("ssi", $startDate, $endDate, $FAST_MIN_QTY_THIS_MONTH);
+    $stmt->bind_param("ssi", $startDate, $endDate, $FAST_MIN_QTY);
 }
+
 
 $stmt->execute();
 $fastMovingResult = $stmt->get_result();
@@ -130,7 +303,7 @@ while ($row = $fastMovingResult->fetch_assoc()) {
 $excludeFastIds = !empty($fastMovingProductIds) ? implode(',', $fastMovingProductIds) : '0';
 
 
-// === Slow Moving Items (sold > 0 in selected month, not in fast list, branch-aware) ===
+// === Slow Moving Items (sold > 0 in selected period, not in fast list, branch-aware) ===
 $branchJoin = '';
 $params = [$startDate, $endDate];
 $types  = 'ss';
@@ -145,29 +318,50 @@ if ($role === 'staff') {
     $types   .= 'i';
 }
 
+// ---- Slow Moving: sold in period but below fast threshold ----
+// SLOW = sold between 1 and SLOW_MAX_QTY (inclusive)
 $slowSql = "
-SELECT 
+  SELECT 
     p.product_id,
     p.product_name,
-    COALESCE(SUM(CASE WHEN s.sale_date BETWEEN ? AND ? $branchJoin THEN si.quantity ELSE 0 END), 0) AS total_qty
-FROM products p
-LEFT JOIN sales_items si ON si.product_id = p.product_id
-LEFT JOIN sales s        ON s.sale_id = si.sale_id
-WHERE p.product_id NOT IN ($excludeFastIds)
-GROUP BY p.product_id
-HAVING total_qty > 0            -- exclude non-moving here
-ORDER BY total_qty ASC, p.product_name
-LIMIT 5
+    SUM(si.quantity) AS total_qty
+  FROM sales s
+  JOIN sales_items si ON si.sale_id = s.sale_id
+  JOIN products p     ON p.product_id = si.product_id
+  WHERE s.sale_date BETWEEN ? AND ?
 ";
 
+$slowTypes  = 'ss';
+$slowParams = [$startDate, $endDate];
+
+if ($role === 'staff') {
+  $slowSql .= " AND s.branch_id = ? ";
+  $slowTypes .= 'i';
+  $slowParams[] = (int)$branch_id;
+} elseif (!empty($filterBranch)) {
+  $slowSql .= " AND s.branch_id = ? ";
+  $slowTypes .= 'i';
+  $slowParams[] = (int)$filterBranch;
+}
+
+$slowSql .= "
+  GROUP BY p.product_id, p.product_name
+  HAVING SUM(si.quantity) BETWEEN 1 AND ?
+  ORDER BY total_qty ASC, p.product_name
+  LIMIT 5
+";
+
+$slowTypes .= 'i';
+$slowParams[] = $SLOW_MAX_QTY;
+
 $stmt = $conn->prepare($slowSql);
-$stmt->bind_param($types, ...$params);
+$stmt->bind_param($slowTypes, ...$slowParams);
 $stmt->execute();
 $slowMovingResult = $stmt->get_result();
 
 $slowItems = [];
 while ($row = $slowMovingResult->fetch_assoc()) {
-    $slowItems[] = $row;
+  $slowItems[] = $row;
 }
 
 
@@ -181,30 +375,71 @@ LEFT JOIN (
     FROM sales_items si
     JOIN sales s ON s.sale_id = si.sale_id
     WHERE s.sale_date BETWEEN ? AND ?
-    " . ($role === 'staff' ? " AND s.branch_id = ? " : (!empty($filterBranch) ? " AND s.branch_id = ? " : "")) . "
-) sold ON sold.product_id = i.product_id
-WHERE sold.product_id IS NULL
-" . ($role === 'staff' ? " AND i.branch_id = ? " : (!empty($filterBranch) ? " AND i.branch_id = ? " : "")) . "
-ORDER BY p.product_name
 ";
 
+// --- sales branch filter ---
 if ($role === 'staff') {
-    $stmt = $conn->prepare($nonSql);
-    $stmt->bind_param("ssii", $startDate, $endDate, $branch_id, $branch_id);
+    $nonSql .= " AND s.branch_id = ? ";
 } elseif (!empty($filterBranch)) {
-    $b = (int)$filterBranch;
-    $stmt = $conn->prepare($nonSql);
-    $stmt->bind_param("ssii", $startDate, $endDate, $b, $b);
-} else {
-    $stmt = $conn->prepare($nonSql);
-    $stmt->bind_param("ss", $startDate, $endDate);
+    $nonSql .= " AND s.branch_id = ? ";
 }
+
+$nonSql .= "
+) sold ON sold.product_id = i.product_id
+WHERE $visibilityWhere
+  AND sold.product_id IS NULL
+";
+
+// --- inventory branch filter ---
+if ($role === 'staff') {
+    $nonSql .= " AND i.branch_id = ? ";
+} elseif (!empty($filterBranch)) {
+    $nonSql .= " AND i.branch_id = ? ";
+}
+
+$nonSql .= " ORDER BY p.product_name";
+
+// --------------------
+// Build bindings
+// --------------------
+$nonTypes = "";
+$nonVals  = [];
+
+// always 2 for startDate/endDate
+$nonTypes .= "ss";
+$nonVals[] = $startDate;
+$nonVals[] = $endDate;
+
+// optional sales branch
+if ($role === 'staff') {
+    $nonTypes .= "i"; $nonVals[] = (int)$branch_id;
+} elseif (!empty($filterBranch)) {
+    $nonTypes .= "i"; $nonVals[] = (int)$filterBranch;
+}
+
+// visibility binds (created_at / archived_at)
+$nonTypes .= $bindTypes;
+$nonVals   = array_merge($nonVals, $bindVals);
+
+// optional inventory branch
+if ($role === 'staff') {
+    $nonTypes .= "i"; $nonVals[] = (int)$branch_id;
+} elseif (!empty($filterBranch)) {
+    $nonTypes .= "i"; $nonVals[] = (int)$filterBranch;
+}
+
+$stmt = $conn->prepare($nonSql);
+$stmt->bind_param($nonTypes, ...$nonVals);
 $stmt->execute();
 $res = $stmt->get_result();
+
 $notMovingItems = [];
-while ($row = $res->fetch_assoc()) {
-    $notMovingItems[] = $row['product_name'];
+if ($res) {
+  while ($row = $res->fetch_assoc()) {
+    $notMovingItems[] = $row['product_name']; // or ['id'=>$row['product_id'], 'name'=>$row['product_name']]
+  }
 }
+$stmt->close(); // optional but good practice
 
 
 // Notifications (Pending Approvals)
@@ -323,6 +558,39 @@ if ($role === 'admin') {
   $pendingResetsCount = $res ? (int)$res->fetch_assoc()['c'] : 0;
 }
 
+// Fetch current user's full name
+$currentName = '';
+if (isset($_SESSION['user_id'])) {
+    $stmt = $conn->prepare("SELECT name FROM users WHERE id = ? LIMIT 1");
+    $stmt->bind_param("i", $_SESSION['user_id']);
+    $stmt->execute();
+    $stmt->bind_result($fetchedName);
+    if ($stmt->fetch()) {
+        $currentName = $fetchedName;
+    }
+    $stmt->close();
+}
+
+function fmt_date_label(string $ymd): string {
+  $dt = DateTime::createFromFormat('Y-m-d', $ymd);
+  return $dt ? $dt->format('M d, Y') : htmlspecialchars($ymd, ENT_QUOTES);
+}
+
+$salesTitleBase = ($mode === 'fiscal')
+  ? 'Fiscal Year Sales Overview'
+  : (($mode === 'range') ? 'From–To Sales Overview' : 'Monthly Sales Overview');
+
+if ($mode === 'month') {
+  // e.g., "September 2025"
+  $salesDetail = date('F Y', strtotime($startDate));
+} elseif ($mode === 'range') {
+  $salesDetail = fmt_date_label($startDate) . ' to ' . fmt_date_label($endDate);
+} else { // fiscal
+  $fy = (int)($_GET['fy'] ?? date('Y'));
+  $salesDetail = 'FY ' . $fy;
+}
+
+$salesTitle = $salesTitleBase . ' — ' . $salesDetail;
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -339,14 +607,17 @@ if ($role === 'admin') {
 <audio id="notifSound" src="img/notif.mp3" preload="auto"></audio>
 </head>
 <body class="dashboard-page">
-<div class="sidebar" >
-<h2>
-    <?= strtoupper($role) ?>
+<div class="sidebar">
+  <h2 class="user-heading">
+    <span class="role"><?= htmlspecialchars(strtoupper($role), ENT_QUOTES) ?></span>
+    <?php if ($currentName !== ''): ?>
+      <span class="name"> (<?= htmlspecialchars($currentName, ENT_QUOTES) ?>)</span>
+    <?php endif; ?>
     <span class="notif-wrapper">
-        <i class="fas fa-bell" id="notifBell"></i>
-        <span id="notifCount" <?= $pending > 0 ? '' : 'style="display:none;"' ?>>0</span>
+      <i class="fas fa-bell" id="notifBell"></i>
+      <span id="notifCount" <?= $pending > 0 ? '' : 'style="display:none;"' ?>><?= (int)$pending ?></span>
     </span>
-</h2>
+  </h2>
 
 
     <!-- Common -->
@@ -383,8 +654,17 @@ $toolsOpen = ($self === 'backup_admin.php' || $isArchive);
     <a href="physical_inventory.php" class="<?= $self === 'physical_inventory.php' ? 'active' : '' ?>">
       <i class="fas fa-warehouse"></i> Physical Inventory
     </a>
+        <a href="barcode-print.php<?php 
+        $b = (int)($_SESSION['current_branch_id'] ?? 0);
+        echo $b ? ('?branch='.$b) : '';?>" class="<?= $self === 'barcode-print.php' ? 'active' : '' ?>">
+        <i class="fas fa-barcode"></i> Barcode Labels
+    </a>
   </div>
 </div>
+
+    <a href="services.php" class="<?= $self === 'services.php' ? 'active' : '' ?>">
+      <i class="fa fa-wrench" aria-hidden="true"></i> Services
+    </a>
 
   <!-- Sales (normal link with active state) -->
   <a href="sales.php" class="<?= $self === 'sales.php' ? 'active' : '' ?>">
@@ -393,7 +673,7 @@ $toolsOpen = ($self === 'backup_admin.php' || $isArchive);
 
 
 <a href="accounts.php" class="<?= $self === 'accounts.php' ? 'active' : '' ?>">
-  <i class="fas fa-users"></i> Accounts
+  <i class="fas fa-users"></i> Accounts & Branches
   <?php if ($pendingResetsCount > 0): ?>
     <span class="badge-pending"><?= $pendingResetsCount ?></span>
   <?php endif; ?>
@@ -423,27 +703,27 @@ $toolsOpen = ($self === 'backup_admin.php' || $isArchive);
 
 
 
-    <!-- Stockman Links -->
-     <?php
-        $transferNotif = $transferNotif ?? 0; // if not set, default to 0
-        ?>
-    <?php if ($role === 'stockman'): ?>
-  <!-- Inventory group (unchanged) -->
-  <div class="menu-group has-sub">
-    <button class="menu-toggle" type="button" aria-expanded="<?= $invOpen ? 'true' : 'false' ?>">
-      <span><i class="fas fa-box"></i> Inventory</span>
-      <i class="fas fa-chevron-right caret"></i>
-    </button>
-    <div class="submenu" <?= $invOpen ? '' : 'hidden' ?>>
-      <a href="inventory.php" class="<?= $self === 'inventory.php' ? 'active' : '' ?>">
-        <i class="fas fa-list"></i> Inventory List
-      </a>
-      <a href="physical_inventory.php" class="<?= $self === 'physical_inventory.php' ? 'active' : '' ?>">
-        <i class="fas fa-warehouse"></i> Physical Inventory
-      </a>
+   <!-- Stockman Links -->
+  <?php if ($role === 'stockman'): ?>
+    <div class="menu-group has-sub">
+      <button class="menu-toggle" type="button" aria-expanded="<?= $invOpen ? 'true' : 'false' ?>">
+        <span><i class="fas fa-box"></i> Inventory</span>
+        <i class="fas fa-chevron-right caret"></i>
+      </button>
+      <div class="submenu" <?= $invOpen ? '' : 'hidden' ?>>
+        <a href="inventory.php" class="<?= $self === 'inventory.php' ? 'active' : '' ?>">
+          <i class="fas fa-list"></i> Inventory List
+        </a>
+        <a href="physical_inventory.php" class="<?= $self === 'physical_inventory.php' ? 'active' : '' ?>">
+          <i class="fas fa-warehouse"></i> Physical Inventory
+        </a>
+        <!-- Stockman can access Barcode Labels; server forces their branch -->
+        <a href="barcode-print.php" class="<?= $self === 'barcode-print.php' ? 'active' : '' ?>">
+          <i class="fas fa-barcode"></i> Barcode Labels
+        </a>
+      </div>
     </div>
-  </div>
-    <?php endif; ?>
+  <?php endif; ?>
     <!-- Staff Links -->
     <?php if ($role === 'staff'): ?>
         <a href="pos.php"><i class="fas fa-cash-register"></i> Point of Sale</a>
@@ -454,18 +734,34 @@ $toolsOpen = ($self === 'backup_admin.php' || $isArchive);
 </div>
 
 <div class="content">
-    
-    <!-- Summary Cards -->
-    <div class="cards">
-        <div class="card green"><h3>Total Products</h3><p><?= $totalProducts ?></p></div>
-        <div class="card orange"><h3>Low Stocks</h3><p><?= $lowStocks ?></p></div>
-        <div class="card red"><h3>Out of Stocks</h3><p><?= $outOfStocks ?></p></div>
-        <div class="card blue"><h3>Total Sales</h3><p>₱<?= number_format($totalSales,2) ?></p></div>
-    </div>
-<div class="Report">
-    <form method="GET">
-        <label for="month">View Reports for:</label>
-        <input type="month" id="month" name="month" value="<?= htmlspecialchars($_GET['month'] ?? date('Y-m')) ?>">
+    <div class="Report">
+    <!-- FILTER FORM (UPDATED TO SUPPORT PERIOD) -->
+    <form method="GET" id="reportFilters" style="display:flex; gap:8px; flex-wrap:wrap; align-items:end">
+        <div>
+            <label>Period</label>
+            <select name="period" id="period">
+                <option value="month"  <?= ($mode==='month' ? 'selected' : '') ?>>By Month</option>
+                <option value="range"  <?= ($mode==='range' ? 'selected' : '') ?>>From–To</option>
+                <option value="fiscal" <?= ($mode==='fiscal'? 'selected' : '') ?>>Fiscal Year</option>
+            </select>
+        </div>
+
+        <div data-period="month">
+            <label for="month">View Reports for:</label>
+            <input type="month" id="month" name="month" value="<?= htmlspecialchars($_GET['month'] ?? date('Y-m')) ?>">
+        </div>
+
+        <div data-period="range" style="display:none">
+            <label for="from">From</label>
+            <input type="date" id="from" name="from" value="<?= htmlspecialchars($_GET['from'] ?? '') ?>">
+            <label for="to">To</label>
+            <input type="date" id="to" name="to" value="<?= htmlspecialchars($_GET['to'] ?? '') ?>">
+        </div>
+
+        <div data-period="fiscal" style="display:none">
+            <label for="fy">Fiscal Year</label>
+            <input type="number" id="fy" name="fy" min="2000" value="<?= htmlspecialchars($_GET['fy'] ?? date('Y')) ?>">
+        </div>
 
         <?php if ($role === 'stockman' || $role === 'staff'): 
             $branchData = $conn->query("SELECT branch_name FROM branches WHERE branch_id = $branch_id")->fetch_assoc();
@@ -493,10 +789,18 @@ $toolsOpen = ($self === 'backup_admin.php' || $isArchive);
     </form>
 </div>
 
+    <!-- Summary Cards -->
+    <div class="cards">
+        <div class="card green"><h3>Total Products<span style="font-weight:400"><?= htmlspecialchars($inventoryLabel) ?></span></h3><p><?= $totalProducts ?></p></div>
+        <div class="card orange"><h3>Low Stocks<span style="font-weight:400"><?= htmlspecialchars($inventoryLabel) ?></span></h3><p><?= $lowStocks ?></p></div>
+        <div class="card red"><h3>Out of Stocks<span style="font-weight:400"><?= htmlspecialchars($inventoryLabel) ?></span></h3><p><?= $outOfStocks ?></p></div>
+        <div class="card blue"><h3>Total Sales<span style="font-weight:400"><?= htmlspecialchars($periodLabel) ?></span></h3><p>₱<?= number_format($totalSales,2) ?></p></div>
+    </div>
+
 <div class="sections" style="display:flex; gap:20px; flex-wrap:wrap; align-items:flex-start;">
     <!-- Monthly Sales Overview -->
     <section style="flex:1 1 250px; min-width:150px;">
-        <h2>Monthly Sales Overview</h2>
+        <h2 id="salesOverviewTitle"><?= htmlspecialchars($salesTitle, ENT_QUOTES) ?></h2>
         <canvas id="salesChart" style="width:100%; height:150px;"></canvas>
     </section>
 
@@ -587,46 +891,64 @@ $toolsOpen = ($self === 'backup_admin.php' || $isArchive);
 <script src="notifications.js"></script>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<!-- Fetch Sales for Chart -->
 <script>
-// Fetch Monthly Sales for Chart 
-// FIX BY BRANCH
-// Pass selected month and branch to the request
-const selectedMonth = document.getElementById('month').value;
-const selectedBranch = document.getElementById('branch').value;
+const periodSel = document.getElementById('period');
+const branchEl  = document.getElementById('branch');
 
-fetch(`monthly_sale.php?month=${selectedMonth}&branch_id=${selectedBranch}`)
-.then(r => r.json())
-.then(data => {
+// Robust branch value: if the select is disabled/not present, fall back to PHP session
+const branchVal = (branchEl && branchEl.value !== undefined && branchEl.value !== '')
+  ? branchEl.value
+  : <?= json_encode(($role === 'staff' || $role === 'stockman') ? (string)$branch_id : (string)($_GET['branch_id'] ?? '')) ?>;
+
+const period = periodSel.value;
+
+let qs = new URLSearchParams({ period });
+
+// Only include branch_id if we actually have one (admin may choose “All Branches” = empty)
+if (branchVal !== '') qs.set('branch_id', branchVal);
+
+if (period === 'month') {
+  qs.set('month', document.getElementById('month').value);
+} else if (period === 'range') {
+  qs.set('from', document.getElementById('from').value);
+  qs.set('to',   document.getElementById('to').value);
+} else if (period === 'fiscal') {
+  qs.set('fy', document.getElementById('fy').value);
+}
+
+// cache-buster so old data isn’t reused by the browser/CDN
+qs.set('_', Date.now());
+
+fetch(`monthly_sale.php?${qs.toString()}`)
+  .then(r => r.json())
+  .then(data => {
     const ctx = document.getElementById('salesChart').getContext('2d');
     const chart = new Chart(ctx, {
-        type: 'bar',
-        data: {
-            labels: data.months,
-            datasets: [{
-                label: 'Sales (₱)',
-                data: data.sales,
-                backgroundColor: '#f7931e'
-            }]
-        },
-        options: {
-            responsive: true,
-            plugins: {
-                legend: { display: false }
-            },
-            scales: {
-                y: { beginAtZero: true }
-            }
-        }
+      type: 'bar',
+      data: {
+        labels: data.months,
+        datasets: [{
+          label: 'Sales (₱)',
+          data: data.sales,
+          backgroundColor: '#f7931e'
+        }]
+      },
+      options: {
+        responsive: true,
+        plugins: { legend: { display: false } },
+        scales: { y: { beginAtZero: true } }
+      }
     });
 
     // Toggle Bar/Line
     document.getElementById('salesChart').addEventListener('dblclick', () => {
-        chart.config.type = (chart.config.type === 'bar') ? 'line' : 'bar';
-        chart.update();
+      chart.config.type = (chart.config.type === 'bar') ? 'line' : 'bar';
+      chart.update();
     });
-});
-
+  });
 </script>
+
 <script>
 console.log(<?= json_encode($serviceJobData) ?>);
 </script>
@@ -667,6 +989,22 @@ if (serviceJobData.length > 0) {
 </script>
 
 <script>
+// Show/hide period-specific inputs
+(function(){
+  const periodSel = document.getElementById('period');
+  const sections = document.querySelectorAll('[data-period]');
+  function sync() {
+    const val = periodSel.value;
+    sections.forEach(sec => {
+      sec.style.display = (sec.getAttribute('data-period') === val) ? '' : 'none';
+    });
+  }
+  periodSel.addEventListener('change', sync);
+  sync(); // initial
+})();
+</script>
+
+<script>
 (function(){
   const groups = document.querySelectorAll('.menu-group.has-sub');
 
@@ -692,7 +1030,49 @@ if (serviceJobData.length > 0) {
   });
 })();
 </script>
+<!-- For Responsive Chart -->
+<script>
+(function() {
+  const form     = document.getElementById('reportFilters');
+  const titleEl  = document.getElementById('salesOverviewTitle');
+  const periodEl = document.getElementById('period');
+  const monthEl  = document.getElementById('month');
+  const fromEl   = document.getElementById('from');
+  const toEl     = document.getElementById('to');
+  const fyEl     = document.getElementById('fy');
 
+  function updateTitle() {
+    const period = periodEl.value;
+    let title = '';
+
+    if (period === 'month') {
+      const val = monthEl.value || '';
+      const monthLabel = val ? new Date(val + "-01").toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) : '';
+      title = "Monthly Sales Overview" + (monthLabel ? ` — ${monthLabel}` : '');
+    } else if (period === 'range') {
+      const from = fromEl.value;
+      const to   = toEl.value;
+      title = "From–To Sales Overview";
+      if (from && to) {
+        title += ` — ${from} to ${to}`;
+      }
+    } else if (period === 'fiscal') {
+      const fy = fyEl.value || new Date().getFullYear();
+      title = `Fiscal Year Sales Overview — FY ${fy}`;
+    }
+
+    titleEl.textContent = title;
+  }
+
+  // Only update when the Filter form is submitted
+  if (form) {
+    form.addEventListener('submit', function(e) {
+      updateTitle();
+      // allow normal form submit + reload
+    });
+  }
+})();
+</script>
 
 </body>
 </html>

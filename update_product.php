@@ -134,10 +134,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     logAction($conn, "Edit Product", "Edited product ID $product_id: $changeDetails");
 
     if ($stmt1->affected_rows >= 0 && $stmt2->affected_rows >= 0) {
-        echo "<script>alert('Product updated successfully!'); window.location.href = 'inventory.php?branch=$branch_id';</script>";
+        // ✅ success → redirect with toast param
+        header("Location: inventory.php?branch=$branch_id&up=updated");
+        exit;
     } else {
-        echo "Error updating product or stock: " . $conn->error;
+        // ❌ error → redirect with error toast
+        header("Location: inventory.php?branch=$branch_id&up=error");
+        exit;
     }
+
 
     $stmt1->close();
     $stmt2->close();

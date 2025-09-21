@@ -134,7 +134,10 @@ button:hover {
   padding:3px 7px;font-size:12px;margin-left:6px;
 }
 
-
+ .user-heading { display:flex; align-items:center; gap:.5rem; flex-wrap:wrap; }
+  .user-heading .role { font-weight:700; letter-spacing:.5px; }
+  .user-heading .name { font-weight:400; opacity:.9; }
+  .user-heading .notif-wrapper { margin-left:auto; display:inline-flex; align-items:center; gap:.4rem; }
 
 
 /* Responsive */

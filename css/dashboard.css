@@ -123,7 +123,10 @@
     font-size: 0.95rem;
 }
 
+/* Shared look for all report controls */
 .Report input[type="month"],
+.Report input[type="date"],
+.Report input[type="number"],   /* <-- fiscal year (FY) field */
 .Report select {
     padding: 8px 12px;
     border: 1px solid #ccc;
@@ -134,12 +137,37 @@
     transition: border 0.2s ease, box-shadow 0.2s ease;
 }
 
+/* Optional: consistent focus/hover states */
 .Report input[type="month"]:focus,
+.Report input[type="date"]:focus,
+.Report input[type="number"]:focus,
 .Report select:focus {
     outline: none;
-    border-color: #f7931e;
-    box-shadow: 0 0 6px rgba(247, 147, 30, 0.3);
+    border-color: #8bb7f0;
+    box-shadow: 0 0 0 3px rgba(139, 183, 240, 0.25);
 }
+
+.Report input[type="month"]:hover,
+.Report input[type="date"]:hover,
+.Report input[type="number"]:hover,
+.Report select:hover {
+    border-color: #b5b5b5;
+}
+
+/* Optional: tiny mode-specific polish (keeps widths sensible) */
+.Report [data-period="fiscal"] #fy {
+    width: 120px;       /* FY number input */
+}
+
+.Report [data-period="month"] #month {
+    width: 170px;       /* month picker */
+}
+
+.Report [data-period="range"] #from,
+.Report [data-period="range"] #to {
+    width: 170px;       /* date pickers */
+}
+
 
 .Report button {
     padding: 8px 16px;

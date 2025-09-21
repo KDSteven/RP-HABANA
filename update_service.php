@@ -19,11 +19,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             logAction($conn, "Edit Service", "Edited service: $service_name (ID: $service_id)", null, $branch_id);
 
             $_SESSION['stock_message'] = "✅ Service updated successfully.";
-            header("Location: inventory.php?edit=success");
+            header("Location: services.php?us=updated");
             exit;
         } else {
-            $_SESSION['stock_message'] = "❌ Failed to update service.";
-            header("Location: inventory.php?edit=error");
+            header("Location: services.php?us=error");
             exit;
         }
     }
