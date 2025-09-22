@@ -150,20 +150,6 @@ if (isset($_POST['archive_product'])) {
         $stmt->execute();
         $stmt->close();
 
-        // 2️⃣ Insert inventory movement for archive
-        $dateNow = date('Y-m-d H:i:s');
-       $userId = $_SESSION['user_id']; // the currently logged-in admin/staff
-
-$stmt = $conn->prepare("
-    INSERT INTO inventory_movements 
-    (product_id, branch_id, movement_type, quantity, created_at, user_id)
-    VALUES (?, ?, 'archive', 0, ?, ?)
-");
-$stmt->bind_param("iisi", $product_id, $branch_id, $dateNow, $userId);
-$stmt->execute();
-$stmt->close();
-
-
         // 3️⃣ Log action
         logAction($conn, "Archive Product", "Archived product: $product_name (Inventory ID: $inventory_id)", null, $branch_id);
 
@@ -538,6 +524,18 @@ if ($role === 'admin' && isset($_POST['action'], $_POST['request_id'])) {
     }
 }
 
+// Fetch current user's full name
+$currentName = '';
+if (isset($_SESSION['user_id'])) {
+    $stmt = $conn->prepare("SELECT name FROM users WHERE id = ? LIMIT 1");
+    $stmt->bind_param("i", $_SESSION['user_id']);
+    $stmt->execute();
+    $stmt->bind_result($fetchedName);
+    if ($stmt->fetch()) {
+        $currentName = $fetchedName;
+    }
+    $stmt->close();
+}
 
 ?>
 
@@ -560,13 +558,16 @@ if ($role === 'admin' && isset($_POST['action'], $_POST['request_id'])) {
 </head>
 <body class="inventory-page">
 <div class="sidebar">
-   <h2>
-    <?= strtoupper($role) ?>
+  <h2 class="user-heading">
+    <span class="role"><?= htmlspecialchars(strtoupper($role), ENT_QUOTES) ?></span>
+    <?php if ($currentName !== ''): ?>
+      <span class="name"> (<?= htmlspecialchars($currentName, ENT_QUOTES) ?>)</span>
+    <?php endif; ?>
     <span class="notif-wrapper">
-        <i class="fas fa-bell" id="notifBell"></i>
-        <span id="notifCount" <?= $pendingTotalInventory > 0 ? '' : 'style="display:none;"' ?>>0</span>
+      <i class="fas fa-bell" id="notifBell"></i>
+      <span id="notifCount" <?= $pendingTotalInventory > 0 ? '' : 'style="display:none;"' ?>><?= (int)$pendingTotalInventory ?></span>
     </span>
-</h2>
+  </h2>
 
 
     <!-- Common -->
@@ -604,9 +605,19 @@ if ($role === 'admin' && isset($_POST['action'], $_POST['request_id'])) {
     <a href="physical_inventory.php" class="<?= $self === 'physical_inventory.php' ? 'active' : '' ?>">
       <i class="fas fa-warehouse"></i> Physical Inventory
     </a>
+
+    <a href="barcode-print.php<?php 
+        $b = (int)($_SESSION['current_branch_id'] ?? 0);
+        echo $b ? ('?branch='.$b) : '';?>" class="<?= $self === 'barcode-print.php' ? 'active' : '' ?>">
+        <i class="fas fa-barcode"></i> Barcode Labels
+    </a>
   </div>
 </div>
 
+    <!-- Current page -->
+    <a href="services.php" class="<?= $self === 'services.php' ? 'active' : '' ?>">
+      <i class="fa fa-wrench" aria-hidden="true"></i> Services
+    </a>
 
   <!-- Sales (normal link with active state) -->
   <a href="sales.php" class="<?= $self === 'sales.php' ? 'active' : '' ?>">
@@ -614,7 +625,7 @@ if ($role === 'admin' && isset($_POST['action'], $_POST['request_id'])) {
   </a>
 
   <a href="accounts.php" class="<?= $self === 'accounts.php' ? 'active' : '' ?>">
-    <i class="fas fa-users"></i> Accounts
+    <i class="fas fa-users"></i> Accounts & Branches
     <?php if ($pendingResetsCount > 0): ?>
       <span class="badge-pending"><?= $pendingResetsCount ?></span>
     <?php endif; ?>
@@ -2498,6 +2509,14 @@ document.addEventListener('DOMContentLoaded', function () {
     as: { // add service
       added: ['Service added successfully.', 'success'],
       error: ['There was an error adding the service.', 'danger'],
+    },
+    up: { // update product
+  updated: ['Product updated successfully.', 'success'],
+  error:   ['There was an error updating the product.', 'danger'],
+    },
+    us: { // update service
+      updated: ['Service updated successfully.', 'success'],
+      error:   ['There was an error updating the service.', 'danger'],
     },
   };
 

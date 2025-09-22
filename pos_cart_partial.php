@@ -80,7 +80,7 @@ $grandTotal = $displaySubtotal + $displayVAT;
 ?>
 
 <div class="cart-box">
-  <h3>🛒 Current Transaction</h3>
+<h3><i class="fas fa-shopping-cart"></i> Current Transaction</h3>
 
   <?php if (empty($cartItems)): ?>
     <p class="text-muted">Your cart is empty.</p>
@@ -96,25 +96,25 @@ $grandTotal = $displaySubtotal + $displayVAT;
         </tr>
       </thead>
       <tbody>
-        <?php foreach ($cartItems as $item): 
-            $qty = (int)$item['qty'];
-            $lineVAT = $item['price'] * $qty * ($item['vatRate'] ?? 0);
-            $subtotal = $item['price'] * $qty;
+        <?php foreach ($cartItems as $item):
+            $qty      = (int)$item['qty'];
+            $price    = (float)$item['price'];
+            $vatRate  = (float)($item['vatRate'] ?? 0);     // e.g. 0.12
+            $lineVAT  = $price * $qty * $vatRate;
+            $lineSub  = $price * $qty;
+            $lineGrand= $lineSub + $lineVAT;
         ?>
-        
-<tr 
-  class="<?= !empty($item['expiration']) ? 'expirable' : '' ?>" 
-  data-expiration="<?= htmlspecialchars($item['expiration'] ?? '') ?>" 
-  data-category="<?= htmlspecialchars($item['category'] ?? '') ?>"
->
-    <td><?= htmlspecialchars($item['product_name'] ?? $item['name']) ?></td>
-    <td><?= (int)$item['qty'] ?></td>
-    <td>₱<?= number_format($item['price'], 2) ?></td>
-    <td>₱<?= number_format(($item['price'] * $item['qty']) * 0.12, 2) ?></td>
-    <td>₱<?= number_format(($item['price'] * $item['qty']) * 1.12, 2) ?></td>
-</tr>
-
-
+        <tr
+          class="<?= !empty($item['expiration']) ? 'expirable' : '' ?>"
+          data-expiration="<?= htmlspecialchars($item['expiration'] ?? '') ?>"
+          data-category="<?= htmlspecialchars($item['category'] ?? '') ?>"
+        >
+          <td><?= htmlspecialchars($item['product_name'] ?? $item['name']) ?></td>
+          <td><?= (int)$item['qty'] ?></td>
+          <td>₱<?= number_format($price, 2) ?></td>
+          <td>₱<?= number_format($lineVAT, 2) ?></td>
+          <td>₱<?= number_format($lineGrand, 2) ?></td>
+        </tr>
         <?php endforeach; ?>
       </tbody>
     </table>
@@ -122,14 +122,36 @@ $grandTotal = $displaySubtotal + $displayVAT;
 </div>
 
 <div class="card totals-box mt-3">
-  <h5>Subtotal <span>₱<?= number_format($displaySubtotal, 2) ?></span></h5>
-  <h5>VAT <span>₱<?= number_format($displayVAT, 2) ?></span></h5>
-  <h4 class="final-total">TOTAL <span>₱<?= number_format($grandTotal, 2) ?></span></h4>
+  <h5>
+    Subtotal
+    <span class="subtotal"
+          data-value="<?= number_format($displaySubtotal, 2, '.', '') ?>">
+      ₱<?= number_format($displaySubtotal, 2) ?>
+    </span>
+  </h5>
+
+  <h5>
+    VAT
+    <span class="vat"
+          data-value="<?= number_format($displayVAT, 2, '.', '') ?>">
+      ₱<?= number_format($displayVAT, 2) ?>
+    </span>
+  </h5>
+
+  <h4 class="final-total">
+    TOTAL
+    <span class="grand"
+          data-value="<?= number_format($grandTotal, 2, '.', '') ?>">
+      ₱<?= number_format($grandTotal, 2) ?>
+    </span>
+  </h4>
+
   <hr>
   <h5>Discount <span id="displayDiscount">₱0.00</span></h5>
-  <h5>Payment <span id="displayPayment">₱0.00</span></h5>
-  <h5>Change <span id="displayChange">₱0.00</span></h5>
+  <h5>Payment  <span id="displayPayment">₱0.00</span></h5>
+  <h5>Change   <span id="displayChange">₱0.00</span></h5>
 </div>
+
 
 <script>
 // Pass PHP cart to JS for payment & VAT calculations

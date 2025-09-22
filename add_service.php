@@ -58,12 +58,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         // Session-based success message
         $_SESSION['stock_message'] = "✅ Service '$service_name' added successfully (Branch ID: $branch_id)";
-        header('Location: inventory.php?as=added');
+        header('Location: services.php?as=added');
         exit;
     } else {
         $_SESSION['stock_message'] = "❌ Error adding service: " . $stmt->error;
         $stmt->close();
-        header('Location: inventory.php?as=error');
+        header('Location: services.php?as=error');
         exit;
     }
 

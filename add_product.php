@@ -1,10 +1,13 @@
 <?php
+// add_product.php
 session_start();
 include 'config/db.php';
 ini_set('display_errors', 1);
 error_reporting(E_ALL);
 
-// Logging function
+/**
+ * Logging helper (kept from your version)
+ */
 function logAction($conn, $action, $details, $user_id = null, $branch_id = null) {
     if (!$user_id && isset($_SESSION['user_id'])) $user_id = $_SESSION['user_id'];
     if (!$branch_id && isset($_SESSION['branch_id'])) $branch_id = $_SESSION['branch_id'];
@@ -14,6 +17,30 @@ function logAction($conn, $action, $details, $user_id = null, $branch_id = null)
     $stmt->close();
 }
 
+/**
+ * =========================
+ * BARCODE HELPERS (place here)
+ * =========================
+ */
+
+// EAN-13 checksum + builder (numeric only) – use if you prefer EAN-13 labels
+function ean13CheckDigit(string $base12): int {
+    $sum = 0;
+    for ($i = 0; $i < 12; $i++) {
+        $d = (int)$base12[$i];
+        $sum += ($i % 2 === 0) ? $d : $d * 3;
+    }
+    return (10 - ($sum % 10)) % 10;
+}
+function makeEan13FromId(int $productId): string {
+    // 200 = internal prefix (not GS1-registered). For retail, register GS1.
+    $base12 = '200' . str_pad((string)$productId, 9, '0', STR_PAD_LEFT);
+    return $base12 . ean13CheckDigit($base12);
+}
+
+/**
+ * Handle form submit
+ */
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // Collect POST data
     $barcode       = trim($_POST['barcode'] ?? '');
@@ -28,69 +55,151 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $stocks        = intval($_POST['stocks'] ?? 0);
     $branchId      = intval($_POST['branch_id'] ?? 0);
     $brandName     = trim($_POST['brand_name'] ?? '');
-    $expiration    = $_POST['expiration_date'] ?? null;
+    $expiration    = $_POST['expiration_date'] ?? null; // may be null/''
 
-    // Get category name
+    // Get category name (NOT the id) to save in products.category
     $stmt = $conn->prepare("SELECT category_name FROM categories WHERE category_id = ?");
     $stmt->bind_param("i", $categoryId);
     $stmt->execute();
-    $categoryRow = $stmt->get_result()->fetch_assoc();
+    $categoryRow  = $stmt->get_result()->fetch_assoc();
     $categoryName = $categoryRow['category_name'] ?? '';
     $stmt->close();
 
-    // Expiration logic for tires
+    // Expiration logic for tires (auto +5 years if missing)
     if (stripos($categoryName, 'tire') !== false && empty($expiration)) {
         $dt = new DateTime();
         $dt->modify('+5 years');
         $expiration = $dt->format('Y-m-d');
     }
 
-    // Debug: show POST data
-    // echo '<pre>'; print_r($_POST); echo '</pre>'; exit;
-
-    // Barcode uniqueness
-   // Validate barcode uniqueness per branch
-$check = $conn->prepare("
-    SELECT p.product_id 
-    FROM products p
-    JOIN inventory i ON p.product_id = i.product_id
-    WHERE p.barcode = ? AND i.branch_id = ?
-");
-$check->bind_param("si", $barcode, $branchId);
-$check->execute();
-$check->store_result();
-
-if ($check->num_rows > 0) {
-    $_SESSION['stock_message'] = "❌ This product already exists in this branch. Please use a different barcode or branch.";
+    // Validate barcode uniqueness per branch (only if you have inventory table; keep as-is)
+    $check = $conn->prepare("
+        SELECT p.product_id 
+        FROM products p
+        JOIN inventory i ON p.product_id = i.product_id
+        WHERE p.barcode = ? AND i.branch_id = ?
+    ");
+    $check->bind_param("si", $barcode, $branchId);
+    $check->execute();
+    $check->store_result();
+    if ($check->num_rows > 0) {
+        $_SESSION['stock_message'] = "❌ This product already exists in this branch. Please use a different barcode or branch.";
+        $check->close();
+        header("Location: inventory.php?stock=error");
+        exit();
+    }
     $check->close();
-    header("Location: inventory.php?stock=error");
-    exit();
+
+    // Basic validations
+    if ($criticalPoint > $ceilingPoint) {
+        $_SESSION['stock_message'] = "❌ Critical Point cannot be greater than Ceiling Point.";
+        header("Location: inventory.php?stock=error");
+        exit();
+    }
+    if ($stocks > $ceilingPoint) {
+        $_SESSION['stock_message'] = "❌ Stocks cannot be greater than Ceiling Point.";
+        header("Location: inventory.php?stock=error");
+        exit();
+    }
+    if ($stocks < 0 || $price < 0) {
+        $_SESSION['stock_message'] = "❌ Invalid values for stock or price.";
+        header("Location: inventory.php?stock=error");
+        exit();
+    }
+
+    // Global barcode uniqueness (only if barcode is provided)
+    if ($barcode !== '') {
+        $check = $conn->prepare("SELECT product_id FROM products WHERE barcode = ?");
+        $check->bind_param("s", $barcode);
+        $check->execute();
+        $check->store_result();
+        if ($check->num_rows > 0) {
+            $_SESSION['stock_message'] = "❌ This barcode already exists. Please use a unique barcode.";
+            $check->close();
+            header("Location: inventory.php?stock=error");
+            exit();
+        }
+        $check->close();
+    }
+
+    try {
+        // --- FIX STARTS HERE: use correct variables and one INSERT that allows NULLs ---
+        $barcodeParam    = ($barcode !== '') ? $barcode : null;                          // allow NULL barcode
+        $expirationParam = (!empty($expiration)) ? $expiration : null;                   // allow NULL expiration
+
+        $stmt = $conn->prepare("
+            INSERT INTO products 
+                (barcode, product_name, category, price, markup_price, retail_price,
+                 ceiling_point, critical_point, vat, expiration_date, brand_name)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?)
+        ");
+        // 11 placeholders → types: s,s,s,d,d,d,i,i,d,s,s
+        $stmt->bind_param(
+            "sssdddiidss",
+            $barcodeParam,     // s (nullable)
+            $productName,      // s
+            $categoryName,     // s  <-- correct variable
+            $price,            // d
+            $markupPrice,      // d
+            $retailPrice,      // d
+            $ceilingPoint,     // i
+            $criticalPoint,    // i
+            $vat,              // d
+            $expirationParam,  // s (nullable) <-- correct variable
+            $brandName         // s
+        );
+        $stmt->execute();
+        $productId = (int)$conn->insert_id;
+        $stmt->close();
+        // --- FIX ENDS HERE ---
+
+        // If barcode was left blank, auto-generate now using the new product_id
+        if ($barcode === '') {
+            $auto = makeEan13FromId($productId);
+            $attempts = 0;
+            do {
+                $ok = true;
+                $u = $conn->prepare("UPDATE products SET barcode=? WHERE product_id=?");
+                $u->bind_param("si", $auto, $productId);
+                try {
+                    $u->execute();
+                } catch (mysqli_sql_exception $e) {
+                    if (stripos($e->getMessage(), 'Duplicate') !== false && $attempts < 3) {
+                        $attempts++;
+                        $auto = $auto . $attempts; // nudge and retry
+                        $ok = false;
+                    } else {
+                        throw $e;
+                    }
+                }
+                $u->close();
+            } while (!$ok);
+        }
+
+        // Insert opening inventory for the chosen branch
+        $stmt2 = $conn->prepare("INSERT INTO inventory (product_id, branch_id, stock) VALUES (?, ?, ?)");
+        $stmt2->bind_param("iii", $productId, $branchId, $stocks);
+
+        if ($stmt2->execute()) {
+            $stmt2->close();
+
+            // Log action
+            logAction($conn, "Add Product", "Added product '$productName' with stock $stocks to branch $branchId");
+
+            $_SESSION['stock_message'] = "✅ Product '$productName' added successfully with stock: $stocks (Branch ID: $branchId)";
+            header('Location: inventory.php?ap=added');
+            exit();
+        } else {
+            $_SESSION['stock_message'] = "❌ Error adding to inventory: " . $stmt2->error;
+            $stmt2->close();
+            header('Location: inventory.php?ap=error');
+            exit();
+        }
+
+    } catch (mysqli_sql_exception $e) {
+        $_SESSION['stock_message'] = "❌ Database error: " . $e->getMessage();
+        header("Location: inventory.php?stock=error");
+        exit();
+    }
 }
-$check->close();
-
-
-    // Validation
-    if ($criticalPoint > $ceilingPoint) die("❌ Critical > Ceiling");
-    if ($stocks > $ceilingPoint) die("❌ Stocks > Ceiling");
-    if ($stocks < 0 || $price < 0) die("❌ Invalid values");
-
-    // Insert product
-    $stmt = $conn->prepare("INSERT INTO products 
-        (barcode, product_name, category, price, markup_price, retail_price, ceiling_point, critical_point, vat, expiration_date, brand_name) 
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
-    $stmt->bind_param("sssdddiidss", $barcode, $productName, $categoryName, $price, $markupPrice, $retailPrice, $ceilingPoint, $criticalPoint, $vat, $expiration, $brandName);
-    $stmt->execute();
-    $productId = $conn->insert_id;
-    $stmt->close();
-
-    // Insert inventory
-    $stmt = $conn->prepare("INSERT INTO inventory (product_id, branch_id, stock) VALUES (?, ?, ?)");
-    $stmt->bind_param("iii", $productId, $branchId, $stocks);
-    $stmt->execute();
-    $stmt->close();
-
-    // Log action
-    logAction($conn, "Add Product", "Added product '$productName' with stock $stocks to branch $branchId");
-
-    echo "✅ Product '$productName' added successfully!";
-}
+?>

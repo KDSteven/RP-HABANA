@@ -4,7 +4,7 @@ include 'config/db.php';
 
 // Check if user is logged in
 if (!isset($_SESSION['role'])) {
-    header("Location: index.html");
+    header("Location: index.php");
     exit;
 }
 
@@ -79,6 +79,18 @@ if ($role === 'admin') {
     }
 }
 
+// Fetch current user's full name
+$currentName = '';
+if (isset($_SESSION['user_id'])) {
+    $stmt = $conn->prepare("SELECT name FROM users WHERE id = ? LIMIT 1");
+    $stmt->bind_param("i", $_SESSION['user_id']);
+    $stmt->execute();
+    $stmt->bind_result($fetchedName);
+    if ($stmt->fetch()) {
+        $currentName = $fetchedName;
+    }
+    $stmt->close();
+}
 
 ?>
 <!DOCTYPE html>
@@ -96,14 +108,17 @@ if ($role === 'admin') {
 <audio id="notifSound" src="notif.mp3" preload="auto"></audio>
 </head>
 <body>
-  <div class="sidebar">
-    <h2>
-    <?= strtoupper($role) ?>
+<div class="sidebar">
+  <h2 class="user-heading">
+    <span class="role"><?= htmlspecialchars(strtoupper($role), ENT_QUOTES) ?></span>
+    <?php if ($currentName !== ''): ?>
+      <span class="name"> (<?= htmlspecialchars($currentName, ENT_QUOTES) ?>)</span>
+    <?php endif; ?>
     <span class="notif-wrapper">
-        <i class="fas fa-bell" id="notifBell"></i>
-        <span id="notifCount" <?= $pending > 0 ? '' : 'style="display:none;"' ?>>0</span>
+      <i class="fas fa-bell" id="notifBell"></i>
+      <span id="notifCount" <?= $pending > 0 ? '' : 'style="display:none;"' ?>><?= (int)$pending ?></span>
     </span>
-</h2>
+  </h2>
 
 
     <a href="dashboard.php"><i class="fas fa-tv"></i> Dashboard</a>
@@ -124,7 +139,7 @@ if ($role === 'admin') {
         <a href=""><i class="fas fa-calendar-alt"></i> Logs</a>
     <?php endif; ?>
 
-    <a href="index.html"><i class="fas fa-sign-out-alt"></i> Logout</a>
+    <a href="index.php"><i class="fas fa-sign-out-alt"></i> Logout</a>
 </div>
 <div class="container py-5">
 
