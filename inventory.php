@@ -671,6 +671,11 @@ if (isset($_SESSION['user_id'])) {
       <a href="physical_inventory.php" class="<?= $self === 'physical_inventory.php' ? 'active' : '' ?>">
         <i class="fas fa-warehouse"></i> Physical Inventory
       </a>
+          <a href="barcode-print.php<?php 
+        $b = (int)($_SESSION['current_branch_id'] ?? 0);
+        echo $b ? ('?branch='.$b) : '';?>" class="<?= $self === 'barcode-print.php' ? 'active' : '' ?>">
+        <i class="fas fa-barcode"></i> Barcode Labels
+    </a>
     </div>
   </div>
     <?php endif; ?>
@@ -996,131 +1001,6 @@ if (isset($_SESSION['user_id'])) {
   </div>
 <?php endif; ?>
 
-
-<!-- Manage Services -->
-<div class="card shadow-sm mb-4">
-  <div class="card-body">
-    <div class="d-flex justify-content-between align-items-center mb-3">
-      <h2 class="mb-0"><i class="fa fa-wrench" aria-hidden="true"></i> Manage Services</h2>
-      <button class="btn btn-create btn-sm" data-bs-toggle="modal" data-bs-target="#addServiceModal">
-        <i class="fa fa-wrench" aria-hidden="true"></i> Add Service
-      </button>
-    </div>
-
-    <?php if (isset($services_result) && $services_result->num_rows > 0): ?>
-      <div class="table-container">
-
-        <!-- Header Table -->
-        <table class="table table-header">
-          <thead>
-            <tr>
-              <th>SERVICE ID</th>
-              <th>SERVICE NAME</th>
-              <th>PRICE (₱)</th>
-              <th>DESCRIPTION</th>
-              <th>ACTION</th>
-            </tr>
-          </thead>
-        </table>
-
-        <!-- Scrollable Body -->
-        <div class="table-body scrollable-list">
-          <table class="table table-body-table">
-            <tbody>
-              <?php while ($service = $services_result->fetch_assoc()): ?>
-                <tr>
-                  <td><?= htmlspecialchars($service['service_id']) ?></td>
-                  <td><?= htmlspecialchars($service['service_name']) ?></td>
-                  <td><?= number_format($service['price'], 2) ?></td>
-                  <td><?= htmlspecialchars($service['description']) ?: '<em>No description</em>' ?></td>
-                  <td class="text-center">
-                    <div class="action-buttons">
-                      <button onclick='openEditServiceModal(<?= json_encode($service) ?>)' class="btn-edit">
-                        <i class="fas fa-edit"></i>
-                      </button>
-                      <!-- Archive Service -->
-                        <form id="archiveServiceForm-<?= $service['service_id'] ?>" method="POST" style="display:inline-block;">
-                          <input type="hidden" name="service_id" value="<?= $service['service_id'] ?>">
-                            <input type="hidden" name="archive_service" value="1">
-                          <button
-                            type="button"
-                            name="archive_service"
-                            class="btn-archive-unique"
-                            data-archive-type="service"
-                            data-archive-name="<?= htmlspecialchars($service['service_name']) ?>"
-                          >
-                            <i class="fas fa-archive"></i>
-                          </button>
-                        </form>
-                    </div>
-                  </td>
-                </tr>
-              <?php endwhile; ?>
-            </tbody>
-          </table>
-        </div>
-      </div>
-    <?php else: ?>
-      <div class="text-center text-muted py-4">
-        <i class="bi bi-info-circle fs-4 mb-2"></i>
-        No services available for this branch.
-      </div>
-    <?php endif; ?>
-  </div>
-</div>
-
-<!-- ======================= ADD SERVICE MODAL ======================= -->
-<div class="modal fade" id="addServiceModal" tabindex="-1" aria-labelledby="addServiceModalLabel" aria-hidden="true">
-  <div class="modal-dialog modal-dialog-centered">
-    <div class="modal-content border-0 shadow-lg">
-      <form id="addServiceForm" action="add_service.php" method="POST">
-        <div class="modal-header bg-primary text-white">
-          <h5 class="modal-title fw-bold" id="addServiceModalLabel">
-            <i class="bi bi-plus-circle me-2"></i> Add New Service
-          </h5>
-          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
-        </div>
-
-      <input type="hidden" name="branch_id" value="<?= htmlspecialchars($current_branch_id) ?>">
-
-
-        <div class="modal-body p-4">
-          <div class="mb-3">
-            <label for="serviceName" class="form-label fw-semibold">Service Name</label>
-            <input type="text" name="service_name" id="serviceName" class="form-control" placeholder="Enter service name" required>
-          </div>
-
-          <div class="mb-3">
-            <label for="servicePrice" class="form-label fw-semibold">Price (₱)</label>
-            <input type="number" step="0.01" name="price" id="servicePrice" class="form-control" placeholder="Enter price" required>
-          </div>
-
-          <div class="mb-3">
-            <label for="serviceDescription" class="form-label fw-semibold">Description</label>
-            <textarea name="description" id="serviceDescription" class="form-control" rows="3" placeholder="Optional"></textarea>
-          </div>
-
-          <!-- Inline confirmation area -->
-          <div id="confirmSectionService" class="alert alert-warning mt-3 d-none">
-            <p id="confirmMessageService">Are you sure you want to save this service?</p>
-            <div class="d-flex justify-content-end gap-2">
-              <button type="button" class="btn btn-secondary btn-sm" id="cancelConfirmService">Cancel</button>
-              <button type="submit" class="btn btn-success btn-sm">Yes, Save Service</button>
-            </div>
-          </div>
-        </div>
-
-        <div class="modal-footer border-top-0">
-          <!-- Trigger confirmation -->
-          <button type="button" id="openConfirmService" class="btn btn-success fw-semibold">
-            <i class="bi bi-save me-1"></i> Save
-          </button>
-        </div>
-      </form>
-    </div>
-  </div>
-</div>
-
 <!-- ======================= ADD PRODUCT MODAL ======================= -->
 <div class="modal fade" id="addProductModal" tabindex="-1" aria-labelledby="addProductModalLabel" aria-hidden="true">
   <div class="modal-dialog modal-lg">
@@ -1185,39 +1065,47 @@ if (isset($_SESSION['user_id'])) {
             <!-- Price & Markup -->
             <div class="col-md-6">
               <label for="price" class="form-label">Price</label>
-              <input type="number" class="form-control" id="price" name="price" step="0.01" required>
+              <input type="number" class="form-control" id="price" name="price"
+                    step="0.01" min="0" inputmode="decimal" required>
             </div>
 
             <div class="col-md-6">
               <label for="markupPrice" class="form-label">Markup (%)</label>
-              <input type="number" class="form-control" id="markupPrice" name="markup_price" step="0.01" required>
+              <input type="number" class="form-control" id="markupPrice" name="markup_price"
+                    step="0.01" min="0" inputmode="decimal" required>
             </div>
 
             <div class="col-md-6">
               <label for="retailPrice" class="form-label">Retail Price</label>
-              <input type="number" class="form-control" id="retailPrice" name="retail_price" readonly>
+              <input type="number" class="form-control" id="retailPrice" name="retail_price"
+                    step="0.01" min="0" inputmode="decimal" readonly>
             </div>
 
             <!-- Other product fields -->
             <div class="col-md-6">
               <label for="ceilingPoint" class="form-label">Ceiling Point</label>
-              <input type="number" class="form-control" id="ceilingPoint" name="ceiling_point" required>
+              <input type="number" class="form-control" id="ceilingPoint" name="ceiling_point"
+                    step="1" min="0" inputmode="numeric" required>
             </div>
 
             <div class="col-md-6">
               <label for="criticalPoint" class="form-label">Critical Point</label>
-              <input type="number" class="form-control" id="criticalPoint" name="critical_point" required>
+              <input type="number" class="form-control" id="criticalPoint" name="critical_point"
+                    step="1" min="0" inputmode="numeric" required>
             </div>
 
             <div class="col-md-6">
               <label for="stocks" class="form-label">Stocks</label>
-              <input type="number" class="form-control" id="stocks" name="stocks" required>
+              <input type="number" class="form-control" id="stocks" name="stocks"
+                    step="1" min="0" inputmode="numeric" required>
             </div>
 
             <div class="col-md-6">
               <label for="vat" class="form-label">VAT (%)</label>
-              <input type="number" class="form-control" id="vat" name="vat" step="0.01" required>
+              <input type="number" class="form-control" id="vat" name="vat"
+                    step="0.01" min="0" inputmode="decimal" required>
             </div>
+
 
             <div class="col-md-6">
               <label for="expiration" class="form-label">Expiration Date</label>
@@ -1379,6 +1267,7 @@ if (isset($_SESSION['user_id'])) {
     </form>
   </div>
 </div>
+
 <!-- MODAL FOR BRAND -->
 <div class="modal fade" id="addBrandModal" tabindex="-1" aria-labelledby="addBrandModalLabel" aria-hidden="true">
   <div class="modal-dialog">
@@ -1438,6 +1327,7 @@ if (isset($_SESSION['user_id'])) {
         </div>
       </div>
     </div>
+
 <!-- Edit Product Modal -->
 <div class="modal fade" id="editProductModal" tabindex="-1" aria-labelledby="editProductModalLabel" aria-hidden="true">
   <div class="modal-dialog modal-lg">
@@ -1491,47 +1381,56 @@ if (isset($_SESSION['user_id'])) {
   </select>
 </div>
 
-
             <!-- Price -->
             <div class="col-md-6">
               <label class="form-label">Price</label>
-              <input type="number" step="0.01" class="form-control" id="edit_price" name="price" required>
+              <input type="number" step="0.01" min="0" inputmode="decimal"
+                    class="form-control" id="edit_price" name="price" required>
             </div>
 
             <!-- Markup -->
             <div class="col-md-6">
               <label class="form-label">Markup (%)</label>
-              <input type="number" step="0.01" class="form-control" id="edit_markup" name="markup_price" required>
+              <input type="number" step="0.01" min="0" inputmode="decimal"
+                    class="form-control" id="edit_markup" name="markup_price" required>
             </div>
 
             <!-- Retail Price (Readonly) -->
             <div class="col-md-6">
               <label class="form-label">Retail Price</label>
-              <input type="number" class="form-control" id="edit_retail_price" name="retail_price" readonly>
+              <input type="number" step="0.01" min="0" inputmode="decimal"
+                    class="form-control" id="edit_retail_price" name="retail_price" readonly>
             </div>
 
             <!-- Ceiling Point -->
             <div class="col-md-6">
               <label class="form-label">Ceiling Point</label>
-              <input type="number" class="form-control" id="edit_ceiling_point" name="ceiling_point" required>
+              <input type="number" step="1" min="0" inputmode="numeric"
+                    class="form-control" id="edit_ceiling_point" name="ceiling_point" required>
             </div>
 
             <!-- Critical Point -->
             <div class="col-md-6">
               <label class="form-label">Critical Point</label>
-              <input type="number" class="form-control" id="edit_critical_point" name="critical_point" required>
-            </div>
-
-            <!-- Stock -->
-            <div class="col-md-6">
-              <label class="form-label">Stock</label>
-              <input type="number" class="form-control" id="edit_stock" name="stock" disabled>
+              <input type="number" step="1" min="0" inputmode="numeric"
+                    class="form-control" id="edit_critical_point" name="critical_point" required>
             </div>
 
             <!-- VAT -->
             <div class="col-md-6">
               <label class="form-label">VAT (%)</label>
-              <input type="number" step="0.01" class="form-control" id="edit_vat" name="vat" required>
+              <input type="number" step="0.01" min="0" inputmode="decimal"
+                    class="form-control" id="edit_vat" name="vat" required>
+            </div>
+
+            <div class="col-md-6">
+            <label class="form-label">Stock</label>
+            <input type="number"
+                  class="form-control"
+                  id="edit_stock"
+                  name="stock"
+                  value=""
+                  disabled>
             </div>
 
             <!-- Expiration Date -->
@@ -1858,31 +1757,68 @@ document.addEventListener('DOMContentLoaded', function () {
 </script>
 
 <script>
-  function openEditModal(id, name, category, price, stock, markup_price, ceiling_point, critical_point, branch_id) {
-  document.getElementById('edit_product_id').value = id;
-  document.getElementById('edit_product_name').value = name;
-  document.getElementById('edit_category').value = category;
-  document.getElementById('edit_price').value = price;
-  document.getElementById('edit_markup').value = markup_price;
-  document.getElementById('edit_retail_price').value = (parseFloat(price) + (parseFloat(price) * (parseFloat(markup_price) / 100))).toFixed(2);
-  document.getElementById('edit_ceiling_point').value = ceiling_point;
-  document.getElementById('edit_critical_point').value = critical_point;
-  document.getElementById('edit_stock').value = stock;
+function openEditModal(
+  id, name, category, price, stock, markup_price, ceiling_point, critical_point, branch_id
+) {
+  const need = [
+    "edit_product_id","edit_product_name","edit_category","edit_price",
+    "edit_markup","edit_retail_price","edit_ceiling_point",
+    "edit_critical_point","edit_branch_id","edit_branch" // edit_stock optional
+  ];
 
-  // ✅ Set branch_id correctly
-  document.getElementById('edit_branch_id').value = branch_id;
+  const missing = need.filter(x => !document.getElementById(x));
+  if (missing.length) console.error("Edit modal missing element IDs:", missing);
 
-  // ✅ Set the branch dropdown visually too (even if it's disabled)
-  const branchDropdown = document.getElementById('edit_branch');
-  if (branchDropdown) {
-    branchDropdown.value = branch_id;
-  }
+  const setVal = (id, val) => {
+    const el = document.getElementById(id);
+    if (el) el.value = (val ?? "").toString();
+  };
 
-  // Show the modal
-  const editModal = new bootstrap.Modal(document.getElementById('editProductModal'));
-  editModal.show();
+  setVal("edit_product_id", id);
+  setVal("edit_product_name", name);
+  setVal("edit_category", category);
+  setVal("edit_price", price);
+  setVal("edit_markup", markup_price);
+
+  // calculate retail = price + price * (markup / 100)
+  const p  = parseFloat(price || 0);
+  const mu = parseFloat(markup_price || 0);
+  const rp = p + (p * (mu / 100));
+  setVal("edit_retail_price", Number.isFinite(rp) ? rp.toFixed(2) : "0.00");
+
+  setVal("edit_ceiling_point", ceiling_point);
+  setVal("edit_critical_point", critical_point);
+
+  const stockEl = document.getElementById("edit_stock");
+  if (stockEl) stockEl.value = stock;
+
+  setVal("edit_branch_id", branch_id);
+  const branchDropdown = document.getElementById("edit_branch");
+  if (branchDropdown) branchDropdown.value = branch_id;
+
+  const modalEl = document.getElementById("editProductModal");
+  if (!modalEl) { console.error("editProductModal not found"); return; }
+  new bootstrap.Modal(modalEl).show();
 }
+
+// 🚫 Prevent typing "-" or "+" in Edit modal numeric fields
+document.addEventListener("DOMContentLoaded", function () {
+  const blockKeys = e => {
+    if (["-","+"].includes(e.key)) e.preventDefault();
+  };
+
+  const ids = [
+    "edit_price","edit_markup","edit_retail_price",
+    "edit_ceiling_point","edit_critical_point","edit_vat"
+  ];
+  ids.forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.addEventListener("keydown", blockKeys);
+  });
+});
 </script>
+
 <script>
 // Accept a single service object
 function openEditServiceModal(service) {
@@ -1946,6 +1882,65 @@ document.addEventListener('DOMContentLoaded', function () {
     markupInput.addEventListener('input', calculateRetail);
 });
 </script>
+
+
+
+<script>
+/** Prevent negative/invalid characters and auto-clamp < 0 to 0 */
+(function () {
+  const ids = ["price","markupPrice","retailPrice","ceilingPoint","criticalPoint","stocks","vat"];
+
+  function blockKeys(e) {
+    // Disallow minus, plus, and exponent chars on number inputs
+    if (["-","+","e","E"].includes(e.key)) e.preventDefault();
+  }
+  function clampNonNegative(el) {
+    const v = el.value.trim();
+    if (v === "") return; // allow empty while typing
+    const num = Number(v);
+    if (isNaN(num) || num < 0) el.value = "0";
+  }
+  function attach(id) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.addEventListener("keydown", blockKeys);
+    el.addEventListener("input", () => {
+      // If user pasted a negative, clamp on input
+      if (el.value.includes("-")) el.value = el.value.replace("-", "");
+      clampNonNegative(el);
+    });
+    el.addEventListener("blur", () => clampNonNegative(el));
+  }
+  ids.forEach(attach);
+
+  // Guard the Add Product "Save" click too
+  const addBtn = document.getElementById("openConfirmProduct");
+  const addForm = document.getElementById("addProductForm");
+  if (addBtn && addForm) {
+    addBtn.addEventListener("click", () => {
+      const fields = ids.map(id => document.getElementById(id)).filter(Boolean);
+      for (const f of fields) {
+        if (f.value === "") continue; // let HTML5 required handle empties
+        const n = Number(f.value);
+        if (isNaN(n) || n < 0) {
+          alert("Negative values are not allowed.");
+          f.focus();
+          throw new Error("Blocked negative");
+        }
+      }
+      // extra logical check
+      const crit = Number((document.getElementById("criticalPoint")||{}).value || 0);
+      const ceil = Number((document.getElementById("ceilingPoint")||{}).value || 0);
+      if (crit > ceil) {
+        alert("❌ Critical Point cannot be greater than Ceiling Point.");
+        (document.getElementById("criticalPoint")||{}).focus?.();
+        throw new Error("Blocked invalid thresholds");
+      }
+    });
+  }
+})();
+</script>
+
 <script>
 (() => {
   const modalEl   = document.getElementById('transferModal');

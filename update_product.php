@@ -8,6 +8,65 @@ if (!$branch_id) {
 
 include 'config/db.php';
 
+$product_id    = (int)($_POST['product_id'] ?? 0);
+$branch_id     = (int)($_POST['branch_id'] ?? 0);
+$name          = trim($_POST['product_name'] ?? '');
+$category      = trim($_POST['category'] ?? '');
+
+// Numbers
+$price         = isset($_POST['price']) ? (float)$_POST['price'] : null;
+$markup        = isset($_POST['markup_price']) ? (float)$_POST['markup_price'] : null;
+// Don't trust client retail; recompute
+$ceiling       = isset($_POST['ceiling_point']) ? (int)$_POST['ceiling_point'] : null;
+$critical      = isset($_POST['critical_point']) ? (int)$_POST['critical_point'] : null;
+$vat           = isset($_POST['vat']) ? (float)$_POST['vat'] : null;
+
+$nums = [
+  'price'          => $price,
+  'markup_price'   => $markup,
+  'ceiling_point'  => $ceiling,
+  'critical_point' => $critical,
+  'vat'            => $vat,
+];
+
+foreach ($nums as $k => $v) {
+  if ($v === null || !is_numeric($v) || $v < 0) {
+    header("Location: inventory.php?up=error");
+    exit;
+  }
+}
+
+// Logical rule
+if ($critical > $ceiling) {
+  header("Location: inventory.php?up=error");
+  exit;
+}
+
+// Recompute retail on server
+$retail = $price + ($price * ($markup / 100));
+if (!is_finite($retail) || $retail < 0) {
+  header("Location: inventory.php?up=error");
+  exit;
+}
+
+// Proceed with UPDATE (adjust table/columns as per your schema)
+$stmt = $conn->prepare("
+  UPDATE products
+  SET product_name = ?, category = ?, price = ?, markup_price = ?,
+      ceiling_point = ?, critical_point = ?, vat = ?
+  WHERE product_id = ?
+  LIMIT 1
+");
+$stmt->bind_param(
+  "ssddiiii",
+  $name, $category, $price, $markup, $ceiling, $critical, $vat, $product_id
+);
+$ok = $stmt->execute();
+$stmt->close();
+
+header("Location: inventory.php?" . ($ok ? "up=updated" : "up=error"));
+exit;
+
 function logAction($conn, $action, $details, $user_id = null, $branch_id = null) {
     if (!$user_id && isset($_SESSION['user_id'])) {
         $user_id = $_SESSION['user_id'];
