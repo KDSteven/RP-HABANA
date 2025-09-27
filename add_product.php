@@ -5,6 +5,45 @@ include 'config/db.php';
 ini_set('display_errors', 1);
 error_reporting(E_ALL);
 
+$price         = isset($_POST['price']) ? (float)$_POST['price'] : null;
+$markup        = isset($_POST['markup_price']) ? (float)$_POST['markup_price'] : null;
+$retail        = isset($_POST['retail_price']) ? (float)$_POST['retail_price'] : null;
+$ceiling       = isset($_POST['ceiling_point']) ? (int)$_POST['ceiling_point'] : null;
+$critical      = isset($_POST['critical_point']) ? (int)$_POST['critical_point'] : null;
+$stocks        = isset($_POST['stocks']) ? (int)$_POST['stocks'] : null;
+$vat           = isset($_POST['vat']) ? (float)$_POST['vat'] : null;
+
+$nums = [
+  'price'          => $price,
+  'markup_price'   => $markup,
+  'retail_price'   => $retail,
+  'ceiling_point'  => $ceiling,
+  'critical_point' => $critical,
+  'stocks'         => $stocks,
+  'vat'            => $vat,
+];
+
+foreach ($nums as $k => $v) {
+  if ($v === null || !is_numeric($v) || $v < 0) {
+    // redirect with a flash toast
+    header("Location: inventory.php?ap=error");
+    exit;
+  }
+}
+
+// Logical guard
+if ($critical > $ceiling) {
+  header("Location: inventory.php?ap=error");
+  exit;
+}
+
+// Optionally recompute retail to avoid trusting client value
+$retail = $price + ($price * ($markup / 100));
+if ($retail < 0) { // paranoia
+  header("Location: inventory.php?ap=error");
+  exit;
+}
+
 /**
  * Logging helper (kept from your version)
  */

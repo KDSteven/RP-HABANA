@@ -533,6 +533,12 @@ document.addEventListener('DOMContentLoaded', () => {
   // ======= Toast helper =======
   function showToast(title, message, type='primary', delay=3000) {
     let container = document.querySelector('.toast-container');
+    // Safety: auto-create container if missing
+    if (!container) {
+      container = document.createElement('div');
+      container.className = 'toast-container position-fixed top-0 end-0 p-3';
+      document.body.appendChild(container);
+    }
     const toastEl = document.createElement('div');
     toastEl.className = `toast text-bg-${type} border-0`;
     toastEl.setAttribute('role','alert');
@@ -551,9 +557,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // ======= Expiration helpers & settings =======
   const NEAR_EXPIRY_DAYS = 365; // change to your preferred window
+  const shownExpiryToasts = new Set(); // de-dup for this page life
 
-  // De-dup toasts while the page is open
-  const shownExpiryToasts = new Set();
+  // ---- Stable keys for de-dup (prevents first-action duplicate) ----
+  function canonicalName(s) {
+    return (s || 'Product').trim().replace(/\s+/g, ' ').toLowerCase();
+  }
+  function keyFor(name, norm) {
+    return `${canonicalName(name)}|${norm.y}-${String(norm.m).padStart(2,'0')}-${String(norm.d).padStart(2,'0')}`;
+  }
 
   function normalizeExpString(s) {
     if (!s) return null;
@@ -565,20 +577,23 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!y || !m || !d) return null;
     return { y, m, d };
   }
-
   function makeDateEndOfDay({ y, m, d }) {
     return new Date(y, m - 1, d, 23, 59, 59, 999);
   }
-
   function daysUntil(fromDate, toDate) {
     const msPerDay = 24 * 60 * 60 * 1000;
     return Math.ceil((toDate.getTime() - fromDate.getTime()) / msPerDay);
   }
 
+  // ---- FIXED: adds to shownExpiryToasts so follow-up scan won't duplicate ----
   function maybeToastExpiry(expStr, name) {
     if (!expStr) return;
     const norm = normalizeExpString(expStr);
     if (!norm) return;
+
+    const key = keyFor(name, norm);
+    if (shownExpiryToasts.has(key)) return;
+
     const today = new Date(); today.setHours(0,0,0,0);
     const expDate = makeDateEndOfDay(norm);
     const diffDays = daysUntil(today, expDate);
@@ -586,9 +601,11 @@ document.addEventListener('DOMContentLoaded', () => {
     if (diffDays <= 0) {
       showToast('<i class="fas fa-skull-crossbones"></i> Expired Product',
                 `"${name || 'Product'}" has already expired!`, 'danger');
+      shownExpiryToasts.add(key);
     } else if (diffDays <= NEAR_EXPIRY_DAYS) {
       showToast('<i class="fas fa-exclamation-triangle"></i> Near Expiration',
                 `"${name || 'Product'}" is near expiration (${diffDays} days left)`, 'warning');
+      shownExpiryToasts.add(key);
     }
   }
 
@@ -601,12 +618,13 @@ document.addEventListener('DOMContentLoaded', () => {
       const norm = normalizeExpString(raw);
       if (!norm) return;
 
-      const expDate = makeDateEndOfDay(norm);
       const productName = row.querySelector('td')?.textContent?.trim() || 'Product';
-      const key = `${productName}|${norm.y}-${String(norm.m).padStart(2,'0')}-${String(norm.d).padStart(2,'0')}`;
+      const key = keyFor(productName, norm);
       if (shownExpiryToasts.has(key)) return;
 
+      const expDate = makeDateEndOfDay(norm);
       const diffDays = daysUntil(today, expDate);
+
       if (diffDays <= 0) {
         showToast('<i class="fas fa-skull-crossbones"></i> Expired Product',
                   `"${productName}" has already expired!`, 'danger');
@@ -619,12 +637,39 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // Helpers to diff cart rows by name (for barcode instant toast)
-  function getCartExpirableNames() {
-    return Array.from(document.querySelectorAll('tr[data-expiration]'))
-      .map(row => (row.querySelector('td')?.textContent?.trim() || 'Product'))
-      .filter(Boolean);
+  // ======= Helpers to diff cart by name / parse HTML (for instant barcode toast) =======
+  function getCartNameCountsFromDOM() {
+    const counts = new Map();    // canonical name -> count
+    const display = new Map();   // canonical name -> last display name seen
+    const expByName = new Map(); // canonical name -> one expiration date (string)
+    document.querySelectorAll('tr[data-expiration]').forEach(row => {
+      const disp = row.querySelector('td')?.textContent?.trim() || 'Product';
+      const cn = canonicalName(disp);
+      counts.set(cn, (counts.get(cn) || 0) + 1);
+      display.set(cn, disp);
+      const exp = row.getAttribute('data-expiration') || '';
+      if (exp && !expByName.has(cn)) expByName.set(cn, exp);
+    });
+    return { counts, display, expByName };
   }
+
+  function getCartNameCountsFromHTML(html) {
+    const tpl = document.createElement('template');
+    tpl.innerHTML = (html || '').trim();
+    const counts = new Map();
+    const display = new Map();
+    const expByName = new Map();
+    tpl.content.querySelectorAll('tr[data-expiration]').forEach(row => {
+      const disp = row.querySelector('td')?.textContent?.trim() || 'Product';
+      const cn = canonicalName(disp);
+      counts.set(cn, (counts.get(cn) || 0) + 1);
+      display.set(cn, disp);
+      const exp = row.getAttribute('data-expiration') || '';
+      if (exp && !expByName.has(cn)) expByName.set(cn, exp);
+    });
+    return { counts, display, expByName };
+  }
+
   function findRowByName(name) {
     const rows = document.querySelectorAll('tr[data-expiration]');
     for (const row of rows) {
@@ -722,30 +767,9 @@ document.addEventListener('DOMContentLoaded', () => {
     if (totalDueText)    totalDueText.textContent    = `Total Due: ₱${due.toFixed(2)}`;
   }
 
-  // Wire up payment inputs once
-  (function attachPaymentInputs(){
-    const discountInput = document.getElementById('discountInput');
-    const discountType  = document.getElementById('discountType');
-    const paymentInput  = document.getElementById('paymentInput');
-
-    discountInput?.addEventListener('input', updatePaymentComputed);
-    discountType?.addEventListener('change', updatePaymentComputed);
-    paymentInput?.addEventListener('input', updatePaymentComputed);
-
-    // Quick cash adds to current payment value
-    document.querySelectorAll('.quick-cash').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const inc = parseFloat(btn.dataset.value || '0') || 0;
-        const cur = parseFloat(paymentInput.value || '0') || 0;
-        paymentInput.value = (cur + inc).toFixed(2);
-        updatePaymentComputed();
-      });
-    });
-  })();
-
   // ======= Update cart HTML (AJAX path) =======
   function updateCart(html) {
-    const cartSection = document.getElementById('cartSection');
+    const cartSection = document.getElementById('cartSection') || document.querySelector('.cart-section');
     if (cartSection) cartSection.innerHTML = html;
 
     attachCartButtons();
@@ -753,7 +777,7 @@ document.addEventListener('DOMContentLoaded', () => {
     attachCancelOrder();
     syncPaymentModalTotals();
 
-    // Ensure rows exist before scanning for expiration
+    // After render, a general scan (de-dup prevents duplicates)
     (window.queueMicrotask ? queueMicrotask : fn => setTimeout(fn, 0))(() => checkCartExpiration());
   }
 
@@ -763,10 +787,10 @@ document.addEventListener('DOMContentLoaded', () => {
       btn.onclick = () => {
         const type = btn.dataset.type;
 
-        // 🔔 Immediate toast for products on click (uses button's data-expiration)
+        // Instant expiry toast on each click (from button dataset)
         if (type === 'product') {
           const expStr = btn.dataset.expiration || '';
-          const name   = btn.dataset.name || btn.textContent.trim();
+          const name   = btn.dataset.name || btn.textContent.trim() || 'Product';
           maybeToastExpiry(expStr, name);
         }
 
@@ -869,7 +893,7 @@ document.addEventListener('DOMContentLoaded', () => {
     new bootstrap.Modal(document.getElementById('paymentModal')).show();
   });
 
-  // ======= Barcode input focus: do not steal focus if a modal/input is active =======
+  // ======= Barcode input focus + INSTANT expiry toasts =======
   (function barcodeFocus() {
     const barcodeInput = document.getElementById('barcodeInput');
     function isModalOpen(){ return !!document.querySelector('.modal.show'); }
@@ -883,15 +907,15 @@ document.addEventListener('DOMContentLoaded', () => {
     window.addEventListener('click', tryFocusScanner);
     window.addEventListener('keydown', tryFocusScanner);
 
-    // Submit barcode on Enter (with instant toast for newly-added items)
+    // Submit barcode on Enter (with INSTANT expiry toast via HTML diff)
     barcodeInput?.addEventListener('keydown', e => {
       if (e.key === 'Enter') {
         e.preventDefault();
         const code = (barcodeInput.value || '').trim();
         if (!code) return;
 
-        // Snapshot current names to detect newly-added rows after update
-        const beforeNames = new Set(getCartExpirableNames());
+        // Snapshot counts BEFORE (per product name)
+        const beforeSnap = getCartNameCountsFromDOM();
 
         fetch('pos_add_barcode.php', {
           method:'POST',
@@ -901,29 +925,28 @@ document.addEventListener('DOMContentLoaded', () => {
         .then(r=>r.json())
         .then(data => {
           if (data.success) {
-            const cartBox = document.querySelector('.cart-section');
+            // INSTANT: diff the response HTML (no DOM write yet)
+            const afterSnap = getCartNameCountsFromHTML(data.cart_html);
+
+            // Find which product name(s) increased -> toast for those immediately
+            afterSnap.counts.forEach((afterCount, cname) => {
+              const beforeCount = beforeSnap.counts.get(cname) || 0;
+              if (afterCount > beforeCount) {
+                const disp = afterSnap.display.get(cname) || 'Product';
+                const exp  = afterSnap.expByName.get(cname) || '';
+                maybeToastExpiry(exp, disp); // instant expiry toast
+              }
+            });
+
+            // Now update DOM and wire events
+            const cartBox = document.getElementById('cartSection') || document.querySelector('.cart-section');
             if (cartBox) cartBox.innerHTML = data.cart_html;
 
             attachCartButtons(); attachQuickAddButtons(); attachCancelOrder();
             syncPaymentModalTotals();
 
-            // Detect newly-added items by name and toast immediately
-            (window.queueMicrotask ? queueMicrotask : fn => setTimeout(fn, 0))(() => {
-              const afterNames = new Set(getCartExpirableNames());
-              const newlyAdded = [];
-              afterNames.forEach(n => { if (!beforeNames.has(n)) newlyAdded.push(n); });
-
-              if (newlyAdded.length) {
-                newlyAdded.forEach(n => {
-                  const row = findRowByName(n);
-                  const expStr = row?.getAttribute('data-expiration') || '';
-                  maybeToastExpiry(expStr, n);
-                });
-              }
-
-              // Also run the general check (de-dup prevents spam)
-              checkCartExpiration();
-            });
+            // Post-render general scan (dedup set prevents duplicates)
+            (window.queueMicrotask ? queueMicrotask : fn => setTimeout(fn, 0))(() => checkCartExpiration());
 
             showToast('<i class="fas fa-barcode"></i> Barcode Scan','Product added to cart','success');
           } else {

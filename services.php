@@ -363,7 +363,9 @@ $toolsOpen = ($self === 'backup_admin.php' || $isArchive);
 
           <div class="mb-3">
             <label for="servicePrice" class="form-label fw-semibold">Price (₱)</label>
-            <input type="number" step="0.01" name="price" id="servicePrice" class="form-control" placeholder="Enter price" required>
+            <!-- Add Service price -->
+            <input type="number" step="0.01" min="0" inputmode="decimal"
+                  name="price" id="servicePrice" class="form-control" required>
           </div>
 
           <div class="mb-3">
@@ -413,7 +415,9 @@ $toolsOpen = ($self === 'backup_admin.php' || $isArchive);
 
           <div class="mb-3">
             <label for="editServicePrice" class="form-label fw-semibold">Price (₱)</label>
-            <input type="number" step="0.01" name="price" id="editServicePrice" class="form-control" required>
+            <!-- Edit Service price -->
+            <input type="number" step="0.01" min="0" inputmode="decimal"
+                  name="price" id="editServicePrice" class="form-control" required>
           </div>
 
           <div class="mb-3">
@@ -578,5 +582,50 @@ document.addEventListener('DOMContentLoaded', function () {
   history.replaceState({}, '', cleanUrl);
 });
 </script>
+
+<script>
+/* Service price guards: block -, +, e/E; clamp negatives/pastes; validate on submit */
+(function () {
+  const ids = ["servicePrice", "editServicePrice"];
+
+  function blockKeys(e) {
+    if (["-", "+", "e", "E"].includes(e.key)) e.preventDefault();
+  }
+
+  function sanitize(el) {
+    // strip forbidden chars (handles paste) and clamp to 0+
+    const cleaned = (el.value || "").replace(/[+\-eE]/g, "");
+    if (cleaned !== el.value) el.value = cleaned;
+    const n = Number(el.value);
+    if (!Number.isFinite(n) || n < 0) el.value = "0";
+  }
+
+  ids.forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.addEventListener("keydown", blockKeys);
+    el.addEventListener("input", () => sanitize(el));
+    el.addEventListener("paste", () => setTimeout(() => sanitize(el)));
+    el.addEventListener("blur", () => sanitize(el));
+  });
+
+  // Submit-time safety net
+  const addForm  = document.getElementById("addServiceForm");
+  const editForm = document.getElementById("editServiceForm");
+  [[addForm, "servicePrice"], [editForm, "editServicePrice"]].forEach(([form, fieldId]) => {
+    if (!form) return;
+    form.addEventListener("submit", (e) => {
+      const el = document.getElementById(fieldId);
+      const n  = Number(el?.value ?? "");
+      if (!Number.isFinite(n) || n < 0) {
+        e.preventDefault();
+        alert("Price must be 0 or higher.");
+        el?.focus();
+      }
+    });
+  });
+})();
+</script>
+
 </body>
 </html>

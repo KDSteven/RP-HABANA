@@ -374,6 +374,9 @@ if (isset($_SESSION['user_id'])) {
         <?php if($role==='admin'): ?>
             <form method="GET" class="d-flex gap-2">
                 <select name="branch" class="form-select" onchange="this.form.submit()">
+                      <option value="" disabled <?= empty($selected_branch) ? 'selected' : '' ?> class="text-muted">
+                          Choose Branch
+                      </option>
                     <?php
                     $branches = $conn->query("SELECT branch_id, branch_name FROM branches");
                     while($b=$branches->fetch_assoc()):

@@ -1,3 +1,32 @@
+/* Keep input-group children on one line */
+.accounts-page .input-group {
+  display: flex;               /* ensure flex context */
+  align-items: stretch;
+}
+
+/* Don't let inputs inside input-group take full width or add margins */
+.accounts-page .input-group > .form-control {
+  width: auto;                 /* override global 100% */
+  flex: 1 1 auto;              /* grow to available space */
+  margin-bottom: 0 !important; /* kill global mb */
+  border-top-right-radius: 0;  /* optional: seamless join */
+  border-bottom-right-radius: 0;
+}
+
+/* Proper sizing for the addon (eye icon) */
+.accounts-page .input-group > .input-group-text {
+  flex: 0 0 auto;
+  margin-bottom: 0 !important;
+  border-left: 0;              /* optional: remove double border */
+  border-top-left-radius: 0;   /* optional: seamless join */
+  border-bottom-left-radius: 0;
+  cursor: pointer;
+  display: flex;               /* center the icon nicely */
+  align-items: center;
+  justify-content: center;
+  padding: .375rem .75rem;     /* Bootstrap-ish */
+}
+
 /* ---------------- Modal overlay ---------------- */
 .accounts-page .modal,
 .accounts-page .edit-modal {
@@ -8,12 +37,20 @@
     background: rgba(0,0,0,0.6);
     z-index: 9999;
     overflow-y: auto;
-    padding: 40px 20px;
+    padding: 40px 50px;
     backdrop-filter: blur(3px);
     justify-content: center;
     align-items: center;
     animation: fadeIn 0.3s ease;
 }
+
+/* place after accounts.css */
+#createBranchModal .modal-header,
+#createBranchModal .modal-header .modal-title,
+#createBranchModal .modal-header i {
+  color: #fff !important;
+}
+
 
 /* Show modal */
 .accounts-page .modal.active,
@@ -40,6 +77,22 @@
     overflow-y: auto;
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
     color: #333;
+}
+
+#editModal {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  display: none; /* your toggle still controls this */
+  align-items: center;
+  justify-content: center;
+  background: rgba(0,0,0,0.5); /* backdrop */
+  z-index: 1050;
+}
+
+#editModal .modal-content {
+  max-height: 100vh;   /* don’t exceed viewport height */
+  overflow-y: auto;   /* scroll inside if too tall */
+  width: 700px;       /* optional fixed width */
 }
 
 .modal-footer button:hover,
