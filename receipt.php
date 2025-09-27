@@ -13,6 +13,7 @@ $sale_id = (int)$_GET['sale_id'];
 // ========================
 $stmt = $conn->prepare("
     SELECT s.sale_id, s.sale_date, s.total, s.payment, s.change_given, 
+           s.discount, s.discount_type, s.vat,
            b.branch_name, b.branch_location, b.branch_contact, b.branch_email,
            u.username AS staff_name
     FROM sales s
@@ -20,6 +21,7 @@ $stmt = $conn->prepare("
     LEFT JOIN users u ON s.processed_by = u.id
     WHERE s.sale_id = ?
 ");
+
 
 $stmt->bind_param("i", $sale_id);
 $stmt->execute();
@@ -56,6 +58,19 @@ $service_stmt = $conn->prepare("
 $service_stmt->bind_param("i", $sale_id);
 $service_stmt->execute();
 $services_result = $service_stmt->get_result();
+
+// Fetch current user's full name
+$currentName = '';
+if (isset($_SESSION['user_id'])) {
+    $stmt = $conn->prepare("SELECT name FROM users WHERE id = ? LIMIT 1");
+    $stmt->bind_param("i", $_SESSION['user_id']);
+    $stmt->execute();
+    $stmt->bind_result($fetchedName);
+    if ($stmt->fetch()) {
+        $currentName = $fetchedName;
+    }
+    $stmt->close();
+}
 
 ?>
 <!DOCTYPE html>
@@ -171,7 +186,8 @@ $services_result = $service_stmt->get_result();
   </div>
 
   <div class="info">
-    <p><strong>Cashier:</strong> <?= htmlspecialchars($sale['staff_name'] ?? 'N/A') ?></p>
+      <p><strong>Printed By:</strong> <?= htmlspecialchars($currentName ?: 'N/A') ?></p>
+     <p><strong>Cashier of Record:</strong> <?= htmlspecialchars($sale['staff_name'] ?? 'N/A') ?></p>
     <p><strong>Payment:</strong> ₱<?= number_format($sale['payment'], 2) ?></p>
     <p><strong>Change:</strong> ₱<?= number_format($sale['change_given'], 2) ?></p>
   </div>
@@ -214,12 +230,27 @@ $services_result = $service_stmt->get_result();
         </tr>
       <?php endif; ?>
     </tbody>
-    <tfoot>
-      <tr>
-        <td colspan="3">TOTAL</td>
-        <td>₱<?= number_format($sale['total'], 2) ?></td>
-      </tr>
-    </tfoot>
+   <tfoot>
+  <?php if ($sale['discount'] > 0): ?>
+  <tr>
+    <td colspan="3">Discount (<?= htmlspecialchars($sale['discount_type']) ?>)</td>
+    <td>-₱<?= number_format($sale['discount'], 2) ?></td>
+  </tr>
+  <?php endif; ?>
+
+  <?php if ($sale['vat'] > 0): ?>
+  <tr>
+    <td colspan="3">VAT</td>
+    <td>₱<?= number_format($sale['vat'], 2) ?></td>
+  </tr>
+  <?php endif; ?>
+
+  <tr>
+    <td colspan="3"><strong>GRAND TOTAL</strong></td>
+    <td><strong>₱<?= number_format($sale['total'] + $sale['vat'] - $sale['discount'], 2) ?></strong></td>
+  </tr>
+</tfoot>
+
   </table>
 
   <p class="thank-you">*** Thank you for your purchase! ***</p>

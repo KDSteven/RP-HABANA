@@ -7,9 +7,6 @@ if (!isset($_SESSION['role'])) {
     header("Location: index.php");
     exit;
 }
-if (empty($_SESSION['csrf_token'])) {
-    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
-}
 
 $user_id   = (int)($_SESSION['user_id'] ?? 0);
 $role      = $_SESSION['role'];
@@ -48,6 +45,138 @@ foreach ($_SESSION['cart'] as $item) {
     }
     $qty = max(0, (int)($item['qty'] ?? 0));
     $cartSubtotal += $price * $qty;
+}
+
+function checkoutCart($conn, $user_id, $branch_id, $payment, $discount = 0, $discount_type = 'amount') {
+    if (empty($_SESSION['cart'])) {
+        throw new Exception("Cart is empty.");
+    }
+
+    // ---------- 1. CALCULATE SUBTOTAL ----------
+    $subtotal = 0.0;
+    $totalVat = 0.0;
+
+    foreach ($_SESSION['cart'] as &$item) {
+        if ($item['type'] === 'product') {
+            $stmt = $conn->prepare("SELECT price, markup_price, vat FROM products WHERE product_id=?");
+            $stmt->bind_param("i", $item['product_id']);
+            $stmt->execute();
+            $prod = $stmt->get_result()->fetch_assoc();
+            $stmt->close();
+
+            $price = finalPrice($prod['price'] ?? 0, $prod['markup_price'] ?? 0);
+            $vatRate = (float)($prod['vat'] ?? 0);
+        } else { // service
+            $price = (float)$item['price'];
+            $vatRate = (float)($item['vat'] ?? 0);
+        }
+
+        $qty = (int)$item['qty'];
+        $lineSubtotal = $price * $qty;
+        $lineVat = $lineSubtotal * ($vatRate / 100);
+
+        // Save to item for later insert
+        $item['calculated_price'] = $price;
+        $item['calculated_vat'] = $lineVat;
+
+        $subtotal += $lineSubtotal;
+        $totalVat += $lineVat;
+    }
+
+    // ---------- 2. APPLY DISCOUNT ----------
+    $discount_value = 0.0;
+    if ($discount > 0) {
+        $discount_value = ($discount_type === 'percent')
+            ? $subtotal * ($discount / 100)
+            : min($discount, $subtotal);
+    }
+    $after_discount = $subtotal - $discount_value;
+
+    // ---------- 3. GRAND TOTAL ----------
+    $grand_total = $after_discount + $totalVat;
+
+    // ---------- 4. CHECK PAYMENT ----------
+    if ($payment < $grand_total) {
+        throw new Exception("Payment is less than total (₱" . number_format($grand_total, 2) . ")");
+    }
+    $change = $payment - $grand_total;
+
+    // ---------- 5. BEGIN TRANSACTION ----------
+    $conn->begin_transaction();
+    try {
+        // --- Insert sale ---
+        $stmt = $conn->prepare("
+            INSERT INTO sales 
+            (branch_id, total, discount, discount_type, vat, payment, change_given, processed_by, status, note)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'completed', ?)
+        ");
+        $stmt->bind_param("iddsddiss", $branch_id, $subtotal, $discount_value, $discount_type, $totalVat, $payment, $change, $user_id, $_POST['note']);
+        $stmt->execute();
+        $sale_id = $conn->insert_id;
+        $stmt->close();
+
+        // --- Insert items & update inventory ---
+        foreach ($_SESSION['cart'] as $item) {
+            if ($item['type'] === 'product') {
+                $pid = (int)$item['product_id'];
+                $qty = (int)$item['qty'];
+                $price = (float)$item['calculated_price'];
+                $vat = (float)$item['calculated_vat'];
+
+                // Update inventory
+                $upd = $conn->prepare("UPDATE inventory SET stock = stock - ? WHERE branch_id=? AND product_id=? AND stock >= ?");
+                $upd->bind_param("iiii", $qty, $branch_id, $pid, $qty);
+                $upd->execute();
+                if ($upd->affected_rows === 0) {
+                    $conn->rollback();
+                    throw new Exception("Not enough stock for product ID {$pid}.");
+                }
+                $upd->close();
+
+                // Insert sale item
+                $ins = $conn->prepare("INSERT INTO sales_items (sale_id, product_id, quantity, price, vat) VALUES (?, ?, ?, ?, ?)");
+                $ins->bind_param("iiidd", $sale_id, $pid, $qty, $price, $vat);
+                $ins->execute();
+                $ins->close();
+
+            } else { // service
+                $sid = (int)$item['service_id'];
+                $price = (float)$item['calculated_price'];
+                $vat = (float)$item['calculated_vat'];
+
+                $ins = $conn->prepare("INSERT INTO sales_services (sale_id, service_id, price, vat) VALUES (?, ?, ?, ?)");
+                $ins->bind_param("iidd", $sale_id, $sid, $price, $vat);
+                $ins->execute();
+                $ins->close();
+            }
+        }
+
+        $conn->commit();
+        $_SESSION['cart'] = []; // clear cart
+
+        return ['sale_id' => $sale_id, 'change' => $change, 'grand_total' => $grand_total];
+
+    } catch (Exception $e) {
+        $conn->rollback();
+        throw $e;
+    }
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['checkout'])) {
+    $payment = (float)($_POST['payment'] ?? 0);
+    $discount = (float)($_POST['discount'] ?? 0);
+    $discount_type = $_POST['discount_type'] ?? 'amount';
+
+    try {
+        $result = checkoutCart($conn, $user_id, $branch_id, $payment, $discount, $discount_type);
+        // Redirect to self with lastSale to show receipt (PRG pattern)
+        header("Location: pos.php?lastSale=" . $result['sale_id']);
+        
+        exit;
+    } catch (Exception $e) {
+        $errorMessage = $e->getMessage();
+        // Optionally show a toast on page reload
+    }
 }
 
 /** Near-expiration notifications (cart items) — cart-level banner */
@@ -93,10 +222,26 @@ while ($row = $result->fetch_assoc()) {
 }
 $stmt->close();
 
-/** Services list */
+/** Services list (filtered by branch) */
 $services = [];
-$res = $conn->query("SELECT * FROM services");
-while ($s = $res->fetch_assoc()) $services[] = $s;
+$branch_id = (int)($_SESSION['branch_id'] ?? 0);
+
+if ($branch_id > 0) {
+    $stmt = $conn->prepare("
+        SELECT * 
+        FROM services 
+        WHERE branch_id = ? 
+          AND archived = 0
+    ");
+    $stmt->bind_param("i", $branch_id);
+    $stmt->execute();
+    $result = $stmt->get_result();
+    while ($s = $result->fetch_assoc()) {
+        $services[] = $s;
+    }
+    $stmt->close();
+}
+
 
 /** Admin: pending password resets badge */
 $pendingResetsCount = 0;
@@ -219,6 +364,7 @@ if (isset($_SESSION['user_id'])) {
                     data-type="product"
                     data-id="<?= (int)$p['product_id'] ?>"
                     data-qty="1"
+                    
                     data-expiration="<?= htmlspecialchars($p['expiration_date'] ?? '', ENT_QUOTES) ?>"
                     data-name="<?= htmlspecialchars($p['product_name'], ENT_QUOTES) ?>">
               <?= htmlspecialchars($p['product_name'], ENT_QUOTES) ?>
@@ -268,10 +414,12 @@ if (isset($_SESSION['user_id'])) {
       </div>
 
       <form method="POST" id="paymentForm">
-        <div class="modal-body text-center" id="paymentModalBody"
-             data-subtotal="<?= number_format($cartSubtotal, 2, '.', '') ?>"
-             data-vat="<?= number_format($cartSubtotal * 0.12, 2, '.', '') ?>">
-          <h6 id="totalDueText">Total Due: ₱<?= number_format($cartSubtotal * 1.12, 2) ?></h6>
+       <div class="modal-body text-center" id="paymentModalBody"
+     data-subtotal="<?= number_format($cartSubtotal, 2, '.', '') ?>"
+     data-vat="<?= number_format($totalVat, 2, '.', '') ?>"
+     data-grandtotal="<?= number_format($cartGrandTotal, 2, '.', '') ?>">
+  <h6 id="totalDueText">Total Due: ₱<?= number_format($cartGrandTotal, 2) ?></h6>
+
 
           <!-- Discount -->
           <div class="d-flex gap-2 mt-2">
@@ -290,18 +438,37 @@ if (isset($_SESSION['user_id'])) {
           </div>
 
           <!-- Payment -->
-          <input type="hidden" name="csrf" value="<?= htmlspecialchars($_SESSION['csrf_token'], ENT_QUOTES) ?>">
           <input type="number" step="0.01" min="0" name="payment" id="paymentInput" class="form-control mt-3" placeholder="Enter cash received..." required>
+
+          <!-- Change Due -->
+          <h6 class="mt-2 text-success" id="displayChange"></h6>
+
+          <!-- Number Pad -->
+          <div class="number-pad mt-3">
+            <div class="d-grid gap-2" style="grid-template-columns: repeat(3, 1fr);">
+              <?php foreach ([1,2,3,4,5,6,7,8,9,0] as $num): ?>
+                <button type="button" class="btn btn-outline-dark num-btn" data-value="<?= $num ?>"><?= $num ?></button>
+              <?php endforeach; ?>
+              <button type="button" class="btn btn-danger num-btn" data-value="clear">C</button>
+              <button type="button" class="btn btn-warning num-btn" data-value="back">⌫</button>
+            </div>
+          </div>
+
+          <!-- Notes -->
+          <div class="mt-3">
+            <textarea name="note" id="paymentNote" class="form-control" rows="2" placeholder="Add a note (optional)..."></textarea>
+          </div>
         </div>
 
         <div class="modal-footer">
-          <button type="submit" name="checkout" class="btn btn-success w-100">Confirm Payment</button>
+          <button type="submit" name="checkout" id="checkout" class="btn btn-success w-100">Confirm Payment</button>
         </div>
       </form>
-
     </div>
   </div>
 </div>
+
+
 
 <!-- Receipt Modal -->
 <div class="modal fade" id="receiptModal" tabindex="-1">
@@ -347,6 +514,20 @@ if (isset($_SESSION['user_id'])) {
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script src="notifications.js"></script>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  const input = document.getElementById('paymentInput');
+  document.querySelectorAll('.num-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      let val = btn.dataset.value;
+      if(val === 'clear') input.value = '';
+      else if(val === 'back') input.value = input.value.slice(0, -1);
+      else input.value += val;
+    });
+  });
+});
+</script>
 <script>
 document.addEventListener('DOMContentLoaded', () => {
   // ======= Toast helper =======
@@ -754,6 +935,13 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     });
   })();
+<?php if(!empty($errorMessage)): ?>
+    showToast(
+        '<i class="fas fa-times-circle"></i> Payment Error',
+        '<?= addslashes($errorMessage) ?>',
+        'danger'
+    );
+    <?php endif; ?>
 
   // ======= Initial wire-up =======
   attachCartButtons();
@@ -763,6 +951,7 @@ document.addEventListener('DOMContentLoaded', () => {
   (window.queueMicrotask ? queueMicrotask : fn => setTimeout(fn, 0))(() => checkCartExpiration());
 });
 </script>
+
 
 </body>
 </html>

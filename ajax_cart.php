@@ -20,22 +20,29 @@ function findCartIndex(string $type, $id): int {
 }
 function computeTotals(): array {
     $subtotal = 0.0;
+    $totalVat  = 0.0;
+
     foreach ($_SESSION['cart'] as $item) {
         $qty   = (int)($item['qty'] ?? 0);
         $price = (float)($item['price'] ?? 0);
+        $vatRate = (float)($item['vat'] ?? 0); // default 12% if not set
+
         $subtotal += $price * $qty;
+        $totalVat += ($price * $qty) * ($vatRate / 100);
     }
-    $vat   = $subtotal * 0.12;
-    $grand = $subtotal + $vat;
+
+    $grand = $subtotal + $totalVat;
+
     return [
-        'raw' => ['subtotal'=>$subtotal, 'vat'=>$vat, 'grand'=>$grand],
+        'raw' => ['subtotal'=>$subtotal, 'vat'=>$totalVat, 'grand'=>$grand],
         'display' => [
             'subtotal' => number_format($subtotal, 2),
-            'vat'      => number_format($vat, 2),
+            'vat'      => number_format($totalVat, 2),
             'grand'    => number_format($grand, 2),
         ],
     ];
 }
+
 
 // -------- Parse input (JSON or form) --------
 $input = json_decode(file_get_contents('php://input'), true);
@@ -48,54 +55,60 @@ $response = ['success' => false, 'message' => '', 'cart_html' => '', 'totals' =>
 switch ($action) {
 
     case 'add_product': {
-        $pid = (int)($post['product_id'] ?? 0);
-        $qty = (int)($post['qty'] ?? 1);
-        if ($qty < 1) $qty = 1;
+    $pid = (int)($post['product_id'] ?? 0);
+    $qty = (int)($post['qty'] ?? 1);
+    if ($qty < 1) $qty = 1;
 
-        if ($pid <= 0 || empty($_SESSION['branch_id'])) {
-            $response['message'] = 'Invalid product or branch.';
-            break;
-        }
-
-        $stmt = $conn->prepare("
-            SELECT p.product_name, p.price, p.markup_price, IFNULL(i.stock,0) AS stock,
-                   p.expiration_date, p.category
-            FROM products p
-            JOIN inventory i ON p.product_id = i.product_id
-            WHERE p.product_id = ? AND i.branch_id = ?
-            LIMIT 1
-        ");
-        $stmt->bind_param("ii", $pid, $_SESSION['branch_id']);
-        $stmt->execute();
-        $prod = $stmt->get_result()->fetch_assoc();
-        $stmt->close();
-
-        if (!$prod) { $response['message'] = 'Product not found.'; break; }
-        $stock = (int)$prod['stock'];
-        if ($stock <= 0) { $response['message'] = 'Product out of stock.'; break; }
-
-        $idx = findCartIndex('product', $pid);
-        if ($idx >= 0) {
-            // delta-add (clamped to stock)
-            $_SESSION['cart'][$idx]['qty'] = min((int)$_SESSION['cart'][$idx]['qty'] + $qty, $stock);
-            // keep stock fresh in case it changed
-            $_SESSION['cart'][$idx]['stock'] = $stock;
-        } else {
-            $_SESSION['cart'][] = [
-                'type'         => 'product',
-                'product_id'   => $pid,
-                'product_name' => $prod['product_name'],
-                'qty'          => min($qty, $stock),          // clamp initial qty ✅
-                'price'        => finalPrice($prod['price'], $prod['markup_price']),
-                'stock'        => $stock,
-                'expiration'   => $prod['expiration_date'],   // used by row data-expiration
-                'category'     => $prod['category'],
-            ];
-        }
-
-        $response['success'] = true;
+    if ($pid <= 0 || empty($_SESSION['branch_id'])) {
+        $response['message'] = 'Invalid product or branch.';
         break;
     }
+
+    $stmt = $conn->prepare("
+        SELECT p.product_name, p.price, p.markup_price, IFNULL(i.stock,0) AS stock,
+               p.expiration_date, p.category
+        FROM products p
+        JOIN inventory i ON p.product_id = i.product_id
+        WHERE p.product_id = ? AND i.branch_id = ?
+        LIMIT 1
+    ");
+    $stmt->bind_param("ii", $pid, $_SESSION['branch_id']);
+    $stmt->execute();
+    $prod = $stmt->get_result()->fetch_assoc();
+    $stmt->close();
+
+    if (!$prod) { $response['message'] = 'Product not found.'; break; }
+    $stock = (int)$prod['stock'];
+    if ($stock <= 0) { $response['message'] = 'Product out of stock.'; break; }
+
+    $idx = findCartIndex('product', $pid);
+    if ($idx >= 0) {
+        $currentQty = (int)$_SESSION['cart'][$idx]['qty'];
+        if ($currentQty >= $stock) {
+            // 🚫 Already at stock limit
+            $response['message'] = '"' . $prod['product_name'] . '" has only ' . $stock . ' in stock.';
+            break;
+        }
+        $newQty = min($currentQty + $qty, $stock);
+        $_SESSION['cart'][$idx]['qty']   = $newQty;
+        $_SESSION['cart'][$idx]['stock'] = $stock;
+    } else {
+        $_SESSION['cart'][] = [
+            'type'         => 'product',
+            'product_id'   => $pid,
+            'product_name' => $prod['product_name'],
+            'qty'          => min($qty, $stock),
+            'price'        => finalPrice($prod['price'], $prod['markup_price']),
+            'stock'        => $stock,
+            'expiration'   => $prod['expiration_date'],
+            'category'     => $prod['category'],
+        ];
+    }
+
+    $response['success'] = true;
+    break;
+}
+
 
     case 'add_service': {
         $sid = (int)($post['service_id'] ?? 0);

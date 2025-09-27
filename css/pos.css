@@ -215,3 +215,125 @@
     max-height: none;
   }
 }
+/* ================= Restyled Payment / Refund Modal ================= */
+.modal-dialog {
+  max-width: 720px;       /* wider for tablets */
+  margin: 2rem auto;
+}
+
+.modal-content {
+  border-radius: 12px;
+  background: #fdfdfd;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15);
+  overflow: hidden;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+.modal-header {
+  background: linear-gradient(135deg, #ff8800, #ff6600);
+  color: #fff;
+  font-weight: 600;
+  border-bottom: none;
+  padding: 1rem 1.25rem;
+}
+
+.modal-header .btn-close {
+  filter: brightness(1.5); /* white close button */
+}
+
+.modal-title i {
+  margin-right: 8px;
+}
+
+.modal-body {
+  padding: 1.25rem 1.5rem;
+  max-height: 70vh;
+  overflow-y: auto;
+}
+
+/* Tables inside modal */
+.modal-body table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+  margin-bottom: 1rem;
+}
+
+.modal-body th {
+  background: #ff8800;
+  color: #fff;
+  font-weight: 600;
+  padding: 8px;
+  text-align: left;
+  border-radius: 4px 4px 0 0;
+}
+
+.modal-body td {
+  padding: 6px 8px;
+  border-bottom: 1px solid #eee;
+}
+
+.modal-body input[type="number"] {
+  width: 80px;
+  text-align: center;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  padding: 4px 6px;
+}
+
+/* Refund reason select & refund amount input */
+.modal-body .form-label {
+  font-weight: 500;
+}
+
+.modal-body select, 
+.modal-body input[type="number"] {
+  margin-top: 4px;
+  margin-bottom: 12px;
+  width: 100%;
+  box-sizing: border-box;
+  font-size: 14px;
+}
+
+/* Modal footer buttons */
+.modal-footer {
+  padding: 0.75rem 1.5rem;
+  border-top: none;
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.modal-footer .btn {
+  font-weight: bold;
+  border-radius: 8px;
+  padding: 10px 16px;
+  transition: 0.2s ease;
+}
+
+.modal-footer .btn-danger {
+  background: #e74c3c;
+  color: #fff;
+}
+
+.modal-footer .btn-danger:hover {
+  background: #c0392b;
+}
+
+/* ================= Responsive ================= */
+@media (max-width: 992px) { /* tablets */
+  .modal-dialog {
+    max-width: 90%;
+  }
+}
+
+@media (max-width: 576px) { /* small phones */
+  .modal-dialog {
+    max-width: 100%;
+    margin: 0.5rem auto;
+  }
+  .modal-body {
+    max-height: 80vh;
+    padding: 1rem;
+  }
+}

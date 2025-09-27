@@ -271,15 +271,34 @@ if (isset($_SESSION['user_id'])) {
 <h2>📊 Sales Report</h2>
 
 <!-- Filters -->
-<form method="get" class="mb-3">
-    <select name="report" onchange="this.form.submit()">
+<form method="get" class="mb-3 d-flex align-items-center gap-2">
+    <!-- Report type -->
+    <select name="report" onchange="this.form.submit()" class="form-select w-auto">
         <option value="itemized" <?= $reportType==='itemized'?'selected':'' ?>>Itemized</option>
         <option value="daily" <?= $reportType==='daily'?'selected':'' ?>>Daily</option>
         <option value="weekly" <?= $reportType==='weekly'?'selected':'' ?>>Weekly</option>
         <option value="monthly" <?= $reportType==='monthly'?'selected':'' ?>>Monthly</option>
-
     </select>
-    <input type="month" name="month" value="<?= $selectedMonth ?>" onchange="this.form.submit()">
+
+    <!-- Month -->
+    <input type="month" name="month" value="<?= htmlspecialchars($selectedMonth) ?>" 
+           onchange="this.form.submit()" class="form-control w-auto">
+
+    <!-- Branch selector (admins only) -->
+    <?php if ($role === 'admin'): ?>
+        <select name="branch_id" onchange="this.form.submit()" class="form-select w-auto">
+            <option value="">All Branches</option>
+            <?php
+            $branches = $conn->query("SELECT branch_id, branch_name FROM branches ORDER BY branch_name ASC");
+            while ($b = $branches->fetch_assoc()):
+                $sel = ($branch_id == $b['branch_id']) ? 'selected' : '';
+            ?>
+                <option value="<?= $b['branch_id'] ?>" <?= $sel ?>>
+                    <?= htmlspecialchars($b['branch_name']) ?>
+                </option>
+            <?php endwhile; ?>
+        </select>
+    <?php endif; ?>
 </form>
 
 <!-- Table -->

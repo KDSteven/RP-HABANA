@@ -235,43 +235,66 @@ if (isset($_POST['op']) && $_POST['op'] === 'add_stock') {
     }
 
 
-    if ($role === 'admin') {
-        // === ADMIN: add immediately ===
-        // Upsert inventory inside a transaction to be safe
-        $conn->begin_transaction();
-        try {
-            // Lock existing row if present
-            $stmt = $conn->prepare("SELECT stock FROM inventory WHERE product_id = ? AND branch_id = ? FOR UPDATE");
-            $stmt->bind_param("ii", $product_id, $target_branch);
-            $stmt->execute();
-            $res = $stmt->get_result();
-            $stmt->close();
+  if ($role === 'admin') {
+    $conn->begin_transaction();
+    try {
+        // First, get ceiling_point from products and current stock from inventory
+        $stmt = $conn->prepare("
+            SELECT p.ceiling_point, IFNULL(i.stock, 0) AS stock
+            FROM products p
+            LEFT JOIN inventory i ON p.product_id = i.product_id AND i.branch_id = ?
+            WHERE p.product_id = ?
+            FOR UPDATE
+        ");
+        $stmt->bind_param("ii", $target_branch, $product_id);
+        $stmt->execute();
+        $res = $stmt->get_result();
+        $stmt->close();
 
-            if ($res && $res->num_rows > 0) {
-                $stmt = $conn->prepare("UPDATE inventory SET stock = stock + ? WHERE product_id = ? AND branch_id = ?");
-                $stmt->bind_param("iii", $qty, $product_id, $target_branch);
-            } else {
-                $stmt = $conn->prepare("INSERT INTO inventory (product_id, branch_id, stock, archived) VALUES (?, ?, ?, 0)");
-                $stmt->bind_param("iii", $product_id, $target_branch, $qty);
-            }
-            $stmt->execute();
-            $stmt->close();
+        if (!$res || $res->num_rows === 0) {
+            throw new Exception("Product not found.");
+        }
 
-            // Log action
-            $p = $conn->query("SELECT product_name FROM products WHERE product_id = {$product_id}")->fetch_assoc();
-            logAction($conn, "Add Stock", "Added {$qty} stocks to {$p['product_name']} (Branch {$target_branch})", null, $target_branch);
+        $row = $res->fetch_assoc();
+        $current_stock = (int)$row['stock'];
+        $ceiling_point = (int)$row['ceiling_point'];
+        $final_stock   = $current_stock + $qty;
 
-            $conn->commit();
-
-            $_SESSION['stock_message'] = "Successfully added {$qty} stock(s)!";
-            header("Location: inventory.php?stock=added");
-            exit;
-        } catch (Throwable $e) {
+        // 🚫 Block if final stock exceeds ceiling
+        if ($final_stock > $ceiling_point) {
             $conn->rollback();
-            $_SESSION['stock_message'] = "Add stock failed.";
-            header("Location: inventory.php");
+            $_SESSION['stock_message'] = "❌ Cannot add {$qty} stock. Final stock ({$final_stock}) exceeds ceiling point ({$ceiling_point}).";
+            header("Location: inventory.php?stock=exceeded");
             exit;
         }
+
+        // ✅ Safe to add
+        if ($current_stock > 0) {
+            $stmt = $conn->prepare("UPDATE inventory SET stock = ? WHERE product_id = ? AND branch_id = ?");
+            $stmt->bind_param("iii", $final_stock, $product_id, $target_branch);
+        } else {
+            $stmt = $conn->prepare("INSERT INTO inventory (product_id, branch_id, stock, archived) VALUES (?, ?, ?, 0)");
+            $stmt->bind_param("iii", $product_id, $target_branch, $qty);
+        }
+        $stmt->execute();
+        $stmt->close();
+
+        // Log action
+        $p = $conn->query("SELECT product_name FROM products WHERE product_id = {$product_id}")->fetch_assoc();
+        logAction($conn, "Add Stock", "Added {$qty} stocks to {$p['product_name']} (Branch {$target_branch})", null, $target_branch);
+
+        $conn->commit();
+
+        $_SESSION['stock_message'] = "✅ Successfully added {$qty} stock(s). Final stock: {$final_stock} / Ceiling: {$ceiling_point}";
+        header("Location: inventory.php?stock=added");
+        exit;
+
+    } catch (Throwable $e) {
+        $conn->rollback();
+        $_SESSION['stock_message'] = "❌ Add stock failed: " . $e->getMessage();
+        header("Location: inventory.php");
+        exit;
+    }
 
     } else {
         // === STOCKMAN (or staff): create Stock-In Request ===
@@ -717,17 +740,25 @@ if (isset($_SESSION['user_id'])) {
     </div>
 
     <select name="category" onchange="this.form.submit()">
-      <option value="">All Categories</option>
-      <?php
-      $cat_result = $conn->query("SELECT DISTINCT category FROM products WHERE archived = 0 ORDER BY category ASC");
-      while ($cat = $cat_result->fetch_assoc()):
-          $selected = ($_GET['category'] ?? '') === $cat['category'] ? 'selected' : '';
-      ?>
-      <option value="<?= htmlspecialchars($cat['category']) ?>" <?= $selected ?>>
-          <?= htmlspecialchars($cat['category']) ?>
-      </option>
-      <?php endwhile; ?>
-    </select>
+  <option value="">All Categories</option>
+  <?php
+  $cat_result = $conn->query("
+      SELECT DISTINCT category 
+      FROM products 
+      WHERE archived = 0 
+        AND category IS NOT NULL 
+        AND TRIM(category) <> ''
+      ORDER BY category ASC
+  ");
+  while ($cat = $cat_result->fetch_assoc()):
+      $selected = ($_GET['category'] ?? '') === $cat['category'] ? 'selected' : '';
+  ?>
+  <option value="<?= htmlspecialchars($cat['category']) ?>" <?= $selected ?>>
+      <?= htmlspecialchars($cat['category']) ?>
+  </option>
+  <?php endwhile; ?>
+</select>
+
 
     <button type="submit" class="btn btn-primary">Search</button>
   </form>
@@ -2482,6 +2513,7 @@ document.addEventListener('DOMContentLoaded', function () {
   const flashMap = {
     stock: {
       added: ['Successfully added stock.', 'success'],
+       exceeded: ['❌ Cannot add stock. Final stock exceeds ceiling point.', 'danger'],
     },
     sir: {
       requested: ['Stock-In request submitted.', 'success'],
@@ -2518,6 +2550,7 @@ document.addEventListener('DOMContentLoaded', function () {
       updated: ['Service updated successfully.', 'success'],
       error:   ['There was an error updating the service.', 'danger'],
     },
+    
   };
 
   // Show toast for the first matching param
