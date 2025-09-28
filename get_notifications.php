@@ -114,63 +114,44 @@ while ($row = $resInv->fetch_assoc()) {
 }
 
 /* ===============================
-   PART 2 — Nearest-batch expiry from inventory_lots ONLY
-   For each (product,branch), find the soonest expiry_date with qty>0.
-   Classify as 'expired' or 'expiry' (within EXPIRY_SOON_DAYS).
+   PART 2 — ALL expiring/expired lots from inventory_lots
+   (not just the nearest per product)
    =============================== */
 
-/* Find nearest (soonest) expiry per product+branch with qty>0 */
-$qNearest = "
-WITH nearest AS (
-  SELECT
-    il.product_id,
-    il.branch_id,
-    MIN(il.expiry_date) AS nearest_expiry
-  FROM inventory_lots il
-  WHERE il.qty > 0
-  $whereLots
-  GROUP BY il.product_id, il.branch_id
-)
-SELECT
+$qLots = "
+SELECT 
   p.product_name,
   b.branch_name,
-  il.qty       AS lot_qty,
-  n.nearest_expiry AS expiry_date
-FROM nearest n
-JOIN inventory_lots il
-  ON il.product_id = n.product_id
- AND il.branch_id  = n.branch_id
- AND il.expiry_date = n.nearest_expiry
-JOIN products p ON p.product_id = n.product_id
-JOIN branches b ON b.branch_id  = n.branch_id
-ORDER BY n.nearest_expiry ASC
+  il.expiry_date,
+  SUM(il.qty) AS lot_qty
+FROM inventory_lots il
+JOIN products  p ON p.product_id = il.product_id
+JOIN branches  b ON b.branch_id  = il.branch_id
+WHERE il.qty > 0
+  $whereLots
+  AND (
+        il.expiry_date < CURDATE()
+     OR il.expiry_date BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL $EXPIRY_SOON_DAYS DAY)
+  )
+GROUP BY p.product_name, b.branch_name, il.expiry_date
+ORDER BY il.expiry_date ASC
 " . ($MAX_EXPIRY_ITEMS > 0 ? "LIMIT " . (int)$MAX_EXPIRY_ITEMS : "");
 
-$resLots = $conn->query($qNearest);
+$resLots = $conn->query($qLots);
 
 while ($row = $resLots->fetch_assoc()) {
     $expiryStr = $row['expiry_date'];
-    if (!$expiryStr) continue;
-
     $expiryDt  = DateTime::createFromFormat('Y-m-d', $expiryStr);
     if (!$expiryDt) continue;
 
-    $diffDays = (int)$today->diff($expiryDt)->format('%r%a'); // negative if expired
-    // Only include if expired OR within the soon window
-    if ($diffDays <= 0) {
-        $category = 'expired';
-    } elseif ($diffDays <= $EXPIRY_SOON_DAYS) {
-        $category = 'expiry';
-    } else {
-        continue; // skip batches that are not near expiry
-    }
+    $category = ($expiryDt < $today) ? 'expired' : 'expiry';
 
     $items[] = [
         'product_name'    => $row['product_name'],
-        'stock'           => (int)$row['lot_qty'],   // qty for the nearest batch
+        'stock'           => (int)$row['lot_qty'],   // sum for that exact expiry
         'critical_point'  => null,
         'ceiling_point'   => null,
-        'expiration_date' => $expiryStr,             // batch-level date
+        'expiration_date' => $expiryStr,
         'branch'          => $row['branch_name'],
         'category'        => $category,
     ];

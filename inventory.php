@@ -566,6 +566,23 @@ if (isset($_SESSION['user_id'])) {
     $stmt->close();
 }
 
+$flag  = $_GET['stock'] ?? '';
+$flash = $_SESSION['stock_message'] ?? '';
+if ($flag || $flash) {
+  // Prefer explicit mapping by flag; fall back to the session message
+  $safeFlash = htmlspecialchars($flash, ENT_QUOTES);
+  echo "<script>
+    document.addEventListener('DOMContentLoaded', function () {
+      if ('$flag') {
+        showStockToast('$flag', '$safeFlash');
+      } else if ('$safeFlash') {
+        showToast('$safeFlash', 'info');
+      }
+    });
+  </script>";
+  unset($_SESSION['stock_message']);
+}
+
 ?>
 
 <!DOCTYPE html>
@@ -2132,34 +2149,43 @@ document.addEventListener('DOMContentLoaded', function () {
   });
 })();
 
-//for toast container
-function showToast(message, type = 'info') {
+function showToast(message, type = 'info', delay = 3000) {
   const toastEl   = document.getElementById('appToast');
   const toastBody = document.getElementById('appToastBody');
-  if (!toastEl || !toastBody) return;
+  const headerEl  = toastEl ? toastEl.querySelector('.toast-header') : null;
+  if (!toastEl || !toastBody || !headerEl) return;
 
-  // reset classes
-  toastEl.classList.remove('bg-success','bg-danger','bg-info','bg-warning');
-  
-  // map type to class
-  const map = {
+  // reset header bg classes
+  headerEl.classList.remove('bg-success','bg-danger','bg-info','bg-warning');
+
+  // map type -> bootstrap bg class
+  const color = ({
     success: 'bg-success',
     danger:  'bg-danger',
-    info:    'bg-info',
+    error:   'bg-danger',   // alias
     warning: 'bg-warning',
-    stock: {
-    success: ['Successfully added stock.', 'success'], // add this
-    added:   ['Successfully added stock.', 'success'],
-    exceeded:['Cannot add stock. Final stock exceeds ceiling point.', 'danger'],
-},
+    info:    'bg-info',
+  }[type] || 'bg-info');
 
-  };
-  toastEl.querySelector('.toast-header').className = `toast-header text-white ${map[type] || 'bg-info'}`;
-  
+  headerEl.classList.add('text-white', color);
   toastBody.textContent = message;
 
-  const bsToast = new bootstrap.Toast(toastEl);
+  const bsToast = new bootstrap.Toast(toastEl, { delay });
   bsToast.show();
+}
+
+/** Use this to show toasts for stock actions by "flag" */
+function showStockToast(flag, fallbackMessage = '') {
+  const spec = {
+    added:    ['Successfully added stock.', 'success'],
+    success:  ['Successfully added stock.', 'success'], // if you use ?stock=success
+    requested:['Stock-in request submitted for approval.', 'info'],
+    exceeded: ['Cannot add stock. Final stock exceeds ceiling point.', 'danger'],
+    rejected: ['Stock-in request was rejected.', 'danger'],
+    approved: ['Stock-in request approved and applied.', 'success'],
+  };
+  const [msg, type] = spec[flag] || [fallbackMessage || 'Done.', 'info'];
+  showToast(msg, type);
 }
 </script>
 
