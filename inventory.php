@@ -1,5 +1,8 @@
 <?php
-session_start();
+if (session_status() !== PHP_SESSION_ACTIVE) session_start();
+require_once __DIR__ . '/config/db.php';
+require_once __DIR__ . '/functions.php';
+
 
 // Redirect to login if user not logged in
 if (!isset($_SESSION['user_id'])) {
@@ -7,12 +10,15 @@ if (!isset($_SESSION['user_id'])) {
     exit;
 }
 
-include 'config/db.php';
-include 'functions.php';
 
 $user_id = $_SESSION['user_id'];
 $role = $_SESSION['role'];
 $branch_id = $_SESSION['branch_id'] ?? null;
+
+if ($_SERVER['REQUEST_METHOD']==='POST' && ($_POST['op']??'')==='add_stock') {
+  require __DIR__.'/add_stock.php';
+  exit;
+}
 
 
 $pendingTransfers = 0;
@@ -1239,6 +1245,21 @@ if (isset($_SESSION['user_id'])) {
             </select>
           </div>
         </div>
+          <!-- Expiration Date -->
+       <div class="mb-3 px-3" id="expiryWrapper">
+          <label class="form-label fw-semibold" for="expiry_date">Expiry Date (this batch)</label>
+          <div class="input-group">
+            <span class="input-group-text"><i class="fas fa-calendar-alt"></i></span>
+            <input type="date"
+                  class="form-control"
+                  name="expiry_date"
+                  id="expiry_date"
+                  min="<?= date('Y-m-d') ?>">
+          </div>
+        <div class="form-text" id="expiryHint">
+          Optional for most products. If the product requires expiry, this will be enforced automatically.
+        </div>
+      </div>
 
         <!-- Quantity -->
         <div class="mb-3 px-3">
@@ -2125,7 +2146,13 @@ function showToast(message, type = 'info') {
     success: 'bg-success',
     danger:  'bg-danger',
     info:    'bg-info',
-    warning: 'bg-warning'
+    warning: 'bg-warning',
+    stock: {
+    success: ['Successfully added stock.', 'success'], // add this
+    added:   ['Successfully added stock.', 'success'],
+    exceeded:['Cannot add stock. Final stock exceeds ceiling point.', 'danger'],
+},
+
   };
   toastEl.querySelector('.toast-header').className = `toast-header text-white ${map[type] || 'bg-info'}`;
   
@@ -2567,6 +2594,49 @@ document.addEventListener('DOMContentLoaded', function () {
 });
 </script>
 
+<script>
+async function refreshExpiryVisibility({ productId = null, barcode = '' } = {}) {
+  const params = new URLSearchParams();
+  if (productId) params.set('product_id', productId);
+  if (barcode) params.set('barcode', barcode);
+
+  try {
+    const res = await fetch('get_product_meta.php?' + params.toString(), { cache: 'no-store' });
+    const data = await res.json();
+
+    const input = document.getElementById('expiry_date');
+    const hint  = document.getElementById('expiryHint');
+
+    if (data.ok && data.expiry_required) {
+      input.setAttribute('required', 'required');
+      if (hint) hint.textContent = 'Required for this product.';
+    } else {
+      input.removeAttribute('required');
+      if (hint) hint.textContent = 'Optional — fill to create/track a batch for this stock-in.';
+    }
+  } catch (e) {
+    // fail-safe: optional
+    const input = document.getElementById('expiry_date');
+    input && input.removeAttribute('required');
+  }
+}
+
+// Bindings for your IDs
+document.addEventListener('DOMContentLoaded', () => {
+  const productSelect = document.getElementById('addstock_product');
+  const barcodeInput  = document.getElementById('addstock_barcode');
+
+  productSelect?.addEventListener('change', e => {
+    const pid = e.target.value;
+    if (pid) refreshExpiryVisibility({ productId: pid });
+  });
+
+  barcodeInput?.addEventListener('blur', e => {
+    const code = e.target.value.trim();
+    if (code) refreshExpiryVisibility({ barcode: code });
+  });
+});
+</script>
 
 <!-- Bootstrap 5.3.2 JS -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.2/js/bootstrap.bundle.min.js"
