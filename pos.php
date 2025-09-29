@@ -107,10 +107,10 @@ function checkoutCart($conn, $user_id, $branch_id, $payment, $discount = 0, $dis
         // --- Insert sale ---
         $stmt = $conn->prepare("
             INSERT INTO sales 
-            (branch_id, total, discount, discount_type, vat, payment, change_given, processed_by, status, note)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'completed', ?)
+            (branch_id, total, discount, discount_type, vat, payment, change_given, processed_by, status)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'completed')
         ");
-        $stmt->bind_param("iddsddiss", $branch_id, $subtotal, $discount_value, $discount_type, $totalVat, $payment, $change, $user_id, $_POST['note']);
+        $stmt->bind_param("iddsddis", $branch_id, $subtotal, $discount_value, $discount_type, $totalVat, $payment, $change, $user_id);
         $stmt->execute();
         $sale_id = $conn->insert_id;
         $stmt->close();

@@ -52,7 +52,7 @@ SELECT
     s.total,
     s.vat AS stored_vat,
     b.branch_name,
-    COALESCE(SUM(r.refund_total), 0) AS refunded_total
+    COALESCE(SUM(r.refund_total), 0) AS refund_amount
 FROM sales s
 JOIN branches b ON s.branch_id = b.branch_id
 LEFT JOIN sales_refunds r ON s.sale_id = r.sale_id
@@ -213,7 +213,7 @@ if (isset($_SESSION['user_id'])) {
         </thead>
         <tbody>
          <?php while ($sale = $sales_result->fetch_assoc()): 
-    $refunded = (float)$sale['refunded_total'];
+    $refunded = (float)$sale['refund_amount'];
     $total = (float)$sale['total'];
     $vat = (float)$sale['stored_vat'];
 
