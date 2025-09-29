@@ -514,6 +514,40 @@ if (isset($_SESSION['user_id'])) {
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script src="notifications.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  const params = new URLSearchParams(window.location.search);
+  const lastSale = params.get('lastSale');   // from your redirect
+
+  if (lastSale) {
+    // 1) point the iframe to your receipt endpoint (adjust filename if different)
+    const frame = document.getElementById('receiptFrame');
+    if (frame) {
+      frame.src = 'receipt.php?sale_id=' + encodeURIComponent(lastSale);
+    }
+
+    // 2) show the modal
+    const modalEl = document.getElementById('receiptModal');
+    if (modalEl) {
+      const modal = new bootstrap.Modal(modalEl);
+      modal.show();
+    }
+
+    // 3) clean the URL so reload doesn't re-open the modal
+    if (history.replaceState) {
+      params.delete('lastSale');
+      const newQS = params.toString();
+      history.replaceState({}, document.title, window.location.pathname + (newQS ? '?' + newQS : ''));
+    }
+  }
+});
+
+// Print button handler used by: onclick="printReceipt()"
+function printReceipt() {
+  const frame = document.getElementById('receiptFrame');
+  if (frame && frame.contentWindow) frame.contentWindow.print();
+}
+</script>
 
 <script>
 document.addEventListener('DOMContentLoaded', () => {
