@@ -318,14 +318,6 @@ if (isset($_SESSION['user_id'])) {
 
   <!-- Cart Section -->
   <div class="cart-section" id="cartSection">
-    <?php if (!empty($nearingExpirationProducts)): ?>
-      <div class="alert alert-warning mt-2">
-        <i class="fas fa-exclamation-triangle"></i>
-        Nearly Expired Products in Cart:
-        <?= htmlspecialchars(implode(", ", $nearingExpirationProducts), ENT_QUOTES) ?>
-      </div>
-    <?php endif; ?>
-
     <?php include 'pos_cart_partial.php'; ?>
   </div>
 
@@ -823,9 +815,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Instant expiry toast on each click (from button dataset)
         if (type === 'product') {
-          const expStr = btn.dataset.expiration || '';
-          const name   = btn.dataset.name || btn.textContent.trim() || 'Product';
-          maybeToastExpiry(expStr, name);
+          
         }
 
         const payload = { action: (type === 'product' ? 'add_product' : 'add_service'),
