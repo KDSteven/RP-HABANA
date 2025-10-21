@@ -139,6 +139,114 @@ button:hover {
   .user-heading .name { font-weight:400; opacity:.9; }
   .user-heading .notif-wrapper { margin-left:auto; display:inline-flex; align-items:center; gap:.4rem; }
 
+  /* Ensure the toggle is positioned, without changing its color */
+.sidebar-toggle {
+  position: absolute;
+  top: 14px;
+  left: 14px;
+  border: 0;
+  background: none;
+  padding: 6px;
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+  z-index: 2; /* above content */
+}
+
+/* Smooth width/content transitions */
+#mainSidebar {
+  transition: width 0.25s ease;
+}
+#mainSidebar .sidebar-content {
+  transition: opacity 0.2s ease;
+}
+
+/* Desktop: keep your normal width (whatever you set today) */
+@media (min-width: 992px) {
+  /* no changes to your existing desktop styles */
+}
+
+/* Tablet rail: 768–991.98px */
+@media (min-width: 768px) and (max-width: 991.98px) {
+  /* Collapse sidebar into a thin rail */
+  #mainSidebar {
+    width: 56px !important;        /* the slim orange bar look */
+    overflow: hidden;               /* hide inner content when collapsed */
+    position: fixed;                /* typical sidebar behavior */
+    left: 0; top: 0; bottom: 0;
+    z-index: 1000;
+  }
+
+  /* Hide the inner content; keep only the toggle visible */
+  #mainSidebar .sidebar-content {
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  /* Expanded state: show full width and content */
+  #mainSidebar.expanded {
+    width: 260px !important;        /* match your normal sidebar width */
+  }
+  #mainSidebar.expanded .sidebar-content {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  /* If your layout offsets content on desktop, use a small rail offset on tablet */
+  .content {
+    margin-left: 56px !important;   /* content aligns beside the rail */
+  }
+
+  /* Optional backdrop when expanded (overlay effect) */
+  .sidebar-backdrop {
+    display: none;
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.35);
+    z-index: 999;
+    opacity: 0; transition: opacity 0.2s ease;
+  }
+  .sidebar-backdrop.is-open { display: block; opacity: 1; }
+}
+
+/* (Optional) Mobile: use same rail behavior or hide completely
+   If you want identical behavior on mobile, duplicate the tablet rules with max-width:767.98px */
+
+   /* Hide toggle everywhere by default */
+.sidebar-toggle {
+  display: none;
+}
+
+/* Show ONLY on tablet screens (768 – 991.98 px) */
+@media (min-width: 768px) and (max-width: 991.98px) {
+  .sidebar-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    position: absolute;
+    top: 14px;
+    left: 14px;      /* or right:14px; if you want it on the right side */
+    border: none;
+    background: none; /* keeps your current color scheme */
+    font-size: 22px;
+    cursor: pointer;
+    z-index: 5;
+  }
+}
+
+@media (min-width: 768px) and (max-width: 991.98px) {
+  .sidebar-toggle {
+    position: absolute;
+    top: 10px;
+    right: 12px;   /* moved to the right */
+    left: auto;
+    background: none;
+    border: 0;
+    padding: 6px;
+    font-size: 20px;
+    z-index: 5;
+  }
+}
+
 
 /* Responsive */
 @media (max-width: 768px) {

@@ -1,17 +1,71 @@
 <?php
 session_start();
-include 'config/db.php';
+require 'config/db.php';
 
-if (!isset($_SESSION['user_id'])) {
-  header("Location: index.html");
+// allow either logged-in user OR OTP flow
+$otpMode  = !empty($_SESSION['pw_reset_ok']) && (!empty($_SESSION['pw_reset_phone']) || !empty($_SESSION['pw_reset_username']));
+$loggedIn = !empty($_SESSION['user_id']);
+
+if (!$otpMode && !$loggedIn) {
+  header("Location: index.php");
   exit;
+}
+
+function normalizePHMobile($p) {
+  $digits = preg_replace('/\D+/', '', $p);
+  if (preg_match('/^09\d{9}$/', $digits)) return '+63' . substr($digits, 1);
+  if (preg_match('/^639\d{9}$/', $digits)) return '+' . $digits;
+  if (preg_match('/^\+639\d{9}$/', $p))    return $p;
+  return $p; // fallback
 }
 
 $msg = "";
 $err = "";
+$targetUserId = null;
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-  $new = $_POST['new_password'] ?? '';
+if ($loggedIn) {
+  $targetUserId = (int)$_SESSION['user_id'];
+} else {
+  // OTP mode: prefer username if we have it
+  if (!empty($_SESSION['pw_reset_username'])) {
+    $u = $_SESSION['pw_reset_username'];
+    $stmt = $conn->prepare("SELECT id FROM users WHERE username = ? LIMIT 1");
+    $stmt->bind_param("s", $u);
+    $stmt->execute();
+    $res = $stmt->get_result();
+    if ($row = $res->fetch_assoc()) {
+      $targetUserId = (int)$row['id'];
+    }
+    $stmt->close();
+  }
+
+  // fallback to phone
+  if (!$targetUserId && !empty($_SESSION['pw_reset_phone'])) {
+    $phoneNorm = normalizePHMobile($_SESSION['pw_reset_phone']);
+    $digits = preg_replace('/\D+/', '', $phoneNorm); // e.g. 639XXXXXXXXX
+    // build common variants
+    $v_plus  = $phoneNorm;                         // +639XXXXXXXXX
+    $v_639   = '63' . substr($digits, -10);        // 639XXXXXXXXX
+    $v_09    = '0'  . substr($digits, -10);        // 09XXXXXXXXX
+
+    // try any of these formats
+    $stmt = $conn->prepare("SELECT id FROM users WHERE phone_number IN (?, ?, ?) LIMIT 1");
+    $stmt->bind_param("sss", $v_plus, $v_639, $v_09);
+    $stmt->execute();
+    $res = $stmt->get_result();
+    if ($row = $res->fetch_assoc()) {
+      $targetUserId = (int)$row['id'];
+    }
+    $stmt->close();
+  }
+
+  if (!$targetUserId) {
+    $err = "We couldn't find your account for password reset. Please try again.";
+  }
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && $targetUserId) {
+  $new     = $_POST['new_password'] ?? '';
   $confirm = $_POST['confirm_password'] ?? '';
 
   if (strlen($new) < 6) {
@@ -21,16 +75,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   } else {
     $hash = password_hash($new, PASSWORD_DEFAULT);
     $stmt = $conn->prepare("UPDATE users SET password=?, must_change_password=0 WHERE id=?");
-    $stmt->bind_param("si", $hash, $_SESSION['user_id']);
+    $stmt->bind_param("si", $hash, $targetUserId);
     $stmt->execute();
     $stmt->close();
 
-    // optional: show success then redirect
+    // clear OTP flow flags if used
+    if ($otpMode && !$loggedIn) {
+    // After successful password update
+    unset($_SESSION['pw_reset_ok'], $_SESSION['pw_reset_phone'], $_SESSION['pw_reset_username']);
+    $_SESSION['toast_msg']  = "Your password has been updated. Please log in with your new password.";
+    $_SESSION['toast_type'] = "success";
+    header("Location: index.php");
+    exit;
+
+    }
+
     header("Location: dashboard.php");
     exit;
   }
 }
 ?>
+
 <!doctype html>
 <html>
 <head>
@@ -56,9 +121,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     .cp-sub { color: #a7b0bb; font-size: .92rem; }
     .form-label { font-weight: 600; color: #dfe6ee; }
     .input-group-text { background: #11161f; border-color: #263042; color: #98a2ad; }
-    .form-control {
-      background: #0f141d; color: #e9eef5; border-color: #263042;
-    }
+    .form-control { background: #0f141d; color: #e9eef5; border-color: #263042; }
     .form-control:focus {
       background: #0f141d; color: #fff;
       border-color: #ff9100; box-shadow: 0 0 0 .2rem rgba(255,145,0,.15);
@@ -72,9 +135,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     .cp-note { color: #9aa6b2; font-size: .85rem; }
     .meter { height: 8px; border-radius: 8px; background: #212a38; overflow: hidden; }
     .meter-fill { height: 100%; width: 0%; background: #ff6a00; transition: width .2s ease; }
-    .alert-soft {
-      background: #17202b; border: 1px solid #2a3647; color: #e9eef5; border-radius: 12px;
-    }
+    .alert-soft { background: #17202b; border: 1px solid #2a3647; color: #e9eef5; border-radius: 12px; }
     @keyframes cardIn { from { transform: translateY(4px); opacity: 0;} to {transform:none; opacity:1;} }
   </style>
 </head>
@@ -84,13 +145,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       <i class="fas fa-lock"></i>
       <div>
         <div class="fw-bold">Change Password</div>
-        <div class="cp-sub">For your account security, create a strong password.</div>
+        <div class="cp-sub">
+          <?php if ($otpMode && !$loggedIn): ?>
+            You verified your phone via OTP. Set a new password for your account.
+          <?php else: ?>
+            For your account security, create a strong password.
+          <?php endif; ?>
+        </div>
       </div>
     </div>
 
     <div class="cp-body">
       <?php if(!empty($err)): ?>
-        <div class="alert alert-danger alert-soft mb-3"><i class="fas fa-exclamation-triangle me-2"></i><?= htmlspecialchars($err) ?></div>
+        <div class="alert alert-danger alert-soft mb-3">
+          <i class="fas fa-exclamation-triangle me-2"></i><?= htmlspecialchars($err) ?>
+        </div>
       <?php endif; ?>
 
       <form method="POST" novalidate>

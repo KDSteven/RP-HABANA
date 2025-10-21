@@ -63,6 +63,14 @@ if ($mode === 'range') {
     $periodLabel = ' — ' . date('F Y', strtotime($startDate));
 }
 
+/* Snapshot the resolved period for SALES (so later filter helpers can’t overwrite it) */
+$resolvedStart = $startDate;
+$resolvedEnd   = $endDate;
+
+/* Normalized date bounds for SALES queries (half-open: [from, nextDay)) */
+$salesFrom = (new DateTime($resolvedStart))->format('Y-m-d 00:00:00');
+$salesTo   = (new DateTime($resolvedEnd))->modify('+1 day')->format('Y-m-d 00:00:00');
+
 /* Inventory label:
  * - fiscal mode: show "(Jan 01, 2025–Dec 31, 2025)" (no FY prefix)
  * - other modes: show “as of <end date>”
@@ -147,51 +155,6 @@ if (!$hasPArchived) {
 }
 
 
-// /* ---------- TOTAL PRODUCTS (as-of end date if possible) ---------- */
-// if ($hasCreatedAt) {
-//     // Build base + optional branch filter
-//     $tpSql   = "SELECT COUNT(*) AS c
-//                 FROM inventory i
-//                 WHERE i.created_at <= ?
-//                   AND (i.archived = 0 " . ($hasArchivedAt ? "OR i.archived_at IS NULL OR i.archived_at > ?" : "") . ")";
-//     $types   = "s";
-//     $params  = [$asOf];
-
-//     if ($hasArchivedAt) { $types .= "s"; $params[] = $asOf; }
-
-//     if ($role === 'staff' || $role === 'stockman') {
-//         $tpSql .= " AND i.branch_id = ?";
-//         $types .= "i";
-//         $params[] = (int)$branch_id;
-//     } elseif (!empty($filterBranch)) {
-//         $tpSql .= " AND i.branch_id = ?";
-//         $types .= "i";
-//         $params[] = (int)$filterBranch;
-//     }
-//     $stmt = $conn->prepare($tpSql);
-//     $stmt->bind_param($types, ...$params);
-//     $stmt->execute();
-//     $totalProducts = (int)($stmt->get_result()->fetch_assoc()['c'] ?? 0);
-//     $stmt->close();
-// } else {
-//     // Fallback: current snapshot count (your original behavior)
-//     if ($role === 'staff' || $role === 'stockman') {
-//         $stmt = $conn->prepare("SELECT COUNT(*) AS c FROM inventory WHERE branch_id = ?");
-//         $stmt->bind_param("i", $branch_id);
-//         $stmt->execute();
-//         $totalProducts = (int)$stmt->get_result()->fetch_assoc()['c'];
-//         $stmt->close();
-//     } elseif (!empty($filterBranch)) {
-//         $fb = (int)$filterBranch;
-//         $stmt = $conn->prepare("SELECT COUNT(*) AS c FROM inventory WHERE branch_id = ?");
-//         $stmt->bind_param("i", $fb);
-//         $stmt->execute();
-//         $totalProducts = (int)$stmt->get_result()->fetch_assoc()['c'];
-//         $stmt->close();
-//     } else {
-//         $totalProducts = (int)($conn->query("SELECT COUNT(*) AS c FROM inventory")->fetch_assoc()['c'] ?? 0);
-//     }
-// }
 $baseSql = "
   SELECT
     COUNT(*) AS totalProducts,
@@ -232,31 +195,29 @@ $lowStocks     = (int)$row['lowStocks'];
 
 
 
-
-
-// Total Sales (sum only within selected period and (optionally) branch)
+// Total Sales (sum only within selected period and (optionally) branch) — half-open range
 if ($role === 'staff') {
     $stmt = $conn->prepare("
         SELECT IFNULL(SUM(total), 0) AS total_sales
         FROM sales
-        WHERE branch_id = ? AND sale_date BETWEEN ? AND ?
+        WHERE branch_id = ? AND sale_date >= ? AND sale_date < ?
     ");
-    $stmt->bind_param("iss", $branch_id, $startDate, $endDate);
+    $stmt->bind_param("iss", $branch_id, $salesFrom, $salesTo);
 } else {
     if (!empty($filterBranch)) {
         $stmt = $conn->prepare("
             SELECT IFNULL(SUM(total), 0) AS total_sales
             FROM sales
-            WHERE branch_id = ? AND sale_date BETWEEN ? AND ?
+            WHERE branch_id = ? AND sale_date >= ? AND sale_date < ?
         ");
-        $stmt->bind_param("iss", $filterBranch, $startDate, $endDate);
+        $stmt->bind_param("iss", $filterBranch, $salesFrom, $salesTo);
     } else {
         $stmt = $conn->prepare("
             SELECT IFNULL(SUM(total), 0) AS total_sales
             FROM sales
-            WHERE sale_date BETWEEN ? AND ?
+            WHERE sale_date >= ? AND sale_date < ?
         ");
-        $stmt->bind_param("ss", $startDate, $endDate);
+        $stmt->bind_param("ss", $salesFrom, $salesTo);
     }
 }
 
@@ -266,7 +227,7 @@ $totalSales = $result->fetch_assoc()['total_sales'] ?? 0;
 
 
 // Fetch fast moving products
-$WINDOW_DAYS = (new DateTime($startDate))->diff(new DateTime($endDate))->days + 1;
+$WINDOW_DAYS = (new DateTime($resolvedStart))->diff(new DateTime($resolvedEnd))->days + 1;
 // ----- Tunable thresholds (fixed) -----
 $FAST_MIN_QTY = 6; // Fast = sold 6 or more in the period
 $SLOW_MAX_QTY = 5; // Slow = sold 1..5 in the period
@@ -278,7 +239,7 @@ SELECT p.product_name, SUM(si.quantity) AS total_qty, si.product_id
 FROM sales_items si
 JOIN products p ON si.product_id = p.product_id
 JOIN sales s    ON si.sale_id = s.sale_id
-WHERE s.sale_date BETWEEN ? AND ?
+WHERE s.sale_date >= ? AND s.sale_date < ?
 " . (!empty($filterBranch) ? " AND s.branch_id = ?" : ($role === 'staff' ? " AND s.branch_id = ?" : "")) . "
 GROUP BY si.product_id
 HAVING SUM(si.quantity) >= ?
@@ -289,12 +250,11 @@ LIMIT 5
 if ($role === 'staff' || !empty($filterBranch)) {
     $stmt = $conn->prepare($fastSql);
     $b = ($role === 'staff') ? (int)$branch_id : (int)$filterBranch;
-    $stmt->bind_param("ssii", $startDate, $endDate, $b, $FAST_MIN_QTY);
+    $stmt->bind_param("ssii", $salesFrom, $salesTo, $b, $FAST_MIN_QTY);
 } else {
     $stmt = $conn->prepare($fastSql);
-    $stmt->bind_param("ssi", $startDate, $endDate, $FAST_MIN_QTY);
+    $stmt->bind_param("ssi", $salesFrom, $salesTo, $FAST_MIN_QTY);
 }
-
 
 $stmt->execute();
 $fastMovingResult = $stmt->get_result();
@@ -310,7 +270,7 @@ $excludeFastIds = !empty($fastMovingProductIds) ? implode(',', $fastMovingProduc
 
 // === Slow Moving Items (sold > 0 in selected period, not in fast list, branch-aware) ===
 $branchJoin = '';
-$params = [$startDate, $endDate];
+$params = [$salesFrom, $salesTo];
 $types  = 'ss';
 
 if ($role === 'staff') {
@@ -333,11 +293,11 @@ $slowSql = "
   FROM sales s
   JOIN sales_items si ON si.sale_id = s.sale_id
   JOIN products p     ON p.product_id = si.product_id
-  WHERE s.sale_date BETWEEN ? AND ?
+  WHERE s.sale_date >= ? AND s.sale_date < ?
 ";
 
 $slowTypes  = 'ss';
-$slowParams = [$startDate, $endDate];
+$slowParams = [$salesFrom, $salesTo];
 
 if ($role === 'staff') {
   $slowSql .= " AND s.branch_id = ? ";
@@ -379,7 +339,7 @@ LEFT JOIN (
     SELECT si.product_id
     FROM sales_items si
     JOIN sales s ON s.sale_id = si.sale_id
-    WHERE s.sale_date BETWEEN ? AND ?
+    WHERE s.sale_date >= ? AND s.sale_date < ?
 ";
 
 // --- sales branch filter ---
@@ -410,10 +370,10 @@ $nonSql .= " ORDER BY p.product_name";
 $nonTypes = "";
 $nonVals  = [];
 
-// always 2 for startDate/endDate
+// always 2 for from/to
 $nonTypes .= "ss";
-$nonVals[] = $startDate;
-$nonVals[] = $endDate;
+$nonVals[] = $salesFrom;
+$nonVals[] = $salesTo;
 
 // optional sales branch
 if ($role === 'staff') {
@@ -517,6 +477,8 @@ function getDateRange($type, $value = '') {
 }
 
 // -------------------- DATE RANGE --------------------
+// NOTE: We intentionally DO NOT overwrite the sales snapshot.
+// This block is kept for inventory/as-of computations only.
 if (!empty($filters['fiscal_year'])) {
     [$startDate, $endDate] = getDateRange('fiscal_year', $filters['fiscal_year']);
 } elseif (!empty($filters['month'])) {
@@ -555,12 +517,16 @@ function getInventoryCount($conn, $asOfDate, $branchId = null, $mode = 'total') 
 }
 
 function getTotalSales($conn, $startDate, $endDate, $branchId = null) {
+    // Normalize inside as well to accept raw Y-m-d inputs
+    $from = (new DateTime($startDate))->format('Y-m-d 00:00:00');
+    $to   = (new DateTime($endDate))->modify('+1 day')->format('Y-m-d 00:00:00');
+
     $sql = "SELECT IFNULL(SUM(total),0) AS total_sales FROM sales
-            WHERE sale_date BETWEEN ? AND ?";
+            WHERE sale_date >= ? AND sale_date < ?";
     if ($branchId) $sql .= branchCondition($branchId);
 
     $stmt = $conn->prepare($sql);
-    $stmt->bind_param("ss", $startDate, $endDate);
+    $stmt->bind_param("ss", $from, $to);
     $stmt->execute();
     $total = $stmt->get_result()->fetch_assoc()['total_sales'] ?? 0;
     $stmt->close();
@@ -572,7 +538,7 @@ function getFastItemIds($conn, $start, $end, $branchId = null) {
         FROM products p
         LEFT JOIN sales_items si ON si.product_id = p.product_id
         LEFT JOIN sales s ON s.sale_id = si.sale_id
-        WHERE s.sale_date BETWEEN ? AND ?
+        WHERE s.sale_date >= ? AND s.sale_date < ?
         " . ($branchId ? "AND s.branch_id = ?" : "") . "
         GROUP BY p.product_id
         HAVING SUM(si.quantity) >= 3
@@ -622,7 +588,7 @@ function getMovingItems($conn, $start, $end, $branchId = null, $type = 'fast', $
             LEFT JOIN sales_items si ON si.product_id = p.product_id
             LEFT JOIN sales s 
                 ON s.sale_id = si.sale_id 
-                AND s.sale_date BETWEEN ? AND ?
+                AND s.sale_date >= ? AND s.sale_date < ?
                 " . ($branchId ? "AND s.branch_id = ?" : "") . "
             WHERE 1 $notInClause
             GROUP BY p.product_id
@@ -635,7 +601,7 @@ function getMovingItems($conn, $start, $end, $branchId = null, $type = 'fast', $
             FROM products p
             LEFT JOIN sales_items si ON si.product_id = p.product_id
             LEFT JOIN sales s ON s.sale_id = si.sale_id
-            WHERE s.sale_date BETWEEN ? AND ? $notInClause
+            WHERE s.sale_date >= ? AND s.sale_date < ? $notInClause
             " . ($branchId ? "AND s.branch_id = ?" : "") . "
             GROUP BY p.product_id
             $having
@@ -662,10 +628,10 @@ $totalProducts  = getInventoryCount($conn, $asOfDateEnd, $filters['branch_id'], 
 $lowStocks      = getInventoryCount($conn, $asOfDateEnd, $filters['branch_id'], 'low');
 $outOfStocks    = getInventoryCount($conn, $asOfDateEnd, $filters['branch_id'], 'out');
 
-$totalSales     = getTotalSales($conn, $startDate, $endDate, $filters['branch_id']);
-$fastItems      = getMovingItems($conn, $startDate, $endDate, $filters['branch_id'], 'fast', 5);
-$slowItems      = getMovingItems($conn, $startDate, $endDate, $filters['branch_id'], 'slow', 5);
-$notMovingItems = getMovingItems($conn, $startDate, $endDate, $filters['branch_id'], 'notmoving', 5);
+$totalSales     = getTotalSales($conn, $resolvedStart, $resolvedEnd, $filters['branch_id']);
+$fastItems      = getMovingItems($conn, $salesFrom, $salesTo, $filters['branch_id'], 'fast', 5);
+$slowItems      = getMovingItems($conn, $salesFrom, $salesTo, $filters['branch_id'], 'slow', 5);
+$notMovingItems = getMovingItems($conn, $salesFrom, $salesTo, $filters['branch_id'], 'notmoving', 5);
 
 // -------------------- NOTIFICATIONS --------------------
 $pending = $conn->query("SELECT COUNT(*) AS pending FROM transfer_requests WHERE status='Pending'")->fetch_assoc()['pending'] ?? 0;
@@ -676,12 +642,12 @@ $serviceJobQuery = "
     FROM sales_services ss
     JOIN services s ON ss.service_id = s.service_id
     JOIN sales sa ON ss.sale_id = sa.sale_id
-    WHERE sa.sale_date BETWEEN ? AND ?".branchCondition($filters['branch_id'],'sa')."
+    WHERE sa.sale_date >= ? AND sa.sale_date < ?".branchCondition($filters['branch_id'],'sa')."
     GROUP BY s.service_name
     ORDER BY count DESC
 ";
 $stmt = $conn->prepare($serviceJobQuery);
-$stmt->bind_param("ss",$startDate,$endDate);
+$stmt->bind_param("ss",$salesFrom,$salesTo);
 $stmt->execute();
 $serviceJobData = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
 $stmt->close();
@@ -718,9 +684,9 @@ $salesTitleBase = ($mode === 'fiscal')
 
 if ($mode === 'month') {
   // e.g., "September 2025"
-  $salesDetail = date('F Y', strtotime($startDate));
+  $salesDetail = date('F Y', strtotime($resolvedStart));
 } elseif ($mode === 'range') {
-  $salesDetail = fmt_date_label($startDate) . ' to ' . fmt_date_label($endDate);
+  $salesDetail = fmt_date_label($resolvedStart) . ' to ' . fmt_date_label($resolvedEnd);
 } else { // fiscal
   $fy = (int)($_GET['fy'] ?? date('Y'));
   $salesDetail = 'FY ' . $fy;
@@ -745,20 +711,28 @@ $salesTitle = $salesTitleBase . ' — ' . $salesDetail;
 <audio id="notifSound" src="img/notif.mp3" preload="auto"></audio>
 </head>
 <body class="dashboard-page">
-<div class="sidebar">
-  <h2 class="user-heading">
-    <span class="role"><?= htmlspecialchars(strtoupper($role), ENT_QUOTES) ?></span>
-    <?php if ($currentName !== ''): ?>
-      <span class="name"> (<?= htmlspecialchars($currentName, ENT_QUOTES) ?>)</span>
-    <?php endif; ?>
-    <span class="notif-wrapper">
-      <i class="fas fa-bell" id="notifBell"></i>
-      <span id="notifCount" <?= $pending > 0 ? '' : 'style="display:none;"' ?>><?= (int)$pending ?></span>
-    </span>
-  </h2>
 
+<!-- Sidebar -->
+<div class="sidebar" id="mainSidebar">
+  <!-- Toggle button always visible on the rail -->
+  <button class="sidebar-toggle" id="sidebarToggle" aria-label="Toggle sidebar" aria-expanded="false">
+    <i class="fas fa-bars" aria-hidden="true"></i>
+  </button>
 
-    <!-- Common -->
+  <!-- Wrap existing sidebar content so we can hide/show it cleanly -->
+  <div class="sidebar-content">
+    <h2 class="user-heading">
+      <span class="role"><?= htmlspecialchars(strtoupper($role), ENT_QUOTES) ?></span>
+      <?php if ($currentName !== ''): ?>
+        <span class="name">(<?= htmlspecialchars($currentName, ENT_QUOTES) ?>)</span>
+      <?php endif; ?>
+      <span class="notif-wrapper">
+        <i class="fas fa-bell" id="notifBell"></i>
+        <span id="notifCount" <?= $pending > 0 ? '' : 'style="display:none;"' ?>><?= (int)$pending ?></span>
+      </span>
+    </h2>
+
+        <!-- Common -->
     <a href="dashboard.php" class="active"><i class="fas fa-tv"></i> Dashboard</a>
 
     <?php
@@ -869,6 +843,8 @@ $toolsOpen = ($self === 'backup_admin.php' || $isArchive);
     <?php endif; ?>
 
     <a href="logout.php"><i class="fas fa-sign-out-alt"></i> Logout</a>
+</div>
+  </div>
 </div>
 
 <div class="content">
@@ -1213,6 +1189,8 @@ if (serviceJobData.length > 0) {
   }
 })();
 </script>
+
+<script src="sidebar.js"></script>
 
 </body>
 </html>

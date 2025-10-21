@@ -81,31 +81,47 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['archive_user_id'])) {
     exit;
 }
 
-// Create user
+// ✅ Create user
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['create_user'])) {
-    $full_name = trim($_POST['name'] ?? '');
-    $username  = trim($_POST['username'] ?? '');
-    $password  = $_POST['password'] ?? '';
-    $role      = $_POST['role'] ?? '';
+    $full_name    = trim($_POST['name'] ?? '');
+    $username     = trim($_POST['username'] ?? '');
+    $password     = $_POST['password'] ?? '';
+    $confirm      = $_POST['confirm_password'] ?? '';
+    $role         = $_POST['role'] ?? '';
+    $phone_number = trim($_POST['phone_number'] ?? '');
 
-    $branch_id = null;
-    if (in_array($role, ['staff','stockman'], true)) {
-        $branch_id = isset($_POST['branch_id']) && $_POST['branch_id'] !== '' ? (int)$_POST['branch_id'] : null;
-    }
+    // Normalize phone number: remove spaces, dashes, parentheses
+    $phone_number = preg_replace('/[\s\-\(\)]/', '', $phone_number);
 
+    // Validate required fields
     if ($full_name === '' || $username === '' || $password === '' || $role === '') {
         $_SESSION['toast_msg']  = "Please fill out all required fields.";
         $_SESSION['toast_type'] = 'danger';
         header("Location: accounts.php?create=invalid");
         exit;
     }
-    if (in_array($role, ['staff','stockman'], true) && $branch_id === null) {
-        $_SESSION['toast_msg']  = "Please select a branch for Staff/Stockman.";
-        $_SESSION['toast_type'] = 'warning';
-        header("Location: accounts.php?create=need_branch");
+
+    // Validate phone number format (Philippine numbers only)
+    if (!preg_match('/^(?:\+639\d{9}|09\d{9})$/', $phone_number)) {
+        $_SESSION['toast_msg']  = "Invalid phone number format. Use 09123456789 or +639123456789.";
+        $_SESSION['toast_type'] = 'danger';
+        header("Location: accounts.php?create=invalid_phone");
         exit;
     }
-    $confirm = $_POST['confirm_password'] ?? '';
+
+    // Validate branch for staff/stockman
+    $branch_id = null;
+    if (in_array($role, ['staff','stockman'], true)) {
+        $branch_id = isset($_POST['branch_id']) && $_POST['branch_id'] !== '' ? (int)$_POST['branch_id'] : null;
+        if ($branch_id === null) {
+            $_SESSION['toast_msg']  = "Please select a branch for Staff/Stockman.";
+            $_SESSION['toast_type'] = 'warning';
+            header("Location: accounts.php?create=need_branch");
+            exit;
+        }
+    }
+
+    // Confirm password check
     if ($password === '' || $confirm === '' || $password !== $confirm) {
         $_SESSION['toast_msg']  = "Passwords do not match.";
         $_SESSION['toast_type'] = 'danger';
@@ -113,49 +129,67 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['create_user'])) {
         exit;
     }
 
-    // unique username
-    $stmt = $conn->prepare("SELECT id FROM users WHERE username = ?");
-    $stmt->bind_param("s", $username);
-    $stmt->execute();
-    if ($stmt->get_result()->num_rows > 0) {
-        $stmt->close();
-        $_SESSION['toast_msg']  = "Username already exists.";
-        $_SESSION['toast_type'] = 'danger';
-        header("Location: accounts.php?create=exists");
-        exit;
-    }
-    $stmt->close();
-
+    // Hash password
     $hashedPassword = password_hash($password, PASSWORD_DEFAULT);
 
-    if ($branch_id === null) {
-        $stmt = $conn->prepare("INSERT INTO users (username, name, password, role, branch_id, archived) VALUES (?, ?, ?, ?, NULL, 0)");
-        $stmt->bind_param("ssss", $username, $full_name, $hashedPassword, $role);
-    } else {
-        $stmt = $conn->prepare("INSERT INTO users (username, name, password, role, branch_id, archived) VALUES (?, ?, ?, ?, ?, 0)");
-        $stmt->bind_param("ssssi", $username, $full_name, $hashedPassword, $role, $branch_id);
+    // Check for duplicate username
+    $check = $conn->prepare("SELECT id FROM users WHERE username = ?");
+    $check->bind_param("s", $username);
+    $check->execute();
+    $check->store_result();
+    if ($check->num_rows > 0) {
+        $_SESSION['toast_msg']  = "Username already exists. Choose another.";
+        $_SESSION['toast_type'] = 'warning';
+        $check->close();
+        header("Location: accounts.php?create=duplicate");
+        exit;
     }
+    $check->close();
+
+    // ✅ Insert new user (includes phone number)
+    if ($branch_id === null) {
+        $stmt = $conn->prepare("INSERT INTO users (name, username, password, role, branch_id, phone_number) VALUES (?, ?, ?, ?, NULL, ?)");
+        $stmt->bind_param("sssss", $full_name, $username, $hashedPassword, $role, $phone_number);
+    } else {
+        $stmt = $conn->prepare("INSERT INTO users (name, username, password, role, branch_id, phone_number) VALUES (?, ?, ?, ?, ?, ?)");
+        $stmt->bind_param("ssssis", $full_name, $username, $hashedPassword, $role, $branch_id, $phone_number);
+    }
+
     $stmt->execute();
     $stmt->close();
 
-    logAction($conn, "Create Account", "Created user: {$username} ({$full_name}), role: {$role}" . ($branch_id ? ", branch_id={$branch_id}" : ""), null, $branch_id);
+    // ✅ Log + toast
+    logAction(
+        $conn,
+        "Create Account",
+        "Created new user: {$username} ({$full_name}), role: {$role}, phone: {$phone_number}" . ($branch_id ? ", branch_id={$branch_id}" : ""),
+        null,
+        $branch_id
+    );
 
-    $_SESSION['toast_msg']  = "Account created: <b>{$full_name}</b> (<code>{$username}</code>)";
+    $_SESSION['toast_msg']  = "New account created: <b>{$full_name}</b> (<code>{$username}</code>)";
     $_SESSION['toast_type'] = 'success';
     header("Location: accounts.php?create=success");
     exit;
 }
 
-// Update user
+
+// ✅ Update user
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_user'])) {
-    $id        = (int)($_POST['edit_user_id'] ?? 0);
-    $full_name = trim($_POST['name'] ?? '');
-    $username  = trim($_POST['username'] ?? '');
-    $password  = $_POST['password'] ?? '';
-    $role      = $_POST['role'] ?? '';
+    $id           = (int)($_POST['edit_user_id'] ?? 0);
+    $full_name    = trim($_POST['name'] ?? '');
+    $username     = trim($_POST['username'] ?? '');
+    $password     = $_POST['password'] ?? '';
+    $role         = $_POST['role'] ?? '';
+    $phone_number = trim($_POST['phone_number'] ?? '');
 
-    $branch_id = (in_array($role, ['staff','stockman'], true) && !empty($_POST['branch_id'])) ? (int)$_POST['branch_id'] : null;
+    // Normalize phone number (remove spaces/dashes)
+    $phone_number = preg_replace('/[\s\-\(\)]/', '', $phone_number);
 
+    $branch_id = (in_array($role, ['staff','stockman'], true) && !empty($_POST['branch_id']))
+        ? (int)$_POST['branch_id'] : null;
+
+    // ✅ Validate required fields
     if ($id <= 0 || $full_name === '' || $username === '' || $role === '') {
         $_SESSION['toast_msg']  = "Update failed. Please complete required fields.";
         $_SESSION['toast_type'] = 'danger';
@@ -163,28 +197,54 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_user'])) {
         exit;
     }
 
+    // ✅ Validate phone number (PH format)
+    if (!preg_match('/^(?:\+639\d{9}|09\d{9})$/', $phone_number)) {
+        $_SESSION['toast_msg']  = "Invalid phone number format. Use 09123456789 or +639123456789.";
+        $_SESSION['toast_type'] = 'danger';
+        header("Location: accounts.php?updated=invalid_phone");
+        exit;
+    }
+
+    // ✅ Prepare update query
     if ($password !== '') {
         $hashedPassword = password_hash($password, PASSWORD_DEFAULT);
+
         if ($branch_id === null) {
-            $stmt = $conn->prepare("UPDATE users SET username=?, name=?, password=?, role=?, branch_id=NULL WHERE id=?");
-            $stmt->bind_param("ssssi", $username, $full_name, $hashedPassword, $role, $id);
+            $stmt = $conn->prepare("UPDATE users 
+                                    SET username=?, name=?, password=?, role=?, branch_id=NULL, phone_number=? 
+                                    WHERE id=?");
+            $stmt->bind_param("sssssi", $username, $full_name, $hashedPassword, $role, $phone_number, $id);
         } else {
-            $stmt = $conn->prepare("UPDATE users SET username=?, name=?, password=?, role=?, branch_id=? WHERE id=?");
-            $stmt->bind_param("ssssii", $username, $full_name, $hashedPassword, $role, $branch_id, $id);
+            $stmt = $conn->prepare("UPDATE users 
+                                    SET username=?, name=?, password=?, role=?, branch_id=?, phone_number=? 
+                                    WHERE id=?");
+            $stmt->bind_param("ssssi si", $username, $full_name, $hashedPassword, $role, $branch_id, $phone_number, $id);
         }
     } else {
         if ($branch_id === null) {
-            $stmt = $conn->prepare("UPDATE users SET username=?, name=?, role=?, branch_id=NULL WHERE id=?");
-            $stmt->bind_param("sssi", $username, $full_name, $role, $id);
+            $stmt = $conn->prepare("UPDATE users 
+                                    SET username=?, name=?, role=?, branch_id=NULL, phone_number=? 
+                                    WHERE id=?");
+            $stmt->bind_param("ssssi", $username, $full_name, $role, $phone_number, $id);
         } else {
-            $stmt = $conn->prepare("UPDATE users SET username=?, name=?, role=?, branch_id=? WHERE id=?");
-            $stmt->bind_param("sssii", $username, $full_name, $role, $branch_id, $id);
+            $stmt = $conn->prepare("UPDATE users 
+                                    SET username=?, name=?, role=?, branch_id=?, phone_number=? 
+                                    WHERE id=?");
+            $stmt->bind_param("sssisi", $username, $full_name, $role, $branch_id, $phone_number, $id);
         }
     }
+
     $stmt->execute();
     $stmt->close();
 
-    logAction($conn, "Update Account", "Updated user: {$username} ({$full_name}), role: {$role}" . ($branch_id ? ", branch_id={$branch_id}" : ""), null, $branch_id);
+    // ✅ Log and toast message
+    logAction(
+        $conn,
+        "Update Account",
+        "Updated user: {$username} ({$full_name}), role: {$role}, phone: {$phone_number}" . ($branch_id ? ", branch_id={$branch_id}" : ""),
+        null,
+        $branch_id
+    );
 
     $_SESSION['toast_msg']  = "Account updated: <b>{$full_name}</b> (<code>{$username}</code>)";
     $_SESSION['toast_type'] = 'success';
@@ -393,13 +453,21 @@ if (isset($_POST['reset_action'], $_POST['reset_id']) && $currentRole === 'admin
 
 // Users (non-archived)
 $usersQuery = "
-    SELECT u.id, u.username, u.name, u.role, u.branch_id, b.branch_name
+    SELECT 
+        u.id, 
+        u.username, 
+        u.name, 
+        u.phone_number,
+        u.role, 
+        u.branch_id, 
+        b.branch_name
     FROM users u
     LEFT JOIN branches b ON u.branch_id = b.branch_id
     WHERE u.archived = 0
     ORDER BY u.id DESC
 ";
 $users = $conn->query($usersQuery);
+
 
 // Pending numbers for badges
 $pendingTransfers = $pendingStockIns = $pendingTotalInventory = 0;
@@ -494,64 +562,86 @@ $toolsOpen = ($self === 'backup_admin.php' || $isArchive);
 </head>
 <body class="accounts-page">
 
-<div class="sidebar">
-  <h2 class="user-heading">
-    <span class="role"><?= htmlspecialchars(strtoupper($currentRole), ENT_QUOTES) ?></span>
-    <?php if ($currentName !== ''): ?>
-      <span class="name"> (<?= htmlspecialchars($currentName, ENT_QUOTES) ?>)</span>
-    <?php endif; ?>
-    <span class="notif-wrapper">
-      <i class="fas fa-bell" id="notifBell"></i>
-      <span id="notifCount" <?= $pending > 0 ? '' : 'style="display:none;"' ?>><?= (int)$pending ?></span>
-    </span>
-  </h2>
+<!-- Sidebar -->
+<div class="sidebar" id="mainSidebar">
+  <!-- Toggle button always visible on the rail -->
+  <button class="sidebar-toggle" id="sidebarToggle" aria-label="Toggle sidebar" aria-expanded="false">
+    <i class="fas fa-bars" aria-hidden="true"></i>
+  </button>
 
-
-
-  <a href="dashboard.php"><i class="fas fa-tv"></i> Dashboard</a>
-
-  <?php if ($currentRole === 'admin'): ?>
-  <div class="menu-group has-sub">
-    <button class="menu-toggle" type="button" aria-expanded="<?= $invOpen ? 'true' : 'false' ?>">
-      <span><i class="fas fa-box"></i> Inventory
-        <?php if ($pendingTotalInventory > 0): ?>
-          <span class="badge-pending"><?= $pendingTotalInventory ?></span>
-        <?php endif; ?>
+  <!-- Wrap existing sidebar content so we can hide/show it cleanly -->
+  <div class="sidebar-content">
+    <h2 class="user-heading">
+      <span class="role"><?= htmlspecialchars(strtoupper($currentRole), ENT_QUOTES) ?></span>
+      <?php if ($currentName !== ''): ?>
+        <span class="name">(<?= htmlspecialchars($currentName, ENT_QUOTES) ?>)</span>
+      <?php endif; ?>
+      <span class="notif-wrapper">
+        <i class="fas fa-bell" id="notifBell"></i>
+        <span id="notifCount" <?= $pending > 0 ? '' : 'style="display:none;"' ?>><?= (int)$pending ?></span>
       </span>
-      <i class="fas fa-chevron-right caret"></i>
-    </button>
-    <div class="submenu" <?= $invOpen ? '' : 'hidden' ?>>
-      <a href="inventory.php#pending-requests" class="<?= $self === 'inventory.php' ? 'active' : '' ?>">
-        <i class="fas fa-list"></i> Inventory List
+    </h2>
+
+        <!-- Common -->
+    <a href="dashboard.php"><i class="fas fa-tv"></i> Dashboard</a>
+
+    <?php
+// put this once before the sidebar (top of file is fine)
+$self = strtolower(basename(parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH)));
+$isArchive = substr($self, 0, 7) === 'archive'; // matches archive.php, archive_view.php, etc.
+$invOpen   = in_array($self, ['inventory.php','physical_inventory.php'], true);
+$toolsOpen = ($self === 'backup_admin.php' || $isArchive);
+?>
+
+<!-- Admin Links -->
+<?php if ($currentRole === 'admin'): ?>
+
+  <!-- Inventory group (unchanged) -->
+<div class="menu-group has-sub">
+  <button class="menu-toggle" type="button" aria-expanded="<?= $invOpen ? 'true' : 'false' ?>">
+  <span><i class="fas fa-box"></i> Inventory
+    <?php if ($pendingTotalInventory > 0): ?>
+      <span class="badge-pending"><?= $pendingTotalInventory ?></span>
+    <?php endif; ?>
+  </span>
+    <i class="fas fa-chevron-right caret"></i>
+  </button>
+  <div class="submenu" <?= $invOpen ? '' : 'hidden' ?>>
+    <a href="inventory.php#pending-requests" class="<?= $self === 'inventory.php#pending-requests' ? 'active' : '' ?>">
+      <i class="fas fa-list"></i> Inventory List
         <?php if ($pendingTotalInventory > 0): ?>
           <span class="badge-pending"><?= $pendingTotalInventory ?></span>
         <?php endif; ?>
-      </a>
-      <a href="physical_inventory.php" class="<?= $self === 'physical_inventory.php' ? 'active' : '' ?>">
-        <i class="fas fa-warehouse"></i> Physical Inventory
-      </a>
-      <a href="barcode-print.php<?php 
+    </a>
+    <a href="physical_inventory.php" class="<?= $self === 'physical_inventory.php' ? 'active' : '' ?>">
+      <i class="fas fa-warehouse"></i> Physical Inventory
+    </a>
+        <a href="barcode-print.php<?php 
         $b = (int)($_SESSION['current_branch_id'] ?? 0);
         echo $b ? ('?branch='.$b) : '';?>" class="<?= $self === 'barcode-print.php' ? 'active' : '' ?>">
         <i class="fas fa-barcode"></i> Barcode Labels
-      </a>
-    </div>
+    </a>
   </div>
-    <!-- Current page -->
+</div>
+
     <a href="services.php" class="<?= $self === 'services.php' ? 'active' : '' ?>">
       <i class="fa fa-wrench" aria-hidden="true"></i> Services
     </a>
+
+  <!-- Sales (normal link with active state) -->
   <a href="sales.php" class="<?= $self === 'sales.php' ? 'active' : '' ?>">
     <i class="fas fa-receipt"></i> Sales
   </a>
 
-  <a href="accounts.php" class="<?= $self === 'accounts.php' ? 'active' : '' ?>">
-    <i class="fas fa-users"></i> Accounts & Branches
-    <?php if ($pendingResetsCount > 0): ?>
-      <span class="badge-pending"><?= $pendingResetsCount ?></span>
-    <?php endif; ?>
-  </a>
 
+<a href="accounts.php" class="<?= $self === 'accounts.php' ? 'active' : '' ?>">
+  <i class="fas fa-users"></i> Accounts & Branches
+  <?php if ($pendingResetsCount > 0): ?>
+    <span class="badge-pending"><?= $pendingResetsCount ?></span>
+  <?php endif; ?>
+</a>
+
+  <!-- NEW: Backup & Restore group with Archive inside -->
   <div class="menu-group has-sub">
     <button class="menu-toggle" type="button" aria-expanded="<?= $toolsOpen ? 'true' : 'false' ?>">
       <span><i class="fas fa-screwdriver-wrench me-2"></i> Data Tools</span>
@@ -570,89 +660,119 @@ $toolsOpen = ($self === 'backup_admin.php' || $isArchive);
   <a href="logs.php" class="<?= $self === 'logs.php' ? 'active' : '' ?>">
     <i class="fas fa-file-alt"></i> Logs
   </a>
-  <?php endif; ?>
 
+<?php endif; ?>
+
+
+
+   <!-- Stockman Links -->
   <?php if ($currentRole === 'stockman'): ?>
-    <a href="inventory.php"><i class="fas fa-box"></i> Inventory</a>
-    <a href="physical_inventory.php" class="active"><i class="fas fa-warehouse"></i> Physical Inventory</a>
+    <div class="menu-group has-sub">
+      <button class="menu-toggle" type="button" aria-expanded="<?= $invOpen ? 'true' : 'false' ?>">
+        <span><i class="fas fa-box"></i> Inventory</span>
+        <i class="fas fa-chevron-right caret"></i>
+      </button>
+      <div class="submenu" <?= $invOpen ? '' : 'hidden' ?>>
+        <a href="inventory.php" class="<?= $self === 'inventory.php' ? 'active' : '' ?>">
+          <i class="fas fa-list"></i> Inventory List
+        </a>
+        <a href="physical_inventory.php" class="<?= $self === 'physical_inventory.php' ? 'active' : '' ?>">
+          <i class="fas fa-warehouse"></i> Physical Inventory
+        </a>
+        <!-- Stockman can access Barcode Labels; server forces their branch -->
+        <a href="barcode-print.php" class="<?= $self === 'barcode-print.php' ? 'active' : '' ?>">
+          <i class="fas fa-barcode"></i> Barcode Labels
+        </a>
+      </div>
+    </div>
   <?php endif; ?>
+    <!-- Staff Links -->
+    <?php if ($currentRole === 'staff'): ?>
+        <a href="pos.php"><i class="fas fa-cash-register"></i> Point of Sale</a>
+        <a href="history.php"><i class="fas fa-history"></i> Sales History</a>
+    <?php endif; ?>
 
-  <?php if ($currentRole === 'staff'): ?>
-    <a href="pos.php"><i class="fas fa-cash-register"></i> POS</a>
-    <a href="history.php"><i class="fas fa-history"></i> Sales History</a>
-  <?php endif; ?>
-
-  <a href="logout.php"><i class="fas fa-sign-out-alt"></i> Logout</a>
+    <a href="logout.php"><i class="fas fa-sign-out-alt"></i> Logout</a>
+</div>
+  </div>
 </div>
 
 <div class="content">
 
-  <!-- EXISTING ACCOUNTS -->
-  <div class="card shadow-sm mb-4">
-    <div class="d-flex justify-content-between align-items-center mb-3">
-      <h2 class="mb-0">Existing Accounts</h2>
-      <button class="btn btn-primary" onclick="openCreateUserModal()"><i class="fas fa-plus"></i> Create Account</button>
-    </div>
-
-    <div class="table-responsive">
-      <table class="table table-striped table-hover align-middle">
-        <thead class="table-dark">
-          <tr>
-            <th>ID</th>
-            <th>Name</th>
-            <th>Username</th>
-            <th>Role</th>
-            <th>Branch</th>
-            <th class="text-center">Action</th>
-          </tr>
-        </thead>
-        <tbody>
-          <?php if ($users && $users->num_rows): ?>
-            <?php while ($user = $users->fetch_assoc()): ?>
-              <tr>
-                <td><?= (int)$user['id'] ?></td>
-                <td><?= htmlspecialchars($user['name'], ENT_QUOTES) ?></td>
-                <td><?= htmlspecialchars($user['username'], ENT_QUOTES) ?></td>
-                <td><?= htmlspecialchars(ucfirst($user['role']), ENT_QUOTES) ?></td>
-                <td>
-                  <?= in_array($user['role'], ['staff','stockman'], true)
-                        ? htmlspecialchars($user['branch_name'] ?? '—', ENT_QUOTES)
-                        : 'N/A' ?>
-                </td>
-                <td class="text-center">
-                  <div class="action-buttons">
-                    <!-- Edit User -->
-                    <button class="acc-btn btn btn-warning btn-sm"
-                        data-id="<?= (int)$user['id'] ?>"
-                        data-full_name="<?= htmlspecialchars($user['name'], ENT_QUOTES) ?>"
-                        data-username="<?= htmlspecialchars($user['username'], ENT_QUOTES) ?>"
-                        data-role="<?= htmlspecialchars($user['role'], ENT_QUOTES) ?>"
-                        data-branch_id="<?= htmlspecialchars((string)($user['branch_id'] ?? ''), ENT_QUOTES) ?>"
-                        onclick="openEditUserModal(this)">
-                      <i class="fas fa-edit"></i>
-                    </button>
-
-                    <!-- Archive User -->
-                    <form method="POST" class="archive-form-user d-inline">
-                      <input type="hidden" name="archive_user_id" value="<?= (int)$user['id'] ?>">
-                      <button type="button"
-                              class="btn-archive-unique btn-sm"
-                              data-archive-type="account"
-                              data-archive-name="<?= htmlspecialchars($user['username'], ENT_QUOTES) ?>">
-                        <i class="fas fa-archive"></i>
-                      </button>
-                    </form>
-                  </div>
-                </td>
-              </tr>
-            <?php endwhile; ?>
-          <?php else: ?>
-            <tr><td colspan="6" class="text-center">No users found.</td></tr>
-          <?php endif; ?>
-        </tbody>
-      </table>
-    </div>
+ <!-- EXISTING ACCOUNTS -->
+<div class="card shadow-sm mb-4">
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <h2 class="mb-0">Existing Accounts</h2>
+    <button class="btn btn-primary" onclick="openCreateUserModal()">
+      <i class="fas fa-plus"></i> Create Account
+    </button>
   </div>
+
+  <div class="table-responsive">
+    <table class="table table-striped table-hover align-middle">
+      <thead class="table-dark">
+        <tr>
+          <th>ID</th>
+          <th>Name</th>
+          <th>Username</th>
+          <th>Phone Number</th> <!-- NEW COLUMN -->
+          <th>Role</th>
+          <th>Branch</th>
+          <th class="text-center">Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        <?php if ($users && $users->num_rows): ?>
+          <?php while ($user = $users->fetch_assoc()): ?>
+            <tr>
+              <td><?= (int)$user['id'] ?></td>
+              <td><?= htmlspecialchars($user['name'], ENT_QUOTES) ?></td>
+              <td><?= htmlspecialchars($user['username'], ENT_QUOTES) ?></td>
+
+              <!-- NEW PHONE NUMBER COLUMN -->
+              <td><?= htmlspecialchars($user['phone_number'] ?? '—', ENT_QUOTES) ?></td>
+
+              <td><?= htmlspecialchars(ucfirst($user['role']), ENT_QUOTES) ?></td>
+              <td>
+                <?= in_array($user['role'], ['staff','stockman'], true)
+                      ? htmlspecialchars($user['branch_name'] ?? '—', ENT_QUOTES)
+                      : 'N/A' ?>
+              </td>
+              <td class="text-center">
+                <div class="action-buttons">
+                  <!-- Edit User -->
+                  <button class="acc-btn btn btn-warning btn-sm"
+                      data-id="<?= (int)$user['id'] ?>"
+                      data-full_name="<?= htmlspecialchars($user['name'], ENT_QUOTES) ?>"
+                      data-username="<?= htmlspecialchars($user['username'], ENT_QUOTES) ?>"
+                      data-phone-number="<?= htmlspecialchars($user['phone_number'] ?? '', ENT_QUOTES) ?>"
+                      data-role="<?= htmlspecialchars($user['role'], ENT_QUOTES) ?>"
+                      data-branch_id="<?= htmlspecialchars((string)($user['branch_id'] ?? ''), ENT_QUOTES) ?>"
+                      onclick="openEditUserModal(this)">
+                    <i class="fas fa-edit"></i>
+                  </button>
+
+                  <!-- Archive User -->
+                  <form method="POST" class="archive-form-user d-inline">
+                    <input type="hidden" name="archive_user_id" value="<?= (int)$user['id'] ?>">
+                    <button type="button"
+                            class="btn-archive-unique btn-sm"
+                            data-archive-type="account"
+                            data-archive-name="<?= htmlspecialchars($user['username'], ENT_QUOTES) ?>">
+                      <i class="fas fa-archive"></i>
+                    </button>
+                  </form>
+                </div>
+              </td>
+            </tr>
+          <?php endwhile; ?>
+        <?php else: ?>
+          <tr><td colspan="7" class="text-center">No users found.</td></tr>
+        <?php endif; ?>
+      </tbody>
+    </table>
+  </div>
+</div>
 
   <!-- CREATE USER MODAL -->
 <div id="createUserModal" class="modal">
@@ -668,37 +788,50 @@ $toolsOpen = ($self === 'backup_admin.php' || $isArchive);
     <form method="POST" id="createUserForm" novalidate>
       <div class="step step-1 active mb-3">
         <!-- NAME (unchanged rules) -->
-<label>Name</label>
-<input type="text" name="name" placeholder="Enter name" class="form-control mb-2"
-       pattern="^[A-Za-z\s'-]{2,50}$"
-       title="Name should be 2–50 characters and may contain letters, spaces, hyphens, or apostrophes"
-       required>
+          <label>Name</label>
+          <input type="text" name="name" placeholder="Enter name" class="form-control mb-2"
+                pattern="^[A-Za-z\s'-]{2,50}$"
+                title="Name should be 2–50 characters and may contain letters, spaces, hyphens, or apostrophes"
+                required>
 
-<!-- USERNAME + availability helper -->
-<label>Username</label>
-<input type="text" id="username" name="username" placeholder="Enter username" class="form-control mb-1"
-       pattern="^[A-Za-z0-9._]{4,20}$"
-       title="Username should be 4–20 characters and may contain letters, numbers, dots, or underscores"
-       required>
-<div><small id="usernameHelp" class="form-text"></small></div>
+          <!-- USERNAME + availability helper -->
+          <label>Username</label>
+          <input type="text" id="username" name="username" placeholder="Enter username" class="form-control mb-1"
+                pattern="^[A-Za-z0-9._]{4,20}$"
+                title="Username should be 4–20 characters and may contain letters, numbers, dots, or underscores"
+                required>
+          <div><small id="usernameHelp" class="form-text"></small></div>
 
-<!-- PASSWORD -->
-<label class="mt-2">Password</label>
-<div class="input-group mb-2">
-  <input type="password" id="password" name="password" class="form-control" placeholder="Enter password" required>
-  <button type="button" class="input-group-text bg-white btn-toggle-pw" data-target="#password" aria-label="Show/Hide password">
-    <i class="fa-solid fa-eye"></i>
-  </button>
-</div>
+          <!-- Phone Number -->
+            <div class="mb-3">
+              <label class="form-label">Phone Number</label>
+              <input 
+                type="text" 
+                name="phone_number" 
+                class="form-control" 
+                placeholder="+63 912 345 6789 or 09123456789"
+                pattern="^(?:\+639\d{9}|09\d{9})$"
+                title="Please enter a valid Philippine mobile number (e.g., 09123456789 or +639123456789)" 
+                required>
+            </div>
 
-<!-- CONFIRM PASSWORD -->
-<label class="mt-2">Confirm Password</label>
-<div class="input-group mb-1">
-  <input type="password" id="confirm_password" name="confirm_password" class="form-control" placeholder="Re-enter password" required>
-  <button type="button" class="input-group-text bg-white btn-toggle-pw" data-target="#confirm_password" aria-label="Show/Hide confirm password">
-    <i class="fa-solid fa-eye"></i>
-  </button>
-</div>
+          <!-- PASSWORD -->
+          <label class="mt-2">Password</label>
+          <div class="input-group mb-2">
+            <input type="password" id="password" name="password" class="form-control" placeholder="Enter password" required>
+            <button type="button" class="input-group-text bg-white btn-toggle-pw" data-target="#password" aria-label="Show/Hide password">
+              <i class="fa-solid fa-eye"></i>
+            </button>
+          </div>
+
+          <!-- CONFIRM PASSWORD -->
+          <label class="mt-2">Confirm Password</label>
+          <div class="input-group mb-1">
+            <input type="password" id="confirm_password" name="confirm_password" class="form-control" placeholder="Re-enter password" required>
+            <button type="button" class="input-group-text bg-white btn-toggle-pw" data-target="#confirm_password" aria-label="Show/Hide confirm password">
+              <i class="fa-solid fa-eye"></i>
+            </button>
+          </div>
 
 
 
@@ -758,54 +891,6 @@ $toolsOpen = ($self === 'backup_admin.php' || $isArchive);
   </div>
 </div>
 
-  <!-- PENDING PASSWORD RESET REQUESTS (Admin only) -->
-  <?php if ($currentRole === 'admin'): ?>
-  <div class="card shadow-sm mb-4">
-    <div class="d-flex justify-content-between align-items-center mb-3">
-      <h2 class="mb-0"><i class="fas fa-key me-2 text-primary"></i>Pending Password Reset Requests</h2>
-    </div>
-
-    <?php if ($resetRequests && $resetRequests->num_rows > 0): ?>
-      <div class="table-responsive">
-        <table class="table table-striped table-hover align-middle">
-          <thead class="table-dark">
-            <tr>
-              <th>Username</th>
-              <th>Role</th>
-              <th>Requested At</th>
-              <th style="width:260px">Action</th>
-            </tr>
-          </thead>
-          <tbody>
-            <?php while ($r = $resetRequests->fetch_assoc()): ?>
-            <tr>
-              <td><?= htmlspecialchars($r['username'], ENT_QUOTES) ?></td>
-              <td><?= htmlspecialchars($r['role'], ENT_QUOTES) ?></td>
-              <td><?= date('Y-m-d H:i', strtotime($r['requested_at'])) ?></td>
-              <td>
-                <form method="POST" class="d-inline">
-                  <input type="hidden" name="reset_id" value="<?= (int)$r['reset_id'] ?>">
-                  <button type="submit" name="reset_action" value="approve" class="btn btn-sm btn-success">
-                    <i class="fas fa-check"></i> Approve
-                  </button>
-                </form>
-                <form method="POST" class="d-inline ms-1">
-                  <input type="hidden" name="reset_id" value="<?= (int)$r['reset_id'] ?>">
-                  <button type="submit" name="reset_action" value="reject" class="btn btn-sm btn-danger">
-                    <i class="fas fa-times"></i> Reject
-                  </button>
-                </form>
-              </td>
-            </tr>
-            <?php endwhile; ?>
-          </tbody>
-        </table>
-      </div>
-    <?php else: ?>
-      <p class="mb-0">No pending password reset requests.</p>
-    <?php endif; ?>
-  </div>
-  <?php endif; ?>
 
   <!-- Toast container -->
   <div class="toast-container position-fixed top-0 end-0 p-3" style="z-index:1100">
@@ -921,6 +1006,19 @@ $toolsOpen = ($self === 'backup_admin.php' || $isArchive);
           title="4–20 chars, at least one letter. Allowed: letters, numbers, dot, underscore, hyphen.">
         <small id="editUsernameHelp" class="form-text"></small>
 
+            <div class="mb-3">
+              <label class="form-label">Phone Number</label>
+              <input 
+                type="text" 
+                name="phone_number" 
+                id="editPhone_number"
+                class="form-control" 
+                placeholder="+63 912 345 6789 or 09123456789"
+                pattern="^(?:\+639\d{9}|09\d{9})$"
+                title="Please enter a valid Philippine mobile number (e.g., 09123456789 or +639123456789)" 
+                required>
+            </div>
+
         <label class="form-label mt-3">New Password
           <small class="text-muted">(leave blank to keep current)</small>
         </label>
@@ -953,7 +1051,6 @@ $toolsOpen = ($self === 'backup_admin.php' || $isArchive);
         </div>
       </form>
     </div>
-
     <div class="modal-footer" style="display:flex; gap:8px; justify-content:flex-end;">
       <button type="button" class="btn btn-outline-secondary" onclick="closeEditUserModal()">Cancel</button>
       <button type="submit" id="editSaveBtn" form="editUserForm" name="update_user" class="btn btn-primary" disabled>Save Changes</button>
@@ -1191,29 +1288,31 @@ $toolsOpen = ($self === 'backup_admin.php' || $isArchive);
 function openCreateUserModal(){ document.getElementById('createUserModal')?.classList.add('active'); }
 function closeCreateUserModal(){ document.getElementById('createUserModal')?.classList.remove('active'); }
 
-function openEditUserModal(button){
-  const modal = document.getElementById('editModal');
-  if (!modal) return;
-  modal.style.display = 'flex';
+// function openEditUserModal(button){
+//   console.log('phone from data:', button.getAttribute('data-phoneNumber'));
+//   const modal = document.getElementById('editModal');
+//   if (!modal) return;
+//   modal.style.display = 'flex';
 
-  document.getElementById('editUserId').value   = button.dataset.id || '';
-  document.getElementById('editName').value     = button.dataset.full_name || '';
-  document.getElementById('editUsername').value = button.dataset.username || '';
-  document.getElementById('editRole').value     = button.dataset.role || 'admin';
+//   document.getElementById('editUserId').value   = button.dataset.id || '';
+//   document.getElementById('editName').value     = button.dataset.full_name || '';
+//   document.getElementById('editUsername').value = button.dataset.username || '';
+//   document.getElementById('editPhone_number').value  = button.getAttribute('data-phoneNumber') || '';
+//   document.getElementById('editRole').value     = button.dataset.role || 'admin';
 
-  const branchId = button.dataset.branch_id || '';
-  document.querySelectorAll('#editBranchGroup input[name="branch_id"]').forEach(r => {
-    r.checked = (r.value === branchId);
-  });
+//   const branchId = button.dataset.branch_id || '';
+//   document.querySelectorAll('#editBranchGroup input[name="branch_id"]').forEach(r => {
+//     r.checked = (r.value === branchId);
+//   });
 
-  reflectEditBranchVisibility();
+//   reflectEditBranchVisibility();
 
-  function onBg(e){ if (e.target === modal) { closeEditUserModal(); modal.removeEventListener('click', onBg); } }
-  modal.addEventListener('click', onBg);
+//   function onBg(e){ if (e.target === modal) { closeEditUserModal(); modal.removeEventListener('click', onBg); } }
+//   modal.addEventListener('click', onBg);
 
-  function onEsc(ev){ if (ev.key === 'Escape') { closeEditUserModal(); document.removeEventListener('keydown', onEsc); } }
-  document.addEventListener('keydown', onEsc);
-}
+//   function onEsc(ev){ if (ev.key === 'Escape') { closeEditUserModal(); document.removeEventListener('keydown', onEsc); } }
+//   document.addEventListener('keydown', onEsc);
+// }
 function closeEditUserModal(){ const m = document.getElementById('editModal'); if (m) m.style.display = 'none'; }
 
 function reflectEditBranchVisibility(){
@@ -1415,11 +1514,12 @@ function toggleCreateBranch(){
     const modal = document.getElementById('editModal');
     modal.style.display = 'flex';
 
-    idEl.value   = button.dataset.id || '';
-    nameEl.value = button.dataset.full_name || '';
-    userEl.value = button.dataset.username || '';
-    originalUsername = userEl.value;
-    roleEl.value = button.dataset.role || 'admin';
+  // Populate fields
+  document.getElementById('editUserId').value   = button.dataset.id || '';
+  document.getElementById('editName').value     = button.dataset.full_name || '';
+  document.getElementById('editUsername').value = button.dataset.username || '';
+  document.getElementById('editPhone_number').value = button.dataset.phoneNumber || '';
+  document.getElementById('editRole').value     = button.dataset.role || 'admin';
 
     // set branch radios
     const branchId = button.dataset.branch_id || '';
@@ -1932,7 +2032,7 @@ document.addEventListener('click', function (e) {
 </script>
 
 
-
+<script src="sidebar.js"></script>
 <script src="notifications.js"></script>
 </body>
 </html>

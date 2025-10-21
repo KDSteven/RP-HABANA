@@ -337,3 +337,44 @@
     padding: 1rem;
   }
 }
+
+/* ===== POS x Sidebar alignment (append at end) ===== */
+
+/* Prevent the POS from hiding under the sidebar */
+@media (min-width: 992px) {
+  .pos-wrapper { 
+    margin-left: var(--sidebar-desktop);
+  }
+}
+
+/* Tablet: show rail (56px). When sidebar opens, push to 260px */
+@media (min-width: 768px) and (max-width: 991.98px) {
+  .pos-wrapper {
+    margin-left: var(--sidebar-rail);
+  }
+  /* If your sidebar gets the .expanded class when opened,
+     push the POS to the full width while open */
+  #mainSidebar.expanded ~ .pos-wrapper {
+    margin-left: var(--sidebar-desktop);
+  }
+  /* Use your actual sidebar widths here */
+:root {
+  --sidebar-desktop: 260px; /* full sidebar width on desktop */
+  --sidebar-rail: 56px;     /* slim rail width on tablet */
+}
+}
+
+/* Mobile: sidebar overlays, POS stays full width */
+@media (max-width: 767.98px) {
+  .pos-wrapper {
+    margin-left: 0;
+  }
+}
+
+/* The original had overflow:hidden on .pos-wrapper which can clip content.
+   Keep horizontal hidden, allow vertical to scroll. */
+.pos-wrapper {
+  overflow-x: hidden;
+  overflow-y: visible;
+}
+
