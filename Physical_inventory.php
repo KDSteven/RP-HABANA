@@ -240,29 +240,36 @@ if (isset($_SESSION['user_id'])) {
 </head>
 <body class="inventory-page">
 
-<div class="sidebar">
-  <h2 class="user-heading">
-    <span class="role"><?= htmlspecialchars(strtoupper($role), ENT_QUOTES) ?></span>
-    <?php if ($currentName !== ''): ?>
-      <span class="name"> (<?= htmlspecialchars($currentName, ENT_QUOTES) ?>)</span>
-    <?php endif; ?>
-    <span class="notif-wrapper">
-      <i class="fas fa-bell" id="notifBell"></i>
-      <span id="notifCount" <?= $pendingTotalInventory > 0 ? '' : 'style="display:none;"' ?>><?= (int)$pendingTotalInventory ?></span>
-    </span>
-  </h2>
+<!-- Sidebar -->
+<div class="sidebar" id="mainSidebar">
+  <!-- Toggle button always visible on the rail -->
+  <button class="sidebar-toggle" id="sidebarToggle" aria-label="Toggle sidebar" aria-expanded="false">
+    <i class="fas fa-bars" aria-hidden="true"></i>
+  </button>
 
+  <!-- Wrap existing sidebar content so we can hide/show it cleanly -->
+  <div class="sidebar-content">
+    <h2 class="user-heading">
+      <span class="role"><?= htmlspecialchars(strtoupper($role), ENT_QUOTES) ?></span>
+      <?php if ($currentName !== ''): ?>
+        <span class="name">(<?= htmlspecialchars($currentName, ENT_QUOTES) ?>)</span>
+      <?php endif; ?>
+      <span class="notif-wrapper">
+        <i class="fas fa-bell" id="notifBell"></i>
+        <span id="notifCount" <?= $pending > 0 ? '' : 'style="display:none;"' ?>><?= (int)$pending ?></span>
+      </span>
+    </h2>
 
-    <!-- Common -->
-    <a href="dashboard.php" ><i class="fas fa-tv"></i> Dashboard</a>
+        <!-- Common -->
+    <a href="dashboard.php"><i class="fas fa-tv"></i> Dashboard</a>
 
     <?php
-    // put this once before the sidebar (top of file is fine)
-    $self = strtolower(basename(parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH)));
-    $isArchive = substr($self, 0, 7) === 'archive'; // matches archive.php, archive_view.php, etc.
-    $invOpen   = in_array($self, ['inventory.php','physical_inventory.php'], true);
-    $toolsOpen = ($self === 'backup_admin.php' || $isArchive);
-    ?>
+// put this once before the sidebar (top of file is fine)
+$self = strtolower(basename(parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH)));
+$isArchive = substr($self, 0, 7) === 'archive'; // matches archive.php, archive_view.php, etc.
+$invOpen   = in_array($self, ['inventory.php','physical_inventory.php'], true);
+$toolsOpen = ($self === 'backup_admin.php' || $isArchive);
+?>
 
 <!-- Admin Links -->
 <?php if ($role === 'admin'): ?>
@@ -278,8 +285,8 @@ if (isset($_SESSION['user_id'])) {
     <i class="fas fa-chevron-right caret"></i>
   </button>
   <div class="submenu" <?= $invOpen ? '' : 'hidden' ?>>
-    <a href="inventory.php" class="<?= $self === 'inventory.php' ? 'active' : '' ?>">
-        <i class="fas fa-list"></i> Inventory List
+    <a href="inventory.php#pending-requests" class="<?= $self === 'inventory.php#pending-requests' ? 'active' : '' ?>">
+      <i class="fas fa-list"></i> Inventory List
         <?php if ($pendingTotalInventory > 0): ?>
           <span class="badge-pending"><?= $pendingTotalInventory ?></span>
         <?php endif; ?>
@@ -287,7 +294,6 @@ if (isset($_SESSION['user_id'])) {
     <a href="physical_inventory.php" class="<?= $self === 'physical_inventory.php' ? 'active' : '' ?>">
       <i class="fas fa-warehouse"></i> Physical Inventory
     </a>
-      </a>
         <a href="barcode-print.php<?php 
         $b = (int)($_SESSION['current_branch_id'] ?? 0);
         echo $b ? ('?branch='.$b) : '';?>" class="<?= $self === 'barcode-print.php' ? 'active' : '' ?>">
@@ -295,15 +301,16 @@ if (isset($_SESSION['user_id'])) {
     </a>
   </div>
 </div>
-    <!-- Current page -->
+
     <a href="services.php" class="<?= $self === 'services.php' ? 'active' : '' ?>">
       <i class="fa fa-wrench" aria-hidden="true"></i> Services
     </a>
-    
+
   <!-- Sales (normal link with active state) -->
   <a href="sales.php" class="<?= $self === 'sales.php' ? 'active' : '' ?>">
     <i class="fas fa-receipt"></i> Sales
   </a>
+
 
 <a href="accounts.php" class="<?= $self === 'accounts.php' ? 'active' : '' ?>">
   <i class="fas fa-users"></i> Accounts & Branches
@@ -334,7 +341,9 @@ if (isset($_SESSION['user_id'])) {
 
 <?php endif; ?>
 
-<!-- Stockman Links -->
+
+
+   <!-- Stockman Links -->
   <?php if ($role === 'stockman'): ?>
     <div class="menu-group has-sub">
       <button class="menu-toggle" type="button" aria-expanded="<?= $invOpen ? 'true' : 'false' ?>">
@@ -355,14 +364,15 @@ if (isset($_SESSION['user_id'])) {
       </div>
     </div>
   <?php endif; ?>
-
     <!-- Staff Links -->
     <?php if ($role === 'staff'): ?>
-        <a href="pos.php"><i class="fas fa-cash-register"></i> POS</a>
+        <a href="pos.php"><i class="fas fa-cash-register"></i> Point of Sale</a>
         <a href="history.php"><i class="fas fa-history"></i> Sales History</a>
     <?php endif; ?>
 
     <a href="logout.php"><i class="fas fa-sign-out-alt"></i> Logout</a>
+</div>
+  </div>
 </div>
 
 
@@ -694,7 +704,7 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 })();
 </script>
-
+<script src="sidebar.js"></script>
 <script src="notifications.js"></script>
 </body>
 </html>

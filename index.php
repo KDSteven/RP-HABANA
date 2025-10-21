@@ -2,7 +2,16 @@
 session_start();
 include 'config/db.php';
 
-$toast = null; // ['type' => 'success'|'danger'|'warning'|'info', 'msg' => '...']
+$toast = null;
+
+// 🔽 Pull toast from session (set by change_password.php)
+if (!empty($_SESSION['toast_msg'])) {
+  $toast = [
+    'type' => $_SESSION['toast_type'] ?? 'info',
+    'msg'  => $_SESSION['toast_msg'],
+  ];
+  unset($_SESSION['toast_msg'], $_SESSION['toast_type']);
+}
 
 if ($_SERVER["REQUEST_METHOD"] === "POST") {
     $username = trim($_POST['username'] ?? "");
@@ -195,7 +204,7 @@ $conn->close();
               <button type="button"
                       class="btn btn-link p-0 link-ghost underline-slide d-inline-flex align-items-center gap-2"
                       data-bs-toggle="modal"
-                      data-bs-target="#forgotPasswordModal"
+                      data-bs-target="#forgotAccountModal"
                       aria-label="Open password recovery">
                 <i class="fas fa-key" aria-hidden="true"></i>
                 <span>Forgot password</span>
@@ -215,44 +224,137 @@ $conn->close();
     </div>
   </div>
 
-  <!-- Forgot Password Modal -->
-  <div class="modal fade" id="forgotPasswordModal" tabindex="-1" aria-labelledby="forgotPasswordLabel" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered modal-md">
-      <div class="modal-content fp-card">
-        <div class="modal-header fp-header">
-          <div class="d-flex align-items-center gap-2">
-            <i class="fas fa-key"></i>
-            <h5 class="modal-title mb-0" id="forgotPasswordLabel">Password Recovery</h5>
+<!-- Step 1: Ask for Username -->
+<div class="modal fade" id="forgotAccountModal" tabindex="-1" aria-labelledby="forgotUsernameLabel" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-md">
+    <div class="modal-content fp-card">
+      <div class="modal-header fp-header">
+        <div class="d-flex align-items-center gap-2">
+          <i class="fas fa-user-lock"></i>
+          <h5 class="modal-title mb-0" id="forgotUsernameLabel">Password Recovery</h5>
+        </div>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+
+      <div class="modal-body p-4">
+        <form id="forgotUsernameForm" novalidate>
+          <div class="mb-3">
+            <label for="recoveryUsername" class="form-label fw-semibold">Enter Your Username</label>
+            <div class="input-group input-group-lg">
+              <span class="input-group-text fp-input-icon"><i class="fas fa-user"></i></span>
+              <input type="text" id="recoveryUsername" name="username" class="form-control fp-input"
+                     placeholder="e.g., johndoe" required>
+              <div class="invalid-feedback ps-2">Please enter your username.</div>
+            </div>
           </div>
-          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
-        </div>
 
-        <div class="modal-body p-4">
-          <form id="forgotPasswordForm" novalidate>
-            <div class="mb-2">
-              <label for="forgotUsername" class="form-label fw-semibold">Username</label>
-              <div class="input-group input-group-lg">
-                <span class="input-group-text fp-input-icon"><i class="fas fa-user"></i></span>
-                <input type="text" id="forgotUsername" name="username" class="form-control fp-input" placeholder="Enter your username" required>
-                <div class="invalid-feedback ps-2">Please enter your username.</div>
-              </div>
-            </div>
+          <div id="usernameStatus" class="text-center small text-muted mt-2">
+            Enter your username to verify your registered number.
+          </div>
 
-            <div id="forgotPasswordMessage" class="mt-3" role="status" aria-live="polite"></div>
-
-            <button type="submit" class="btn fp-btn w-100 mt-3" id="forgotSubmitBtn">
-              <span class="btn-label">Submit Request</span>
-              <span class="btn-spinner spinner-border spinner-border-sm ms-2 d-none" role="status" aria-hidden="true"></span>
-            </button>
-
-            <div class="fp-footnote text-center mt-3">
-              Only Staff & Stockman can request resets. Admins must use the master recovery method.
-            </div>
-          </form>
-        </div>
+          <button type="submit" class="btn fp-btn w-100 mt-3" id="verifyUsernameBtn">
+            <span class="btn-label">Next</span>
+            <span class="btn-spinner spinner-border spinner-border-sm ms-2 d-none" role="status"></span>
+          </button>
+        </form>
       </div>
     </div>
   </div>
+</div>
+
+<!-- Step 2: Send OTP -->
+<div class="modal fade" id="forgotOtpModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-labelledby="forgotOtpLabel" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-md">
+    <div class="modal-content fp-card">
+      <div class="modal-header fp-header">
+        <div class="d-flex align-items-center gap-2">
+          <i class="fas fa-key"></i>
+          <h5 class="modal-title mb-0" id="forgotOtpLabel">Verify Your Number</h5>
+        </div>
+      </div>
+
+      <div class="modal-body p-4">
+        <form id="sendOtpForm" novalidate>
+          <div class="mb-3 text-center">
+            <p class="fw-semibold">Your registered number:</p>
+            <h4 id="maskedPhoneDisplay" class="text-primary fw-bold mb-3">09XXXXX6871</h4>
+            <input type="hidden" id="actualPhoneHidden" name="phone_number">
+          </div>
+
+          <div id="otpMessage" class="mt-2 text-center small text-muted">
+            We’ll send a 6-digit OTP to this number.
+          </div>
+
+          <div class="modal-footer justify-content-between">
+            <button type="button" class="btn btn-outline-secondary" id="otpBackBtn" data-bs-dismiss="modal">Cancel</button>
+            <button type="submit" form="sendOtpForm" class="btn fp-btn" id="sendOtpBtn">
+              <span class="btn-label">Send OTP</span>
+              <span class="btn-spinner spinner-border spinner-border-sm ms-2 d-none" role="status"></span>
+            </button>
+          </div>
+
+          <!-- Resend OTP button and timer -->
+            <div class="text-center mt-3">
+              <button type="button" class="btn btn-link p-0 link-ghost underline-slide small" id="resendOtpBtn" disabled>
+                Resend OTP (<span id="resendCountdown">60</span>s)
+              </button>
+            </div>
+
+          <div class="fp-footnote text-center mt-3 small text-secondary">
+            All user levels can recover passwords via OTP.
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Step 3: Verify OTP -->
+<div class="modal fade" id="verifyOtpModal" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false" aria-labelledby="verifyOtpLabel" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-md">
+    <div class="modal-content fp-card">
+      <div class="modal-header fp-header">
+        <div class="d-flex align-items-center gap-2">
+          <i class="fas fa-shield-alt"></i>
+          <h5 class="modal-title mb-0" id="verifyOtpLabel">Enter One-Time Password</h5>
+        </div>
+      </div>
+
+      <div class="modal-body p-4">
+        <form id="verifyOtpForm" novalidate>
+          <div class="text-center mb-3">
+            <p class="fw-semibold">A 6-digit OTP has been sent to your registered number.</p>
+          </div>
+
+          <div class="d-flex justify-content-center gap-2 mb-3">
+            <!-- make OTP inputs numeric-friendly -->
+            <input type="tel" inputmode="numeric" pattern="\d*" class="form-control text-center otp-input" maxlength="1" required>
+            <input type="tel" inputmode="numeric" pattern="\d*" class="form-control text-center otp-input" maxlength="1" required>
+            <input type="tel" inputmode="numeric" pattern="\d*" class="form-control text-center otp-input" maxlength="1" required>
+            <input type="tel" inputmode="numeric" pattern="\d*" class="form-control text-center otp-input" maxlength="1" required>
+            <input type="tel" inputmode="numeric" pattern="\d*" class="form-control text-center otp-input" maxlength="1" required>
+            <input type="tel" inputmode="numeric" pattern="\d*" class="form-control text-center otp-input" maxlength="1" required>
+          </div>
+
+          <input type="hidden" id="verifyPhoneHidden" name="phone_number">
+
+          <div id="otpVerifyMessage" class="mt-2 text-center small text-muted">
+            Please enter the OTP to proceed with password reset.
+          </div>
+
+          <!-- In #verifyOtpModal footer -->
+          <div class="modal-footer justify-content-between">
+            <button type="button" class="btn btn-outline-secondary" id="verifyCancelBtn" data-bs-dismiss="modal">Cancel</button>
+            <button type="submit" form="verifyOtpForm" class="btn fp-btn" id="verifyOtpBtn">
+              <span class="btn-label">Verify OTP</span>
+              <span class="btn-spinner spinner-border spinner-border-sm ms-2 d-none" role="status"></span>
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
 
   <!-- Admin Recovery Modal -->
   <div class="modal fade" id="adminRecoveryModal" tabindex="-1" aria-hidden="true">
@@ -492,6 +594,228 @@ $conn->close();
         showToast(<?= json_encode($toast['msg']) ?>, <?= json_encode($toast['type']) ?>);
       });
     <?php endif; ?>
+  </script>
+  <!-- Password Reset -->
+   <script>
+    // Mask function
+function maskPhone(phone) {
+  const clean = phone.replace(/\D/g, '');
+  return clean.replace(/(\d{2})\d{5}(\d{4})/, '$1XXXXX$2');
+}
+
+// Step 1: Fetch number by username
+document.getElementById('forgotUsernameForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  const username = document.getElementById('recoveryUsername').value.trim();
+  const btn = document.getElementById('verifyUsernameBtn');
+  const spinner = btn.querySelector('.btn-spinner');
+  const status = document.getElementById('usernameStatus');
+
+  btn.disabled = true;
+  spinner.classList.remove('d-none');
+  status.textContent = 'Checking username...';
+
+  const res = await fetch('fetch_phone.php', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+    body: 'username=' + encodeURIComponent(username)
+  });
+
+  const data = await res.json();
+  btn.disabled = false;
+  spinner.classList.add('d-none');
+
+  if (data.success) {
+    // Show next modal with masked phone
+    const masked = maskPhone(data.phone_number);
+    document.getElementById('maskedPhoneDisplay').textContent = masked;
+    document.getElementById('actualPhoneHidden').value = data.phone_number;
+
+    const modal1 = bootstrap.Modal.getInstance(document.getElementById('forgotAccountModal'));
+    modal1.hide();
+    new bootstrap.Modal(document.getElementById('forgotOtpModal')).show();
+  } else {
+    status.textContent = data.message || 'Username not found.';
+    status.classList.add('text-danger');
+  }
+});
+
+// === Step 2: Send OTP with 60s cooldown ===
+const sendOtpForm = document.getElementById('sendOtpForm');
+const sendOtpBtn = document.getElementById('sendOtpBtn');
+const resendOtpBtn = document.getElementById('resendOtpBtn');
+const resendCountdown = document.getElementById('resendCountdown');
+const otpMessage = document.getElementById('otpMessage');
+const otpSpinner = sendOtpBtn.querySelector('.btn-spinner');
+const verifyPhoneHidden = document.getElementById('verifyPhoneHidden'); // for step 3 modal
+
+let otpCooldownTimer = null;
+let cooldownSeconds = 60;
+
+function startCooldown() {
+  resendOtpBtn.disabled = true;
+  resendCountdown.textContent = cooldownSeconds;
+  otpCooldownTimer = setInterval(() => {
+    cooldownSeconds--;
+    resendCountdown.textContent = cooldownSeconds;
+    if (cooldownSeconds <= 0) {
+      clearInterval(otpCooldownTimer);
+      resendOtpBtn.disabled = false;
+      cooldownSeconds = 60;
+    }
+  }, 1000);
+}
+
+async function sendOtp(phone) {
+  sendOtpBtn.disabled = true;
+  otpSpinner.classList.remove('d-none');
+  otpMessage.textContent = 'Sending OTP...';
+  otpMessage.classList.remove('text-danger','text-success');
+
+  try {
+    const res = await fetch('send_otp.php', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: 'phone_number=' + encodeURIComponent(phone)
+    });
+    const data = await res.json();
+
+    if (data.success) {
+      otpMessage.textContent = 'OTP sent successfully!';
+      otpMessage.classList.add('text-success');
+      startCooldown();
+
+      // --- SHOW VERIFY MODAL ---
+      const modal2 = bootstrap.Modal.getInstance(document.getElementById('forgotOtpModal'));
+      modal2.hide();
+      document.getElementById('verifyPhoneHidden').value = phone;
+      new bootstrap.Modal(document.getElementById('verifyOtpModal')).show();
+    } else {
+      otpMessage.textContent = data.message || 'Failed to send OTP.';
+      otpMessage.classList.add('text-danger');
+    }
+  } catch (err) {
+    otpMessage.textContent = 'Error sending OTP.';
+    otpMessage.classList.add('text-danger');
+  } finally {
+    sendOtpBtn.disabled = false;
+    otpSpinner.classList.add('d-none');
+  }
+}
+
+// Main Send OTP
+sendOtpForm.addEventListener('submit', e => {
+  e.preventDefault();
+  const phone = document.getElementById('actualPhoneHidden').value.trim();
+  sendOtp(phone);
+});
+
+// Resend OTP
+resendOtpBtn.addEventListener('click', () => {
+  const phone = document.getElementById('actualPhoneHidden').value.trim();
+  if (!resendOtpBtn.disabled) sendOtp(phone);
+});
+
+
+// Step 3: Verify OTP
+document.getElementById('verifyOtpForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const btn = document.getElementById('verifyOtpBtn');
+  const spinner = btn.querySelector('.btn-spinner');
+  const message = document.getElementById('otpVerifyMessage');
+
+  const otpInputs = document.querySelectorAll('.otp-input');
+  const otpCode = Array.from(otpInputs).map(i => i.value).join('');
+  const phone = document.getElementById('verifyPhoneHidden').value.trim();
+
+  if (otpCode.length !== 6) {
+    message.textContent = 'Please enter all 6 digits.';
+    message.classList.add('text-danger');
+    return;
+  }
+
+  btn.disabled = true;
+  spinner.classList.remove('d-none');
+  message.textContent = 'Verifying OTP...';
+  message.classList.remove('text-danger');
+
+  try {
+    const res = await fetch('verify_otp.php', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+      body: 'phone_number=' + encodeURIComponent(phone) + '&otp=' + encodeURIComponent(otpCode)
+    });
+    const data = await res.json();
+
+    if (data.success) {
+      message.textContent = 'OTP verified! Redirecting...';
+      message.classList.add('text-success');
+
+      // Let the server decide where to go
+      setTimeout(() => {
+        window.location.href = data.redirect || 'change_password.php';
+      }, 800);
+    } else {
+      message.textContent = data.message || 'Invalid or expired OTP.';
+      message.classList.add('text-danger');
+    }
+  } catch (err) {
+    message.textContent = 'Server error. Please try again.';
+    message.classList.add('text-danger');
+  } finally {
+    btn.disabled = false;
+    spinner.classList.add('d-none');
+  }
+});
+
+// === UX: Auto-focus for OTP input boxes ===
+document.addEventListener('DOMContentLoaded', () => {
+  const otpInputs = document.querySelectorAll('.otp-input');
+
+  otpInputs.forEach((input, index) => {
+    input.addEventListener('input', e => {
+      const val = e.target.value;
+      if (val.length === 1 && index < otpInputs.length - 1) {
+        otpInputs[index + 1].focus();
+      }
+    });
+
+    input.addEventListener('keydown', e => {
+      if (e.key === 'Backspace' && !e.target.value && index > 0) {
+        otpInputs[index - 1].focus();
+      }
+    });
+
+    input.addEventListener('paste', e => {
+      e.preventDefault();
+      const paste = (e.clipboardData || window.clipboardData).getData('text');
+      if (/^\d{6}$/.test(paste)) {
+        otpInputs.forEach((inp, i) => (inp.value = paste[i] || ''));
+        otpInputs[otpInputs.length - 1].focus();
+      }
+    });
+  });
+});
+
+// When verify modal shows, focus first box
+document.getElementById('verifyOtpModal')
+  ?.addEventListener('shown.bs.modal', () => {
+    const first = document.querySelector('#verifyOtpModal .otp-input');
+    first?.focus();
+  });
+
+// Only allow digits in OTP boxes
+document.querySelectorAll('#verifyOtpModal .otp-input').forEach(inp => {
+  inp.addEventListener('input', e => e.target.value = e.target.value.replace(/\D/g, ''));
+});
+
+document.getElementById('verifyCancelBtn')?.addEventListener('click', () => {
+  document.querySelectorAll('#verifyOtpModal .otp-input').forEach(i => i.value = '');
+  const m = document.getElementById('otpVerifyMessage');
+  m.textContent = 'Please enter the OTP to proceed with password reset.';
+  m.classList.remove('text-danger','text-success');
+});
+
   </script>
 </body>
 </html>
