@@ -57,45 +57,46 @@ switch($reportType){
 
 // Build query
 if($reportType === 'itemized'){
-    $query = "
-        SELECT 
-            s.sale_id,
-            s.sale_date,
-            $periodLabel AS period,
-            b.branch_name,
-            p.product_name,
-            p.category,
-            si.quantity,
-            si.price,
-            (si.quantity*si.price) AS total_amount,
-            IFNULL(r.refund_amount,0) AS refunded_amount,
-            IFNULL(r.refund_reason,'') AS refund_reason
-        FROM sales s
-        JOIN sales_items si ON s.sale_id = si.sale_id
-        JOIN products p ON si.product_id = p.product_id
-        LEFT JOIN branches b ON s.branch_id = b.branch_id
-        LEFT JOIN sales_refunds r ON r.sale_id = s.sale_id
-        WHERE s.sale_date BETWEEN '$startDate' AND '$endDate'
-        $branchCondition
-        ORDER BY s.sale_date DESC
-    ";
-}else{
-    $query = "
-        SELECT 
-            $periodLabel AS period,
-            SUM(si.quantity*si.price) AS total_sales,
-            COUNT(DISTINCT s.sale_id) AS total_transactions
-        FROM sales s
-        JOIN sales_items si ON s.sale_id = si.sale_id
-        JOIN products p ON si.product_id = p.product_id
-        WHERE s.sale_date BETWEEN '$startDate' AND '$endDate'
-        $branchCondition
-        GROUP BY $groupBy
-        ORDER BY $groupBy DESC
-    ";
+  $query = "
+SELECT 
+    s.sale_id,
+    s.sale_date,
+    b.branch_name,
+    ROUND(s.total, 2) AS subtotal,
+    ROUND(s.vat, 2) AS vat,
+    ROUND(s.total + s.vat, 2) AS grand_total,
+    
+    -- Combine products and services
+    TRIM(BOTH ', ' FROM CONCAT_WS(', ',
+        (SELECT GROUP_CONCAT(CONCAT(p.product_name, ' (', si.quantity, 'x₱', FORMAT(si.price, 2), ')') SEPARATOR ', ')
+         FROM sales_items si
+         JOIN products p ON si.product_id = p.product_id
+         WHERE si.sale_id = s.sale_id),
+        (SELECT GROUP_CONCAT(CONCAT(sv.service_name, ' (₱', FORMAT(ss.price, 2), ')') SEPARATOR ', ')
+         FROM sales_services ss
+         JOIN services sv ON ss.service_id = sv.service_id
+         WHERE ss.sale_id = s.sale_id)
+    )) AS item_list,
+
+    -- Refund totals and reasons
+    COALESCE(SUM(r.refund_total), 0) AS total_refunded,
+    TRIM(BOTH '; ' FROM COALESCE(
+        NULLIF(GROUP_CONCAT(DISTINCT r.refund_reason ORDER BY r.refund_date SEPARATOR '; '), ''), ''
+    )) AS refund_reason
+
+FROM sales s
+LEFT JOIN branches b ON s.branch_id = b.branch_id
+LEFT JOIN sales_refunds r ON r.sale_id = s.sale_id
+WHERE s.sale_date BETWEEN '$startDate' AND '$endDate'
+$branchCondition
+GROUP BY s.sale_id
+ORDER BY s.sale_date DESC
+";
+
 }
 
 $salesReportResult = $conn->query($query);
+
 
 $pendingResetsCount = 0;
 if ($role === 'admin') {
@@ -331,9 +332,19 @@ $toolsOpen = ($self === 'backup_admin.php' || $isArchive);
 <thead>
 <?php if($reportType==='itemized'): ?>
 <tr>
-<th>Sale ID</th><th>Date</th><th>Period</th><th>Branch</th><th>Product</th><th>Category</th><th>Qty</th><th>Price</th><th>Total</th> <th>Refunded Amount</th>
-    <th>Refund Reason</th>
+<tr>
+  <th>Sale ID</th>
+  <th>Date</th>
+  <th>Branch</th>
+  <th>Items</th>
+  <th>Subtotal (₱)</th>
+  <th>VAT (₱)</th>
+  <th>Total (₱)</th>
+  <th>Refund (₱)</th>
+  <th>Reason</th>
+  <th>Status</th>
 </tr>
+
 <?php else: ?>
 <tr>
 <th>Period</th><th>Total Sales</th><th>Transactions</th>
@@ -343,40 +354,61 @@ $toolsOpen = ($self === 'backup_admin.php' || $isArchive);
 <tbody>
 <?php
 $salesDataArr = [];
+
+
+
+// --- Sort by sale_date descending (optional but nice for clarity) ---
+usort($salesDataArr, fn($a,$b) => strcmp($b['sale_date'], $a['sale_date']));
+
+?>
+<?php
+// --- Fetch all sales once ---
+$salesDataArr = [];
 if ($salesReportResult && $salesReportResult->num_rows > 0) {
-    $salesReportResult->data_seek(0); // reset pointer
-    while($row = $salesReportResult->fetch_assoc()){
+    while($row = $salesReportResult->fetch_assoc()) {
+        // Replace commas with line breaks for better readability
+        $row['item_list'] = str_replace(',', '<br>', $row['item_list']);
         $salesDataArr[] = $row;
     }
 }
+
+// --- Sort newest first ---
+usort($salesDataArr, fn($a, $b) => strcmp($b['sale_date'], $a['sale_date']));
+
+foreach ($salesDataArr as $row):
+    $total    = (float)$row['grand_total'];
+    $refunded = (float)$row['total_refunded'];
+
+    // --- Determine refund status ---
+    if ($refunded <= 0) {
+        $status = 'Not Refunded';
+        $badge  = 'secondary';
+    } elseif ($refunded < $total - 0.01) {
+        $status = 'Partial';
+        $badge  = 'warning';
+    } elseif ($refunded >= $total - 0.01 && $refunded <= $total + 0.01) {
+        $status = 'Full';
+        $badge  = 'success';
+    } else {
+        $status = 'Over-refunded';
+        $badge  = 'danger';
+    }
 ?>
-<?php foreach($salesDataArr as $row): ?>
 <tr>
-<?php if($reportType==='itemized'): ?>
-<td><?= $row['sale_id'] ?></td>
-<td><?= $row['sale_date'] ?></td>
-<td><?= $row['period'] ?></td>
-<td><?= $row['branch_name'] ?? 'N/A' ?></td>
-<td><?= $row['product_name'] ?></td>
-<td><?= $row['category'] ?></td>
-<td><?= $row['quantity'] ?></td>
-<td>₱<?= number_format($row['price'],2) ?></td>
-<td>₱<?= number_format($row['total_amount'],2) ?></td>
-<td><?php if($row['refunded_amount'] > 0): ?>
-        <span class="text-danger fw-bold">₱<?= number_format($row['refunded_amount'],2) ?></span>
-    <?php else: ?>
-        ₱0.00
-    <?php endif; ?></td>
-    <td><?= htmlspecialchars($row['refund_reason'] ?? '') ?></td>
-<?php else: ?>
-    
-<td><?= $row['period'] ?></td>
-<td>₱<?= number_format($row['total_sales'],2) ?></td>
-<td><?= $row['total_transactions'] ?></td>
-<?php endif; ?>
+  <td><?= htmlspecialchars($row['sale_id']) ?></td>
+  <td><?= htmlspecialchars($row['sale_date']) ?></td>
+  <td><?= htmlspecialchars($row['branch_name'] ?? 'N/A') ?></td>
+  <td style="white-space: normal; line-height: 1.5em;"><?= $row['item_list'] ?: '—' ?></td>
+  <td>₱<?= number_format($row['subtotal'], 2) ?></td>
+  <td>₱<?= number_format($row['vat'], 2) ?></td>
+  <td><strong>₱<?= number_format($row['grand_total'], 2) ?></strong></td>
+  <td class="<?= $refunded > 0 ? 'text-danger fw-bold' : 'text-muted' ?>">
+      ₱<?= number_format($refunded, 2) ?>
+  </td>
+  <td><?= htmlspecialchars($row['refund_reason'] ?: '—') ?></td>
+  <td><span class="badge bg-<?= $badge ?>"><?= $status ?></span></td>
 </tr>
 <?php endforeach; ?>
-
 </tbody>
 </table>
 </div>

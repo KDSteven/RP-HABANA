@@ -124,30 +124,33 @@ switch ($action) {
 
         // If you don't have VAT on services, keep vat NULL or 0.
         // Adjust the SELECT to include vat if present in your schema.
-        $stmt = $conn->prepare("SELECT service_name, price, COALESCE(vat,0) AS vat FROM services WHERE service_id=? LIMIT 1");
-        $stmt->bind_param("i", $sid);
-        $stmt->execute();
-        $srv = $stmt->get_result()->fetch_assoc();
-        $stmt->close();
+        $stmt = $conn->prepare("SELECT service_name, price FROM services WHERE service_id=? LIMIT 1");
+$stmt->bind_param("i", $sid);
+$stmt->execute();
+$srv = $stmt->get_result()->fetch_assoc();
+$stmt->close();
 
-        if (!$srv) { $response['message'] = 'Service not found.'; break; }
+if (!$srv) { 
+    $response['message'] = 'Service not found.'; 
+    break; 
+}
 
-        $idx = findCartIndex('service', $sid);
-        if ($idx >= 0) {
-            $_SESSION['cart'][$idx]['qty'] = (int)$_SESSION['cart'][$idx]['qty'] + $qty;
-            $_SESSION['cart'][$idx]['vat'] = (float)($srv['vat'] ?? 0); // ensure VAT present
-        } else {
-            $_SESSION['cart'][] = [
-                'type'       => 'service',
-                'service_id' => $sid,
-                'name'       => $srv['service_name'],
-                'qty'        => $qty,
-                'price'      => (float)$srv['price'],
-                'vat'        => (float)($srv['vat'] ?? 0),  // percent
-            ];
-        }
+$idx = findCartIndex('service', $sid);
+if ($idx >= 0) {
+    $_SESSION['cart'][$idx]['qty'] = (int)$_SESSION['cart'][$idx]['qty'] + $qty;
+} else {
+    $_SESSION['cart'][] = [
+        'type'       => 'service',
+        'service_id' => $sid,
+        'name'       => $srv['service_name'],
+        'qty'        => $qty,
+        'price'      => (float)$srv['price'],
+        'vat'        => 0,  // default 0 since your table has no VAT field
+    ];
+}
 
-        $response['success'] = true;
+$response['success'] = true;
+
         break;
     }
 

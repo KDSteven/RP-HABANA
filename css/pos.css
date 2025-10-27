@@ -1,3 +1,45 @@
+/* =========================================
+   POS THEME — ORANGE + GRAY (MATCHES DASHBOARD)
+   ========================================= */
+:root {
+  /* Accent */
+  --orange-600: #ea580c;
+  --orange-500: #f97316;
+  --orange-400: #fb923c;
+
+  /* Grays */
+  --gray-900: #1f2937;
+  --gray-800: #1f2937;
+  --gray-700: #374151;
+  --gray-500: #6b7280;
+  --gray-300: #d1d5db;
+  --gray-200: #e5e7eb;
+  --gray-100: #f3f4f6;
+  --gray-50:  #f9fafb;
+
+  /* Surfaces & bg */
+  --surface:  #ffffff;
+  --bg-start: #f8fafc;
+  --bg-end:   #eef2f7;
+
+  /* Shape & Elevation */
+  --radius-lg: 16px;
+  --radius-md: 12px;
+  --shadow-1: 0 4px 10px rgba(0,0,0,.06);
+  --shadow-2: 0 6px 16px rgba(0,0,0,.10);
+  --shadow-3: 0 10px 30px rgba(0,0,0,.15);
+
+  /* Motion */
+  --ease: cubic-bezier(.2,.7,.3,1);
+  --t-150: .15s;
+  --t-200: .20s;
+  --t-250: .25s;
+
+  /* Sidebar layout vars */
+  /* --sidebar-desktop: 260px; */
+  --sidebar-rail: 56px;
+}
+
 /* ================= POS Layout ================= */
 .pos-wrapper {
   display: flex;
@@ -6,10 +48,11 @@
   width: 100%;
   align-items: flex-start;
   flex-wrap: nowrap;
-  background: #f5f6fa;
   min-height: 100vh;
   font-family: 'Segoe UI', Tahoma, sans-serif;
-  overflow: hidden; /* prevent unwanted scroll */
+  background: linear-gradient(135deg, var(--bg-start), var(--bg-end));
+  overflow-x: hidden;   /* prevent horizontal scroll */
+  overflow-y: visible;  /* allow page scrolling */
 }
 
 /* ================= Cart Section ================= */
@@ -21,25 +64,30 @@
   top: 20px;
   display: flex;
   flex-direction: column;
-  height: 80vh;
+  height: auto;
 }
+
 .cart-box {
-  background: #fff;
-  border-radius: 12px;
-  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.12);
+  background: var(--surface);
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-1);
   overflow-y: auto;
   display: flex;
   flex-direction: column;
   padding: 10px;
-  flex: 1;
+  flex: 0 1 auto;
+  max-height: 60vh;
 }
+
+/* Tables inside cart */
 .cart-box table {
   width: 100%;
   border-collapse: collapse;
   font-size: 13px;
 }
-.cart-box th {
-  background: linear-gradient(135deg, #f7931e, #ffa84d);
+.cart-box thead th {
+  background: linear-gradient(135deg, var(--orange-600), var(--orange-500));
   color: #fff;
   font-weight: 600;
   padding: 8px;
@@ -47,14 +95,16 @@
   position: sticky;
   top: 0;
   font-size: 14px;
+  z-index: 1; /* keep above rows */
 }
-.cart-box td {
+.cart-box tbody td {
   padding: 6px 8px;
-  border-bottom: 1px solid #eee;
+  border-bottom: 1px solid var(--gray-200);
   font-size: 13px;
+  color: var(--gray-700);
 }
 .cart-box tbody tr:hover {
-  background: #fdf2e9;
+  background: #fff6ec; /* subtle orange-tinted hover */
 }
 
 /* ================= Controls Section ================= */
@@ -68,10 +118,11 @@
   overflow-y: auto;
 }
 .controls-section .card {
-  background: #fff;
+  background: var(--surface);
   padding: 10px;
-  border-radius: 10px;
-  box-shadow: 0 4px 10px rgba(0,0,0,0.08);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--gray-200);
+  box-shadow: var(--shadow-1);
 }
 
 /* ================= Quick Add Buttons ================= */
@@ -81,33 +132,29 @@
   gap: 6px;
 }
 .quick-btn-form button {
-  height: auto;
   min-height: 50px;
   font-size: 13px;
-  font-weight: 500;
-  border-radius: 6px;
-  background: #ff8800;
+  font-weight: 600;
+  border-radius: 8px;
+  background: linear-gradient(135deg, var(--orange-600), var(--orange-500));
   color: #fff;
   border: none;
-  padding: 6px 4px;
+  padding: 8px 6px;
   text-align: center;
   cursor: pointer;
-  transition: 0.2s ease;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  align-items: center;
-  white-space: normal;
+  transition: transform var(--t-150) var(--ease), box-shadow var(--t-150) var(--ease);
+  display: flex; flex-direction: column; justify-content: center; align-items: center;
   line-height: 1.2;
 }
 .quick-btn-form button:hover {
-  background: #ff6600;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(234,88,12,.22);
 }
 
 /* ================= Totals ================= */
 .totals-box {
-  background: #fff6eb;
-  border: 2px solid #f7931e;
+  background: #fff8f1; /* very light orange surface */
+  border: 2px solid var(--orange-500);
   border-radius: 10px;
   padding: 10px;
   font-size: 14px;
@@ -116,12 +163,13 @@
   display: flex;
   justify-content: space-between;
   margin: 4px 0;
+  color: var(--gray-800);
 }
 .totals-box .final-total {
   font-size: 18px;
-  color: #d35400;
-  font-weight: bold;
-  border-top: 1px solid #ddd;
+  color: var(--orange-600);
+  font-weight: 800;
+  border-top: 1px solid var(--gray-200);
   padding-top: 6px;
 }
 
@@ -135,24 +183,28 @@
 .checkout-buttons button {
   font-size: 14px;
   padding: 10px;
-  border-radius: 6px;
-  font-weight: bold;
+  border-radius: 10px;
+  font-weight: 800;
   border: none;
-  transition: 0.2s;
+  transition: transform var(--t-150) var(--ease), box-shadow var(--t-150) var(--ease);
+}
+.checkout-buttons button:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 3px 10px rgba(0,0,0,.12);
 }
 .checkout-buttons .pay-btn {
-  background: #27ae60;
+  background: #22c55e; /* green-500 */
   color: #fff;
 }
 .checkout-buttons .pay-btn:hover {
-  background: #1e874b;
+  background: #16a34a; /* green-600 */
 }
 .checkout-buttons .cancel-btn {
-  background: #e74c3c;
+  background: #ef4444; /* red-500 */
   color: #fff;
 }
 .checkout-buttons .cancel-btn:hover {
-  background: #c0392b;
+  background: #dc2626; /* red-600 */
 }
 
 /* ================= Discount Form ================= */
@@ -163,34 +215,36 @@
 .discount-form input {
   flex: 1;
   font-size: 13px;
-  padding: 6px;
-  border: 1px solid #ccc;
-  border-radius: 6px;
+  padding: 6px 8px;
+  border: 1px solid var(--gray-300);
+  border-radius: 8px;
 }
 .discount-form button {
-  background: #ffb84d;
-  font-weight: bold;
+  background: linear-gradient(135deg, var(--orange-500), var(--orange-400));
+  color: #fff;
+  font-weight: 800;
   border: none;
-  padding: 6px 10px;
-  border-radius: 6px;
+  padding: 6px 12px;
+  border-radius: 8px;
+  transition: box-shadow var(--t-150) var(--ease);
 }
 .discount-form button:hover {
-  background: #f39c12;
+  box-shadow: 0 4px 10px rgba(249,115,22,.25);
 }
+
 /* ================= Toast Overrides ================= */
 .toast-container {
   position: fixed !important;
   top: 1rem;
   right: 1rem;
-  z-index: 2000;           /* Always above POS layout */
-  pointer-events: none;    /* Clicks pass through except toast itself */
+  z-index: 2000;
+  pointer-events: none;
 }
-
 .toast {
   min-width: 280px;
-  margin-bottom: 0.5rem;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-  pointer-events: auto;    /* Allow clicks on close button */
+  margin-bottom: .5rem;
+  box-shadow: var(--shadow-2);
+  pointer-events: auto;
 }
 
 /* ================= Responsive ================= */
@@ -215,166 +269,115 @@
     max-height: none;
   }
 }
-/* ================= Restyled Payment / Refund Modal ================= */
+
+/* ================= Payment / Refund Modal ================= */
 .modal-dialog {
-  max-width: 720px;       /* wider for tablets */
+  max-width: 720px;
   margin: 2rem auto;
 }
-
 .modal-content {
-  border-radius: 12px;
+  border-radius: var(--radius-md);
   background: #fdfdfd;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15);
+  box-shadow: var(--shadow-3);
   overflow: hidden;
   font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  border: 1px solid var(--gray-200);
 }
-
 .modal-header {
-  background: linear-gradient(135deg, #ff8800, #ff6600);
+  background: linear-gradient(135deg, var(--orange-600), var(--orange-500));
   color: #fff;
   font-weight: 600;
   border-bottom: none;
   padding: 1rem 1.25rem;
 }
-
-.modal-header .btn-close {
-  filter: brightness(1.5); /* white close button */
-}
-
-.modal-title i {
-  margin-right: 8px;
-}
-
+.modal-header .btn-close { filter: brightness(1.5); }
+.modal-title i { margin-right: 8px; }
 .modal-body {
   padding: 1.25rem 1.5rem;
   max-height: 70vh;
   overflow-y: auto;
 }
-
-/* Tables inside modal */
 .modal-body table {
   width: 100%;
   border-collapse: collapse;
   font-size: 14px;
   margin-bottom: 1rem;
 }
-
 .modal-body th {
-  background: #ff8800;
+  background: var(--orange-600);
   color: #fff;
   font-weight: 600;
   padding: 8px;
   text-align: left;
   border-radius: 4px 4px 0 0;
 }
-
 .modal-body td {
   padding: 6px 8px;
-  border-bottom: 1px solid #eee;
+  border-bottom: 1px solid var(--gray-200);
+  color: var(--gray-700);
 }
-
 .modal-body input[type="number"] {
-  width: 80px;
+  width: 90px;
   text-align: center;
-  border: 1px solid #ccc;
-  border-radius: 6px;
-  padding: 4px 6px;
+  border: 1px solid var(--gray-300);
+  border-radius: 8px;
+  padding: 6px 8px;
 }
-
-/* Refund reason select & refund amount input */
-.modal-body .form-label {
-  font-weight: 500;
-}
-
+.modal-body .form-label { font-weight: 600; }
 .modal-body select, 
 .modal-body input[type="number"] {
-  margin-top: 4px;
-  margin-bottom: 12px;
+  margin: 4px 0 12px;
   width: 100%;
   box-sizing: border-box;
   font-size: 14px;
 }
-
-/* Modal footer buttons */
 .modal-footer {
-  padding: 0.75rem 1.5rem;
+  padding: .75rem 1.5rem;
   border-top: none;
   display: flex;
   justify-content: flex-end;
   gap: 10px;
+  background: var(--gray-50);
 }
-
 .modal-footer .btn {
-  font-weight: bold;
-  border-radius: 8px;
+  font-weight: 800;
+  border-radius: 10px;
   padding: 10px 16px;
-  transition: 0.2s ease;
+  transition: transform var(--t-150) var(--ease), box-shadow var(--t-150) var(--ease);
 }
-
+.modal-footer .btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 3px 10px rgba(0,0,0,.12);
+}
 .modal-footer .btn-danger {
-  background: #e74c3c;
+  background: #ef4444;
   color: #fff;
 }
-
 .modal-footer .btn-danger:hover {
-  background: #c0392b;
+  background: #dc2626;
 }
 
-/* ================= Responsive ================= */
-@media (max-width: 992px) { /* tablets */
-  .modal-dialog {
-    max-width: 90%;
-  }
-}
-
-@media (max-width: 576px) { /* small phones */
-  .modal-dialog {
-    max-width: 100%;
-    margin: 0.5rem auto;
-  }
-  .modal-body {
-    max-height: 80vh;
-    padding: 1rem;
-  }
-}
-
-/* ===== POS x Sidebar alignment (append at end) ===== */
-
-/* Prevent the POS from hiding under the sidebar */
+/* ================= Sidebar / POS Alignment ================= */
 @media (min-width: 992px) {
-  .pos-wrapper { 
-    margin-left: var(--sidebar-desktop);
-  }
+  .pos-wrapper { margin-left: var(--sidebar-desktop); }
 }
-
-/* Tablet: show rail (56px). When sidebar opens, push to 260px */
 @media (min-width: 768px) and (max-width: 991.98px) {
-  .pos-wrapper {
-    margin-left: var(--sidebar-rail);
-  }
-  /* If your sidebar gets the .expanded class when opened,
-     push the POS to the full width while open */
+  .pos-wrapper { margin-left: var(--sidebar-rail); }
   #mainSidebar.expanded ~ .pos-wrapper {
     margin-left: var(--sidebar-desktop);
   }
-  /* Use your actual sidebar widths here */
-:root {
-  --sidebar-desktop: 260px; /* full sidebar width on desktop */
-  --sidebar-rail: 56px;     /* slim rail width on tablet */
 }
-}
-
-/* Mobile: sidebar overlays, POS stays full width */
 @media (max-width: 767.98px) {
-  .pos-wrapper {
-    margin-left: 0;
-  }
+  .pos-wrapper { margin-left: 0; } /* sidebar overlays on mobile */
 }
 
-/* The original had overflow:hidden on .pos-wrapper which can clip content.
-   Keep horizontal hidden, allow vertical to scroll. */
-.pos-wrapper {
-  overflow-x: hidden;
-  overflow-y: visible;
+/* ===== Small polish ===== */
+.cart-box::-webkit-scrollbar,
+.controls-section::-webkit-scrollbar,
+.modal-body::-webkit-scrollbar { width: 10px; }
+.cart-box::-webkit-scrollbar-thumb,
+.controls-section::-webkit-scrollbar-thumb,
+.modal-body::-webkit-scrollbar-thumb {
+  background: var(--gray-300);
+  border-radius: 999px;
 }
-

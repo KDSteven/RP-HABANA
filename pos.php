@@ -53,35 +53,36 @@ function checkoutCart($conn, $user_id, $branch_id, $payment, $discount = 0, $dis
     }
 
     // ---------- 1. CALCULATE SUBTOTAL ----------
-    $subtotal = 0.0;
-    $totalVat = 0.0;
+  $subtotal = 0.0;
+$totalVat = 0.0;
 
-    foreach ($_SESSION['cart'] as &$item) {
-        if ($item['type'] === 'product') {
-            $stmt = $conn->prepare("SELECT price, markup_price, vat FROM products WHERE product_id=?");
-            $stmt->bind_param("i", $item['product_id']);
-            $stmt->execute();
-            $prod = $stmt->get_result()->fetch_assoc();
-            $stmt->close();
+foreach ($_SESSION['cart'] as $i => $item) {
+    if ($item['type'] === 'product') {
+        $stmt = $conn->prepare("SELECT price, markup_price, vat FROM products WHERE product_id=?");
+        $stmt->bind_param("i", $item['product_id']);
+        $stmt->execute();
+        $prod = $stmt->get_result()->fetch_assoc();
+        $stmt->close();
 
-            $price = finalPrice($prod['price'] ?? 0, $prod['markup_price'] ?? 0);
-            $vatRate = (float)($prod['vat'] ?? 0);
-        } else { // service
-            $price = (float)$item['price'];
-            $vatRate = (float)($item['vat'] ?? 0);
-        }
-
-        $qty = (int)$item['qty'];
-        $lineSubtotal = $price * $qty;
-        $lineVat = $lineSubtotal * ($vatRate / 100);
-
-        // Save to item for later insert
-        $item['calculated_price'] = $price;
-        $item['calculated_vat'] = $lineVat;
-
-        $subtotal += $lineSubtotal;
-        $totalVat += $lineVat;
+        $price  = finalPrice($prod['price'] ?? 0, $prod['markup_price'] ?? 0);
+        $vatRate = (float)($prod['vat'] ?? 0);
+    } else {
+        $price  = (float)$item['price'];
+        $vatRate = (float)($item['vat'] ?? 0);
     }
+
+    $qty          = (int)$item['qty'];
+    $lineSubtotal = $price * $qty;
+    $lineVat      = $lineSubtotal * ($vatRate / 100);
+
+    // write back without references
+    $_SESSION['cart'][$i]['calculated_price'] = $price;
+    $_SESSION['cart'][$i]['calculated_vat']   = $lineVat;
+
+    $subtotal += $lineSubtotal;
+    $totalVat += $lineVat;
+}
+
 
     // ---------- 2. APPLY DISCOUNT ----------
     $discount_value = 0.0;

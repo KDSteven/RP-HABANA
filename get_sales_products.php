@@ -1,4 +1,6 @@
 <?php
+error_reporting(E_ALL);
+ini_set('display_errors', 1);
 session_start();
 include 'config/db.php';
 
@@ -14,13 +16,21 @@ if ($sale_id <= 0) {
     exit;
 }
 
-$products = [];
-$services = [];
-$subtotal = 0.0;
-$saleVAT  = 0.0;
+/* --- Fetch Sale Header --- */
+$stmt = $conn->prepare("
+    SELECT total AS net_total, vat AS vat_amount, (total + vat) AS total_with_vat
+    FROM sales
+    WHERE sale_id = ?
+");
+$stmt->bind_param("i", $sale_id);
+$stmt->execute();
+$sale = $stmt->get_result()->fetch_assoc();
+$stmt->close();
 
+$saleNet = (float)($sale['net_total'] ?? 0);
+$saleVAT = (float)($sale['vat_amount'] ?? 0);
 
-// --- PRODUCTS ---
+/* --- PRODUCTS --- */
 $stmt = $conn->prepare("
     SELECT si.product_id, p.product_name, si.quantity, si.price
     FROM sales_items si
@@ -29,41 +39,21 @@ $stmt = $conn->prepare("
 ");
 $stmt->bind_param("i", $sale_id);
 $stmt->execute();
-$productsResult = $stmt->get_result();
-
+$res = $stmt->get_result();
 $products = [];
-$subtotal = 0;
-
-while ($row = $productsResult->fetch_assoc()) {
-    $qty   = (int)$row['quantity'];
-    $price = (float)$row['price'];
-
-    $lineTotal = $qty * $price;
-    $subtotal += $lineTotal;
-
+while ($row = $res->fetch_assoc()) {
     $products[] = [
-        'product_id'   => $row['product_id'],
+        'product_id'   => (int)$row['product_id'],
         'product_name' => $row['product_name'],
-        'quantity'     => $qty,
-        'price'        => $price,
-        'line_total'   => $lineTotal
+        'quantity'     => (int)$row['quantity'],
+        'price'        => (float)$row['price']
     ];
 }
 $stmt->close();
 
-// --- VAT FROM SALES ---
-$stmt = $conn->prepare("SELECT vat FROM sales WHERE sale_id = ?");
-$stmt->bind_param("i", $sale_id);
-$stmt->execute();
-$saleResult = $stmt->get_result();
-$saleRow = $saleResult->fetch_assoc();
-$stmt->close();
-
-$saleVAT = isset($saleRow['vat']) ? (float)$saleRow['vat'] : 0.0;
-
-// --- SERVICES ---
+/* --- SERVICES --- */
 $stmt = $conn->prepare("
-    SELECT ss.id AS sale_service_id, sv.service_id, sv.service_name, ss.price
+    SELECT ss.service_id, sv.service_name, ss.price
     FROM sales_services ss
     JOIN services sv ON ss.service_id = sv.service_id
     WHERE ss.sale_id = ?
@@ -71,31 +61,23 @@ $stmt = $conn->prepare("
 $stmt->bind_param("i", $sale_id);
 $stmt->execute();
 $res = $stmt->get_result();
-
+$services = [];
 while ($row = $res->fetch_assoc()) {
-    $qty   = (int)$row['quantity'];
-    $price = (float)$row['price'];
-    $lineTotal = $qty * $price;
-
-    $subtotal += $lineTotal;
-
     $services[] = [
-        "service_id"   => (int)$row['service_id'],
-        "service_name" => $row['service_name'],
-        "quantity"     => $qty,
-        "price"        => $price,
-        "line_total"   => $lineTotal
+        'service_id'   => (int)$row['service_id'],
+        'service_name' => $row['service_name'],
+        'quantity'     => 1,  // services are one each
+        'price'        => (float)$row['price']
     ];
 }
 $stmt->close();
 
-$total = $subtotal + $saleVAT;
-
+/* --- Final JSON --- */
 header("Content-Type: application/json");
 echo json_encode([
-    "products" => $products,
-    "services" => $services,
-    "subtotal" => round($subtotal, 2),
-    "vat"      => round($saleVAT, 2),
-    "total"    => round($total, 2)
+    'total' => round($saleNet, 2),
+    'vat'   => round($saleVAT, 2),
+    'total_with_vat' => round($saleNet + $saleVAT, 2),
+    'products' => $products,
+    'services' => $services
 ]);

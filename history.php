@@ -52,11 +52,19 @@ SELECT
     s.total,
     s.vat AS stored_vat,
     b.branch_name,
-    COALESCE(SUM(r.refund_total), 0) AS refund_amount
+    COALESCE(SUM(r.refund_total), 0) AS refund_amount,
+    /* collect reasons in chronological order; dedupe just in case */
+    TRIM(BOTH ', ' FROM COALESCE(
+      NULLIF(
+        GROUP_CONCAT(DISTINCT r.refund_reason ORDER BY r.refund_date SEPARATOR '; '),
+        ''
+      ), ''
+    )) AS refund_remarks
 FROM sales s
 JOIN branches b ON s.branch_id = b.branch_id
 LEFT JOIN sales_refunds r ON s.sale_id = r.sale_id
 ";
+
 
 if ($where) {
     $sql .= " WHERE " . implode(" AND ", $where);
@@ -309,7 +317,7 @@ $toolsOpen = ($self === 'backup_admin.php' || $isArchive);
             <th>Branch</th>
             <th>Date</th>
             <th>Total (₱)</th>
-            <th>Refunded (₱)</th>
+            <th>Remarks</th>
             <th>Status</th>
             <th>Actions</th>
           </tr>
@@ -323,23 +331,33 @@ $toolsOpen = ($self === 'backup_admin.php' || $isArchive);
     // Total including VAT
     $totalWithVat = $total + $vat;
 
-    if ($refunded == 0) {
-        $status = "Not Refunded";
-        $badge = "secondary";
-    } elseif ($refunded < $totalWithVat) {
-        $status = "Partial Refund";
-        $badge = "warning text-dark";
-    } else {
-        $status = "Fully Refunded";
-        $badge = "success";
-    }
+   if ($refunded <= 0) {
+    $status = "Not Refunded";
+    $badge = "secondary";
+} elseif ($refunded >= $totalWithVat - 0.01) { 
+    $status = "Fully Refunded";
+    $badge = "success";
+} else {
+    $status = "Partially Refunded";
+    $badge = "warning text-dark";
+}
+
 ?>
 <tr>
     <td><?= (int)$sale['sale_id'] ?></td>
     <td><?= htmlspecialchars($sale['branch_name']) ?></td>
     <td><?= htmlspecialchars($sale['sale_date']) ?></td>
     <td><span class="fw-bold text-success">₱<?= number_format($totalWithVat, 2) ?></span></td>
-    <td><span class="fw-bold text-danger">₱<?= number_format($refunded, 2) ?></span></td>
+    <?php
+$remarks = trim($sale['refund_remarks'] ?? '');
+$remarks = $remarks !== '' ? $remarks : '—';
+?>
+<td>
+  <span class="text-muted" title="<?= htmlspecialchars($remarks) ?>">
+    <?= htmlspecialchars(mb_strimwidth($remarks, 0, 80, '…')) ?>
+  </span>
+</td>
+
     <td><span class="badge bg-<?= $badge ?>"><?= $status ?></span></td>
     <td>
         <a href="receipt.php?sale_id=<?= (int)$sale['sale_id'] ?>" target="_blank" 
@@ -436,104 +454,99 @@ $toolsOpen = ($self === 'backup_admin.php' || $isArchive);
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
 <script>
+// --- Corrected VAT Refund Calculation ---
 function openReturnModal(saleId) {
-    const productsTbody = document.getElementById('returnProductsBody');
-    const servicesTbody = document.getElementById('returnServicesBody');
-    const refundAmountInput = document.getElementById('refundAmount');
-    const refundVATInput = document.getElementById('refundVAT');
-    const refundTotalInput = document.getElementById('refundTotal');
+  const productsTbody = document.getElementById('returnProductsBody');
+  const servicesTbody = document.getElementById('returnServicesBody');
+  const refundAmountInput = document.getElementById('refundAmount');
+  const refundVATInput = document.getElementById('refundVAT');
+  const refundTotalInput = document.getElementById('refundTotal');
 
-    document.getElementById('returnSaleId').value = saleId;
-    productsTbody.innerHTML = '';
-    servicesTbody.innerHTML = '';
-    refundAmountInput.value = '0.00';
-    refundVATInput.value = '0.00';
-    refundTotalInput.value = '0.00';
+  document.getElementById('returnSaleId').value = saleId;
+  productsTbody.innerHTML = '';
+  servicesTbody.innerHTML = '';
+  refundAmountInput.value = '0.00';
+  refundVATInput.value = '0.00';
+  refundTotalInput.value = '0.00';
 
-    fetch(`get_sales_products.php?sale_id=${saleId}`)
-        .then(res => res.json())
-        .then(data => {
-            const products = data.products || [];
-            const services = data.services || [];
-            const totalVAT = parseFloat(data.vat || 0);
-            let subtotal = 0;
+  fetch(`get_sales_products.php?sale_id=${saleId}`)
+    .then(res => res.json())
+    .then(data => {
+      const products = data.products || [];
+      const services = data.services || [];
+      const saleNetTotal = parseFloat(data.total || 0); // s.total from DB (net, before VAT)
+      const saleVat = parseFloat(data.vat || 0); // s.vat from DB
+      const vatRate = saleNetTotal > 0 ? (saleVat / saleNetTotal) : 0; // dynamic VAT %
 
-            // --- PRODUCTS ---
-            if (products.length === 0) {
-                productsTbody.innerHTML = `<tr><td colspan="3" class="text-center">No products found</td></tr>`;
-            } else {
-                products.forEach(item => {
-                    const tr = document.createElement('tr');
-                    tr.innerHTML = `
-                        <td>${item.product_name}</td>
-                        <td><input type="number" name="refund_items[${item.product_id}]"
-                                   min="0" max="${item.quantity}" value="${item.quantity}"
-                                   class="form-control form-control-sm"></td>
-                        <td>₱${parseFloat(item.price).toFixed(2)}</td>
-                    `;
-                    productsTbody.appendChild(tr);
-                    subtotal += item.quantity * item.price;
-                });
-            }
+      let originalSubtotal = 0;
+      // render products
+      if (products.length === 0) {
+        productsTbody.innerHTML = `<tr><td colspan="3" class="text-center">No products found</td></tr>`;
+      } else {
+        products.forEach(item => {
+          const tr = document.createElement('tr');
+          tr.innerHTML = `
+            <td>${item.product_name}</td>
+            <td><input type="number" name="refund_items[${item.product_id}]"
+                       min="0" max="${item.quantity}" value="${item.quantity}"
+                       class="form-control form-control-sm"></td>
+            <td>₱${parseFloat(item.price).toFixed(2)}</td>`;
+          productsTbody.appendChild(tr);
+          originalSubtotal += item.quantity * item.price;
+        });
+      }
 
-            // --- SERVICES ---
-            if (services.length === 0) {
-                servicesTbody.innerHTML = `<tr><td colspan="3" class="text-center">No services found</td></tr>`;
-            } else {
-                services.forEach(item => {
-                    const tr = document.createElement('tr');
-                    tr.innerHTML = `
-                        <td>${item.service_name}</td>
-                        <td><input type="number" name="refund_services[${item.service_id}]"
-                                   min="0" max="${item.quantity}" value="${item.quantity}"
-                                   class="form-control form-control-sm"></td>
-                        <td>₱${parseFloat(item.price).toFixed(2)}</td>
-                    `;
-                    servicesTbody.appendChild(tr);
-                    subtotal += item.quantity * item.price;
-                });
-            }
+      // render services
+      if (services.length === 0) {
+        servicesTbody.innerHTML = `<tr><td colspan="3" class="text-center">No services found</td></tr>`;
+      } else {
+        services.forEach(item => {
+          const tr = document.createElement('tr');
+          tr.innerHTML = `
+            <td>${item.service_name}</td>
+            <td><input type="number" name="refund_services[${item.service_id}]"
+                       min="0" max="${item.quantity}" value="${item.quantity}"
+                       class="form-control form-control-sm"></td>
+            <td>₱${parseFloat(item.price).toFixed(2)}</td>`;
+          servicesTbody.appendChild(tr);
+          originalSubtotal += item.quantity * item.price;
+        });
+      }
 
-            // --- Initial VAT & Total ---
-            let vatShare = totalVAT; // initially add full VAT
-            refundAmountInput.value = subtotal.toFixed(2);
-            refundVATInput.value = vatShare.toFixed(2);
-            refundTotalInput.value = (subtotal + vatShare).toFixed(2);
-
-            // --- Recalculate on input ---
-            const allInputs = [...productsTbody.querySelectorAll('input'), ...servicesTbody.querySelectorAll('input')];
-            allInputs.forEach(input => {
-                input.addEventListener('input', () => {
-                    let newSubtotal = 0;
-                    products.forEach(item => {
-                        const qty = parseFloat(document.querySelector(`input[name="refund_items[${item.product_id}]"]`).value) || 0;
-                        newSubtotal += qty * item.price;
-                    });
-                    services.forEach(item => {
-                        const qty = parseFloat(document.querySelector(`input[name="refund_services[${item.service_id}]"]`).value) || 0;
-                        newSubtotal += qty * item.price;
-                    });
-
-                    // proportional VAT
-                    const newVAT = totalVAT * (newSubtotal / subtotal || 0);
-                    refundAmountInput.value = newSubtotal.toFixed(2);
-                    refundVATInput.value = newVAT.toFixed(2);
-                    refundTotalInput.value = (newSubtotal + newVAT).toFixed(2);
-                });
-            });
-
-        })
-        .catch(err => {
-            console.error("Error fetching sale products:", err);
-            productsTbody.innerHTML = `<tr><td colspan="3" class="text-center text-danger">Error loading products</td></tr>`;
-            servicesTbody.innerHTML = `<tr><td colspan="3" class="text-center text-danger">Error loading services</td></tr>`;
-            refundAmountInput.value = '0.00';
-            refundVATInput.value = '0.00';
-            refundTotalInput.value = '0.00';
+      // Recalculation function
+      function recalcRefund() {
+        let refundSubtotal = 0;
+        products.forEach(item => {
+          const qty = parseFloat(document.querySelector(`input[name="refund_items[${item.product_id}]"]`)?.value || 0);
+          refundSubtotal += qty * item.price;
+        });
+        services.forEach(item => {
+          const qty = parseFloat(document.querySelector(`input[name="refund_services[${item.service_id}]"]`)?.value || 0);
+          refundSubtotal += qty * item.price;
         });
 
-    new bootstrap.Modal(document.getElementById('returnModal')).show();
+        // ✅ Compute refund VAT using actual VAT rate from the sale
+        const refundVat = refundSubtotal * vatRate;
+        const refundTotal = refundSubtotal + refundVat;
+
+        refundAmountInput.value = refundSubtotal.toFixed(2);
+        refundVATInput.value = refundVat.toFixed(2);
+        refundTotalInput.value = refundTotal.toFixed(2);
+      }
+
+      recalcRefund();
+      const allInputs = [...productsTbody.querySelectorAll('input'), ...servicesTbody.querySelectorAll('input')];
+      allInputs.forEach(input => input.addEventListener('input', recalcRefund));
+    })
+    .catch(err => {
+      console.error("Error fetching sale products:", err);
+      productsTbody.innerHTML = `<tr><td colspan="3" class="text-center text-danger">Error loading products</td></tr>`;
+      servicesTbody.innerHTML = `<tr><td colspan="3" class="text-center text-danger">Error loading services</td></tr>`;
+    });
+
+  new bootstrap.Modal(document.getElementById('returnModal')).show();
 }
+
 </script>
 <script src="notifications.js"></script>
 <script src="sidebar.js"></script>
