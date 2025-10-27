@@ -39,10 +39,10 @@ if ($user_id) {
         });
       } catch(e) {}
       // Redirect to login page
-      window.location.replace('index.php'); // or index.html if that's your login
+      window.location.replace('admin_portal.php'); // or index.html if that's your login
     </script>
     <noscript>
-      <a href="index.php">Continue to login</a>
+      <a href="admin_portal.php">Continue to login</a>
     </noscript>
   </body>
 </html>
