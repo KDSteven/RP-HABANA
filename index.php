@@ -209,13 +209,13 @@ $conn->close();
                 <i class="fas fa-key" aria-hidden="true"></i>
                 <span>Forgot password</span>
               </button>
-
+<!-- 
               <button type="button"
                       class="btn btn-link p-0 link-ghost underline-slide d-inline-flex align-items-center gap-2"
                       data-bs-toggle="modal"
                       data-bs-target="#adminRecoveryModal">
                 <i class="fas fa-shield-alt"></i>
-                <span>Admin recovery</span>
+                <span>Admin recovery</span> -->
               </button>
             </div>
           </form>
