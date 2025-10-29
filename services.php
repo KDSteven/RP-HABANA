@@ -87,13 +87,6 @@ if (isset($_POST['archive_service'])) {
     }
 }
 
-/* -------------------- Pending password resets count (Accounts badge) -------------------- */
-$pendingResetsCount = 0;
-if ($role === 'admin') {
-    $res = $conn->query("SELECT COUNT(*) AS c FROM password_resets WHERE status='pending'");
-    $pendingResetsCount = $res ? (int)$res->fetch_assoc()['c'] : 0;
-}
-
 /* -------------------- Current user's display name -------------------- */
 $currentName = '';
 if (isset($_SESSION['user_id'])) {
@@ -204,9 +197,6 @@ $toolsOpen = ($self === 'backup_admin.php' || $isArchive);
 
 <a href="accounts.php" class="<?= $self === 'accounts.php' ? 'active' : '' ?>">
   <i class="fas fa-users"></i> Accounts & Branches
-  <?php if ($pendingResetsCount > 0): ?>
-    <span class="badge-pending"><?= $pendingResetsCount ?></span>
-  <?php endif; ?>
 </a>
 
   <!-- NEW: Backup & Restore group with Archive inside -->

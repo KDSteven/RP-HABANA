@@ -651,14 +651,8 @@ $stmt->bind_param("ss",$salesFrom,$salesTo);
 $stmt->execute();
 $serviceJobData = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
 $stmt->close();
-if(empty($serviceJobData)) $serviceJobData[]=['service_name'=>'No Services Sold','count'=>0];
+if(empty($serviceJobData)) $serviceJobData[]=['service_name'=>'No Services Rendered','count'=>0];
 
-// compute $pendingResets count (put near the query)
-$pendingResetsCount = 0;
-if ($role === 'admin') {
-  $res = $conn->query("SELECT COUNT(*) AS c FROM password_resets WHERE status='pending'");
-  $pendingResetsCount = $res ? (int)$res->fetch_assoc()['c'] : 0;
-}
 
 // Fetch current user's full name
 $currentName = '';
@@ -786,9 +780,6 @@ $toolsOpen = ($self === 'backup_admin.php' || $isArchive);
 
 <a href="accounts.php" class="<?= $self === 'accounts.php' ? 'active' : '' ?>">
   <i class="fas fa-users"></i> Accounts & Branches
-  <?php if ($pendingResetsCount > 0): ?>
-    <span class="badge-pending"><?= $pendingResetsCount ?></span>
-  <?php endif; ?>
 </a>
 
   <!-- NEW: Backup & Restore group with Archive inside -->

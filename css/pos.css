@@ -356,7 +356,6 @@
 .modal-footer .btn-danger:hover {
   background: #dc2626;
 }
-
 /* ================= Sidebar / POS Alignment ================= */
 @media (min-width: 992px) {
   .pos-wrapper { margin-left: var(--sidebar-desktop); }

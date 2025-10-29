@@ -79,9 +79,7 @@ if ($role === 'admin') {
   }
   $pendingTotalInventory = $pendingTransfers + $pendingStockIns;
 
-  if ($res = $conn->query("SELECT COUNT(*) AS c FROM password_resets WHERE LOWER(status)='pending'")) {
-    $pendingResetsCount = (int)($res->fetch_assoc()['c'] ?? 0);
-  }
+
 }
 
 /* Overall bell (sum whatever you want to alert on) */

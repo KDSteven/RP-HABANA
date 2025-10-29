@@ -218,7 +218,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_user'])) {
             $stmt = $conn->prepare("UPDATE users 
                                     SET username=?, name=?, password=?, role=?, branch_id=?, phone_number=? 
                                     WHERE id=?");
-            $stmt->bind_param("ssssi si", $username, $full_name, $hashedPassword, $role, $branch_id, $phone_number, $id);
+            $stmt->bind_param("ssssisi", $username, $full_name, $hashedPassword, $role, $branch_id, $phone_number, $id);
         }
     } else {
         if ($branch_id === null) {
@@ -389,63 +389,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['archive_branch'])) {
     exit;
 }
 
-/* =========================
-   Password reset approvals
-========================= */
-if (isset($_POST['reset_action'], $_POST['reset_id']) && $currentRole === 'admin') {
-    $reset_id     = (int) $_POST['reset_id'];
-    $reset_action = $_POST['reset_action'];
-
-    if ($reset_action === 'approve') {
-        $stmt = $conn->prepare("SELECT user_id FROM password_resets WHERE id=? AND status='pending'");
-        $stmt->bind_param("i", $reset_id);
-        $stmt->execute();
-        $res = $stmt->get_result();
-        $row = $res->fetch_assoc();
-        $stmt->close();
-
-        if ($row) {
-            $user_id      = (int) $row['user_id'];
-            $tempPassword = generateTempPassword($conn, $user_id);
-            if ($tempPassword === null) {
-                $_SESSION['toast_msg']  = "Could not generate temporary password.";
-                $_SESSION['toast_type'] = 'danger';
-                header("Location: accounts.php");
-                exit;
-            }
-            $hashed = password_hash($tempPassword, PASSWORD_DEFAULT);
-
-            $stmt = $conn->prepare("UPDATE users SET password=?, must_change_password=1 WHERE id=?");
-            $stmt->bind_param("si", $hashed, $user_id);
-            $stmt->execute();
-            $stmt->close();
-
-            $stmt = $conn->prepare("UPDATE password_resets SET status='approved', decided_by=?, decided_at=NOW() WHERE id=?");
-            $stmt->bind_param("ii", $_SESSION['user_id'], $reset_id);
-            $stmt->execute();
-            $stmt->close();
-
-            $_SESSION['toast_msg']  = "Password reset approved. Temporary password for user #{$user_id}: <b>{$tempPassword}</b>";
-            $_SESSION['toast_type'] = 'success';
-            logAction($conn, "Approve Password Reset", "Reset approved for user_id={$user_id}");
-        } else {
-            $_SESSION['toast_msg']  = "Reset request not found or already processed.";
-            $_SESSION['toast_type'] = 'warning';
-        }
-    } elseif ($reset_action === 'reject') {
-        $stmt = $conn->prepare("UPDATE password_resets SET status='rejected', decided_by=?, decided_at=NOW() WHERE id=? AND status='pending'");
-        $stmt->bind_param("ii", $_SESSION['user_id'], $reset_id);
-        $stmt->execute();
-        $stmt->close();
-
-        $_SESSION['toast_msg']  = "Password reset request rejected.";
-        $_SESSION['toast_type'] = 'danger';
-        logAction($conn, "Reject Password Reset", "Reset rejected for reset_id={$reset_id}");
-    }
-
-    header("Location: accounts.php");
-    exit;
-}
 
 /* =========================
    Queries for page render
@@ -480,22 +423,6 @@ if ($currentRole === 'admin') {
     }
 }
 $pendingTotalInventory = $pendingTransfers + $pendingStockIns;
-
-// Pending password reset requests & count (admin only)
-$resetRequests = null;
-$pendingResetsCount = 0;
-if ($currentRole === 'admin') {
-    $resetRequests = $conn->query("
-        SELECT pr.id AS reset_id, u.username, u.role, pr.requested_at
-        FROM password_resets pr
-        JOIN users u ON pr.user_id = u.id
-        WHERE pr.status = 'pending'
-        ORDER BY pr.requested_at ASC
-    ");
-    if ($res = $conn->query("SELECT COUNT(*) AS c FROM password_resets WHERE status='pending'")) {
-        $pendingResetsCount = (int)$res->fetch_assoc()['c'];
-    }
-}
 
 // Pending bell (legacy)
 $pending = 0;
@@ -636,9 +563,6 @@ $toolsOpen = ($self === 'backup_admin.php' || $isArchive);
 
 <a href="accounts.php" class="<?= $self === 'accounts.php' ? 'active' : '' ?>">
   <i class="fas fa-users"></i> Accounts & Branches
-  <?php if ($pendingResetsCount > 0): ?>
-    <span class="badge-pending"><?= $pendingResetsCount ?></span>
-  <?php endif; ?>
 </a>
 
   <!-- NEW: Backup & Restore group with Archive inside -->
@@ -1096,17 +1020,18 @@ $toolsOpen = ($self === 'backup_admin.php' || $isArchive);
           maxlength="120"
           pattern="^[A-Za-z0-9\s.,\-'/()#]{1,120}$"
           title="1–120 chars. Letters, numbers, spaces, . , - ' / ( ) # allowed.">
-
-        <!-- Email (required) -->
-        <label class="form-label mt-3" for="editBranchEmail">Email</label>
-        <input
-          type="email"
-          class="form-control"
-          name="branch_email"
-          id="editBranchEmail"
-          placeholder="Email"
-          required
-          maxlength="120">
+          
+          <!-- Email -->
+          <input
+            type="email"
+            class="form-control"
+            name="branch_email"
+            id="editBranchEmail"
+            placeholder="Email"
+            required
+            maxlength="120"
+            pattern="^(?=.*[A-Za-z])[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$"
+          >
 
         <!-- Contact Person (required; letters/spaces/-/') -->
         <label class="form-label mt-3" for="editBranchContact">Contact Person</label>

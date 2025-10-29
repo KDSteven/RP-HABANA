@@ -188,12 +188,6 @@ $result = $stmt->get_result();
 /* -------------------------
    Other badges (accounts)
 -------------------------- */
-$pendingResetsCount = 0;
-if ($role === 'admin') {
-    if ($res = $conn->query("SELECT COUNT(*) AS c FROM password_resets WHERE status='pending'")) {
-        $pendingResetsCount = (int)$res->fetch_assoc()['c'];
-    }
-}
 
 /* -------------------------
    Helpers for sidebar state
@@ -285,9 +279,6 @@ if (isset($_SESSION['user_id'])) {
 
     <a href="accounts.php" class="<?= $self === 'accounts.php' ? 'active' : '' ?>">
       <i class="fas fa-users"></i> Accounts & Branches
-      <?php if ($pendingResetsCount > 0): ?>
-        <span class="badge-pending"><?= $pendingResetsCount ?></span>
-      <?php endif; ?>
     </a>
 
     <!-- Data Tools -->

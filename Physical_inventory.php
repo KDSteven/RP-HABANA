@@ -187,16 +187,11 @@ $mismatch     = $stats['overstock'] + $stats['understock'];  // "Mismatch" card 
 $pendingCount = $stats['pending'];
 
 // ----- Badges used in the sidebar (compute ONCE) -----
-$pendingResetsCount   = 0;
 $pendingTransfers     = 0;
 $pendingStockIns      = 0;
 $pendingTotalInventory = 0;
 
 if ($role === 'admin') {
-    // Password reset requests
-    if ($res = $conn->query("SELECT COUNT(*) AS c FROM password_resets WHERE LOWER(status)='pending'")) {
-        $pendingResetsCount = (int)($res->fetch_assoc()['c'] ?? 0);
-    }
 
     // Transfer + Stock-in requests
     if ($res = $conn->query("SELECT COUNT(*) AS c FROM transfer_requests WHERE LOWER(status)='pending'")) {
@@ -314,9 +309,6 @@ $toolsOpen = ($self === 'backup_admin.php' || $isArchive);
 
 <a href="accounts.php" class="<?= $self === 'accounts.php' ? 'active' : '' ?>">
   <i class="fas fa-users"></i> Accounts & Branches
-  <?php if ($pendingResetsCount > 0): ?>
-    <span class="badge-pending"><?= $pendingResetsCount ?></span>
-  <?php endif; ?>
 </a>
 
   <!-- NEW: Backup & Restore group with Archive inside -->

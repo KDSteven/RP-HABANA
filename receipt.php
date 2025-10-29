@@ -172,12 +172,53 @@ if (isset($_SESSION['user_id'])) {
         border: none;
       }
     }
+/* ===== Thermal receipt simulation (80mm) ===== */
+.receipt-80{ width:72mm; margin:0 auto; }
+.mono{ font:12px/1.35 "Courier New", ui-monospace, monospace; color:#000; }
+#receipt h2, #receipt h3, #receipt h4{ margin:0; text-align:center; }
+#receipt .header p, #receipt .info p{ margin:2px 0; text-align:center; }
+
+/* table: compact, clean, right-aligned numbers */
+#receipt table{ width:100%; border-collapse:collapse; margin-top:6px; }
+#receipt thead th{ border-top:1px dashed #000; border-bottom:1px dashed #000; padding:3px 0; font-weight:700; }
+#receipt td, #receipt th{ padding:2px 0; white-space:nowrap; }
+#receipt td:nth-child(2),
+#receipt td:nth-child(3),
+#receipt td:nth-child(4),
+#receipt tfoot td{ text-align:right; }
+#receipt td:first-child{ width:100%; text-align:left; padding-right:6px; }
+#receipt tfoot td{ padding-top:4px; }
+#receipt tfoot tr:first-child td{ border-top:1px dashed #000; }
+#receipt .grand{ border-top:2px solid #000; border-bottom:2px solid #000; padding:4px 0; font-weight:700; }
+#receipt .thank-you{ text-align:center; margin:8px 0 0; }
+
+/* Print rules */
+@media print{
+  html,body{ margin:0; padding:0; background:#fff; }
+  body *{ visibility:hidden !important; }
+  #receipt, #receipt *{ visibility:visible !important; }
+  #receipt{ margin:0 auto; }
+}
+@page{ size:80mm auto; margin:0; }
+
+/* Logo optimized for 80mm thermal */
+.receipt-logo {
+  display: block;
+  margin: 0 auto 6px auto;
+  width: 140px;        /* safe width for thermal */
+  max-width: 70%;      /* ensures no overflow */
+  image-rendering: pixelated;
+}
+
+</style>
+
   </style>
 </head>
 <body>
 
-<div class="receipt">
+<div id="receipt" class="receipt-80 mono">
   <div class="header">
+    <img src="/img/tire.png" class="receipt-logo" alt="Logo">
     <h2><?= htmlspecialchars($sale['branch_name']) ?></h2>
     <p><?= htmlspecialchars($sale['branch_location']) ?></p>
     <p>📞 <?= htmlspecialchars($sale['branch_contact']) ?></p>
@@ -256,6 +297,15 @@ if (isset($_SESSION['user_id'])) {
   <p class="thank-you">*** Thank you for your purchase! ***</p>
 </div>
 
+<script>
+  // In receipt.php
+  window.addEventListener('load', () => {
+    const url = new URL(window.location.href);
+    if (url.searchParams.get('autoprint') === '1') {
+      setTimeout(() => window.print(), 300); // small delay for logos/QR to render
+    }
+  });
+</script>
 
 
 </body>

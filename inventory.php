@@ -434,13 +434,6 @@ if ($role === 'admin' && isset($_POST['sir_action'], $_POST['sir_id'])) {
 // }
 
 
-// compute $pendingResets count (put near the query)
-$pendingResetsCount = 0;
-if ($role === 'admin') {
-  $res = $conn->query("SELECT COUNT(*) AS c FROM password_resets WHERE status='pending'");
-  $pendingResetsCount = $res ? (int)$res->fetch_assoc()['c'] : 0;
-}
-
 
 //Transfer Request
 //request transfer log
@@ -679,9 +672,6 @@ $toolsOpen = ($self === 'backup_admin.php' || $isArchive);
 
 <a href="accounts.php" class="<?= $self === 'accounts.php' ? 'active' : '' ?>">
   <i class="fas fa-users"></i> Accounts & Branches
-  <?php if ($pendingResetsCount > 0): ?>
-    <span class="badge-pending"><?= $pendingResetsCount ?></span>
-  <?php endif; ?>
 </a>
 
   <!-- NEW: Backup & Restore group with Archive inside -->

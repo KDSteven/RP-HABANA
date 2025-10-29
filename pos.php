@@ -653,15 +653,18 @@ function printReceipt() {
 </script>
 
 <script>
-document.addEventListener('DOMContentLoaded', () => {
-  const input = document.getElementById('paymentInput');
-  document.querySelectorAll('.num-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      let val = btn.dataset.value;
-      if(val === 'clear') input.value = '';
-      else if(val === 'back') input.value = input.value.slice(0, -1);
-      else input.value += val;
-    });
+// Number Pad: 0-9, C, back
+document.querySelectorAll('.num-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const input = document.getElementById('paymentInput');
+    let val = btn.dataset.value;
+
+    if (val === 'clear') input.value = '';
+    else if (val === 'back') input.value = input.value.slice(0, -1);
+    else input.value += val;
+
+    updatePaymentComputed();
+    input.focus();
   });
 });
 </script>
@@ -904,6 +907,21 @@ document.addEventListener('DOMContentLoaded', () => {
     if (totalDueText)    totalDueText.textContent    = `Total Due: ₱${due.toFixed(2)}`;
   }
 
+  // --- QUICK CASH buttons (₱50, ₱100, …) ---
+document.querySelectorAll('.quick-cash').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const inc = parseFloat(btn.dataset.value || '0');
+    const input = document.getElementById('paymentInput');
+
+    // add to current amount (common POS behavior)
+    const current = parseFloat(input.value || '0');
+    input.value = ( (isNaN(current) ? 0 : current) + inc ).toFixed(2);
+
+    updatePaymentComputed();
+    input.focus();
+  });
+});
+
   // ======= Update cart HTML (AJAX path) =======
   function updateCart(html) {
     const cartSection = document.getElementById('cartSection') || document.querySelector('.cart-section');
@@ -1108,6 +1126,15 @@ document.addEventListener('DOMContentLoaded', () => {
   syncPaymentModalTotals();
   (window.queueMicrotask ? queueMicrotask : fn => setTimeout(fn, 0))(() => checkCartExpiration());
 });
+const paymentInput = document.getElementById('paymentInput');
+
+paymentInput.addEventListener('keydown', function(e) {
+  // Block minus key (both main keyboard and numpad)
+  if (e.key === '-' || e.key === 'Subtract') {
+    e.preventDefault();
+  }
+});
+
 </script>
 
 <script src="sidebar.js"></script>

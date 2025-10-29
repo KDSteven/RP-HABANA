@@ -10,6 +10,9 @@ if (!isset($_SESSION['role'])) {
     exit;
 }
 
+$flash = $_SESSION['toast'] ?? null;
+unset($_SESSION['toast']); // one-time
+
 $role = $_SESSION['role'];
 $branch_id = $_SESSION['branch_id'] ?? 0;
 
@@ -43,42 +46,106 @@ if ($role === 'staff') {
     $params[] = (int)$_GET['branch_id'];
     $types .= "i";
 }
+// Keyword search (matches sale_id, branch name, or refund reasons)
+if (!empty($_GET['q'])) {
+    $q = '%' . $_GET['q'] . '%';
+    $where[] = "(CAST(s.sale_id AS CHAR) LIKE ? OR b.branch_name LIKE ? OR r.refund_reason LIKE ?)";
+    $params[] = $q;
+    $params[] = $q;
+    $params[] = $q;
+    $types .= "sss";
+}
 
-// --- MAIN QUERY (with refund status) ---
-$sql = "
-SELECT 
-    s.sale_id,
-    s.sale_date,
-    s.total,
-    s.vat AS stored_vat,
-    b.branch_name,
-    COALESCE(SUM(r.refund_total), 0) AS refund_amount,
-    /* collect reasons in chronological order; dedupe just in case */
-    TRIM(BOTH ', ' FROM COALESCE(
-      NULLIF(
-        GROUP_CONCAT(DISTINCT r.refund_reason ORDER BY r.refund_date SEPARATOR '; '),
-        ''
-      ), ''
-    )) AS refund_remarks
-FROM sales s
-JOIN branches b ON s.branch_id = b.branch_id
-LEFT JOIN sales_refunds r ON s.sale_id = r.sale_id
+// --- PAGINATION (fixed page size) ---
+$perPage = 10; // set what you like
+$page    = max(1, (int)($_GET['page'] ?? 1));
+$offset  = ($page - 1) * $perPage;
+
+// Count rows (respect filters)
+$countSql = "
+  SELECT COUNT(DISTINCT s.sale_id) AS cnt
+  FROM sales s
+  JOIN branches b ON s.branch_id = b.branch_id
+  LEFT JOIN sales_refunds r ON s.sale_id = r.sale_id
 ";
+if ($where) $countSql .= " WHERE " . implode(" AND ", $where);
+
+$stmt = $conn->prepare($countSql);
+if ($params) $stmt->bind_param($types, ...$params);
+$stmt->execute();
+$totalRows = (int)($stmt->get_result()->fetch_assoc()['cnt'] ?? 0);
+$stmt->close();
+
+$totalPages = max(1, (int)ceil($totalRows / $perPage));
+if ($page > $totalPages) { $page = $totalPages; $offset = ($page - 1) * $perPage; }
 
 
+$sql = "
+SELECT
+  s.sale_id,
+  s.sale_date,
+  s.total,
+  s.vat AS stored_vat,
+  b.branch_name,
+
+  /* total refunded peso (already stored in sales_refunds.refund_total) */
+  COALESCE(SUM(r.refund_total), 0) AS refund_amount,
+
+  /* simpler, safer aggregate for remarks */
+  IFNULL(
+    GROUP_CONCAT(DISTINCT r.refund_reason ORDER BY r.refund_date SEPARATOR '; '),
+    ''
+  ) AS refund_remarks,
+
+  /* NEW: refunded items list like “Oil 3 in 1 ×2; M040 ×1” */
+  rp.refunded_products
+
+FROM sales s
+JOIN branches b ON b.branch_id = s.branch_id
+LEFT JOIN sales_refunds r ON r.sale_id = s.sale_id
+
+/* ---------- NEW derived table for refunded_products ---------- */
+LEFT JOIN (
+  SELECT
+    t.sale_id,
+    GROUP_CONCAT(
+      CONCAT(t.product_name, ' ×', t.qty)
+      ORDER BY t.product_name SEPARATOR '; '
+    ) AS refunded_products
+  FROM (
+    SELECT
+      sri.sale_id,
+      sri.product_id,
+      p.product_name,
+      SUM(sri.qty) AS qty
+    FROM sales_refund_items AS sri
+    JOIN products p ON p.product_id = sri.product_id
+    GROUP BY sri.sale_id, sri.product_id, p.product_name
+  ) AS t
+  GROUP BY t.sale_id
+) AS rp ON rp.sale_id = s.sale_id
+/* ---------- end new block ---------- */";
 if ($where) {
     $sql .= " WHERE " . implode(" AND ", $where);
 }
-
 $sql .= "
 GROUP BY s.sale_id
 ORDER BY s.sale_date DESC
+LIMIT ? OFFSET ?
 ";
 
 $stmt = $conn->prepare($sql);
-if ($params) $stmt->bind_param($types, ...$params);
+$typesWithLimit  = $types . "ii";
+$paramsWithLimit = array_merge($params, [$perPage, $offset]);
+$stmt->bind_param($typesWithLimit, ...$paramsWithLimit);
 $stmt->execute();
 $sales_result = $stmt->get_result();
+
+
+// $stmt = $conn->prepare($sql);
+// if ($params) $stmt->bind_param($types, ...$params);
+// $stmt->execute();
+// $sales_result = $stmt->get_result();
 
 
 // Pending transfer requests (for admin notification)
@@ -102,6 +169,12 @@ if (isset($_SESSION['user_id'])) {
         $currentName = $fetchedName;
     }
     $stmt->close();
+}
+function keep_qs(array $overrides = []): string {
+  $q = $_GET;
+  unset($q['page']);
+  foreach ($overrides as $k => $v) $q[$k] = $v;
+  return http_build_query($q);
 }
 ?>
 <!DOCTYPE html>
@@ -260,46 +333,42 @@ $toolsOpen = ($self === 'backup_admin.php' || $isArchive);
   </div>
 
   <!-- Filter Card -->
-  <form method="GET" class="row g-3 mb-4">
-    <div class="col-md-3">
-      <label class="form-label">From</label>
-      <input type="date" name="from_date" class="form-control" 
-             value="<?= htmlspecialchars($_GET['from_date'] ?? '') ?>">
-    </div>
-    <div class="col-md-3">
-      <label class="form-label">To</label>
-      <input type="date" name="to_date" class="form-control" 
-             value="<?= htmlspecialchars($_GET['to_date'] ?? '') ?>">
-    </div>
-    <div class="col-md-3">
-      <label class="form-label">Sale ID</label>
-      <input type="text" name="sale_id" class="form-control" 
-             placeholder="Sale ID" value="<?= htmlspecialchars($_GET['sale_id'] ?? '') ?>">
-    </div>
+  <form method="GET" class="d-flex flex-wrap align-items-end gap-3 mb-4">
 
-    <?php if ($role === 'admin'): ?>
-      <div class="col-md-3">
-        <label class="form-label">Branch</label>
-        <select name="branch_id" class="form-select">
-          <option value="">All Branches</option>
-          <?php
-          $branches = $conn->query("SELECT branch_id, branch_name FROM branches");
-          while ($b = $branches->fetch_assoc()): ?>
-            <option value="<?= $b['branch_id'] ?>" 
-              <?= (($_GET['branch_id'] ?? '') == $b['branch_id']) ? 'selected' : '' ?>>
-              <?= htmlspecialchars($b['branch_name']) ?>
-            </option>
-          <?php endwhile; ?>
-        </select>
-      </div>
-    <?php endif; ?>
+  <div class="d-flex flex-column">
+    <label class="form-label">From</label>
+    <input type="date" name="from_date" class="form-control"
+           value="<?= htmlspecialchars($_GET['from_date'] ?? '') ?>">
+  </div>
 
-    <div class="col-md-2 align-self-end">
-      <button type="submit" class="btn btn-modern btn-gradient-blue w-100">
-        <i class="fas fa-filter"></i> Filter
-      </button>
-    </div>
-  </form>
+  <div class="d-flex flex-column">
+    <label class="form-label">To</label>
+    <input type="date" name="to_date" class="form-control"
+           value="<?= htmlspecialchars($_GET['to_date'] ?? '') ?>">
+  </div>
+
+  <div class="d-flex flex-column">
+    <label class="form-label">Sale ID</label>
+    <input type="text" name="sale_id" class="form-control"
+           placeholder="Sale ID" value="<?= htmlspecialchars($_GET['sale_id'] ?? '') ?>">
+  </div>
+
+  <div class="flex-grow-1 d-flex flex-column">
+    <label class="form-label">Search</label>
+    <input type="text" name="q" class="form-control"
+           placeholder="Search sale ID, branch, remarks..."
+           value="<?= htmlspecialchars($_GET['q'] ?? '') ?>">
+  </div>
+
+  <button type="submit" class="btn btn-modern btn-gradient-blue">
+    <i class="fas fa-search"></i> Search
+  </button>
+
+  <button type="submit" class="btn btn-neutral">
+    <i class="fas fa-filter"></i> Filter
+  </button>
+
+</form>
 
   <!-- Sales Table -->
   <div class="card-custom p-4">
@@ -318,6 +387,7 @@ $toolsOpen = ($self === 'backup_admin.php' || $isArchive);
             <th>Date</th>
             <th>Total (₱)</th>
             <th>Remarks</th>
+            <th>Refunded Items</th>
             <th>Status</th>
             <th>Actions</th>
           </tr>
@@ -358,10 +428,19 @@ $remarks = $remarks !== '' ? $remarks : '—';
   </span>
 </td>
 
+<?php $refItems = trim($sale['refunded_products'] ?? ''); ?>
+<td>
+  <span title="<?= htmlspecialchars($refItems !== '' ? $refItems : '—') ?>">
+    <?= htmlspecialchars($refItems !== '' ? mb_strimwidth($refItems, 0, 60, '…') : '—') ?>
+  </span>
+</td>
+
     <td><span class="badge bg-<?= $badge ?>"><?= $status ?></span></td>
     <td>
-        <a href="receipt.php?sale_id=<?= (int)$sale['sale_id'] ?>" target="_blank" 
-           class="btn btn-info btn-modern btn-sm"><i class="fas fa-receipt"></i> Receipt</a>
+          <button type="button" onclick="openReceiptModal(<?= (int)$sale['sale_id'] ?>)" 
+            class="btn btn-info btn-modern btn-sm">
+            <i class="fas fa-receipt"></i> Receipt
+          </button>
         <?php if ($status !== "Fully Refunded"): ?>
             <button onclick="openReturnModal(<?= (int)$sale['sale_id'] ?>)" 
               class="btn-action btn-gradient-green">
@@ -375,6 +454,32 @@ $remarks = $remarks !== '' ? $remarks : '—';
         </tbody>
       </table>
     </div>
+    <?php
+      // show up to 3 page numbers: (current-1, current, current+1)
+      $start = max(1, $page - 1);
+      $end   = min($totalPages, $page + 1);
+      // If we're at page 1, try to show 1..min(3,totalPages)
+      if ($page === 1) { $start = 1; $end = min(3, $totalPages); }
+      // If we're at last page, try to show last-2..last
+      if ($page === $totalPages) { $start = max(1, $totalPages - 2); $end = $totalPages; }
+      ?>
+      <nav class="mt-3">
+        <ul class="pagination pagination-sm mb-0">
+          <li class="page-item <?= $page <= 1 ? 'disabled' : '' ?>">
+            <a class="page-link" href="?<?= keep_qs(['page' => max(1, $page - 1)]) ?>">Prev</a>
+          </li>
+
+          <?php for ($p = $start; $p <= $end; $p++): ?>
+            <li class="page-item <?= $p === $page ? 'active' : '' ?>">
+              <a class="page-link" href="?<?= keep_qs(['page' => $p]) ?>"><?= $p ?></a>
+            </li>
+          <?php endfor; ?>
+
+          <li class="page-item <?= $page >= $totalPages ? 'disabled' : '' ?>">
+            <a class="page-link" href="?<?= keep_qs(['page' => min($totalPages, $page + 1)]) ?>">Next</a>
+          </li>
+        </ul>
+      </nav>
     <?php endif; ?>
   </div>
 </div>
@@ -451,6 +556,38 @@ $remarks = $remarks !== '' ? $remarks : '—';
   </div>
 </div>
 
+<!-- Receipt Modal -->
+<div class="modal fade" id="receiptModal" tabindex="-1">
+  <div class="modal-dialog modal-md modal-dialog-centered">
+    <div class="modal-content border-0 shadow-lg" style="border-radius:15px;">
+      <div class="receipt-header d-flex justify-content-between align-items-center" style="background-color:#f7931e;color:white;padding:10px;border-radius:5px;">
+        <h5 class="modal-title m-0"><i class="fas fa-receipt"></i> Receipt</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <hr>
+      <div class="modal-body p-3" style="background-color:#fff7e6;">
+        <iframe id="receiptFrame" src="" style="width:100%;height:400px;border:none;border-radius:10px;"></iframe>
+      </div>
+      <div class="modal-footer" style="background-color:#fff3cd;">
+        <button class="btn btn-outline-warning" onclick="printReceipt()"><i class="fas fa-print"></i> Print</button>
+        <button class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Toast container -->
+<div class="toast-container position-fixed top-0 end-0 p-3" style="z-index:1100">
+  <div id="appToast" class="toast border-0 shadow-lg" role="alert" aria-live="assertive" aria-atomic="true">
+    <div id="appToastHeader" class="toast-header bg-primary text-white">
+      <i id="appToastIcon" class="fas fa-info-circle me-2"></i>
+      <strong id="appToastTitle" class="me-auto">System Notice</strong>
+      <small id="appToastTime">just now</small>
+      <button type="button" class="btn-close btn-close-white ms-2 mb-1" data-bs-dismiss="toast" aria-label="Close"></button>
+    </div>
+    <div class="toast-body" id="appToastBody">Action completed.</div>
+  </div>
+</div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
 <script>
@@ -468,86 +605,181 @@ function openReturnModal(saleId) {
   refundAmountInput.value = '0.00';
   refundVATInput.value = '0.00';
   refundTotalInput.value = '0.00';
+  
+const url = 'get_sales_products.php?sale_id=' + encodeURIComponent(saleId);
 
-  fetch(`get_sales_products.php?sale_id=${saleId}`)
-    .then(res => res.json())
+fetch(url, {
+  credentials: 'same-origin'
+})
+    .then(async res => {
+      const txt = await res.text();
+      if (!res.ok) throw new Error(`HTTP ${res.status}: ${txt.slice(0,200)}`);
+      try { return JSON.parse(txt); } catch (e) {
+        console.error('Non-JSON response:', txt.slice(0,500));
+        throw e;
+      }
+    })
     .then(data => {
       const products = data.products || [];
       const services = data.services || [];
-      const saleNetTotal = parseFloat(data.total || 0); // s.total from DB (net, before VAT)
-      const saleVat = parseFloat(data.vat || 0); // s.vat from DB
-      const vatRate = saleNetTotal > 0 ? (saleVat / saleNetTotal) : 0; // dynamic VAT %
+      const saleNetTotal = +data.total || 0;
+      const saleVat = +data.vat || 0;
+      const vatRate = saleNetTotal > 0 ? (saleVat / saleNetTotal) : 0;
 
-      let originalSubtotal = 0;
-      // render products
+      // PRODUCTS
       if (products.length === 0) {
         productsTbody.innerHTML = `<tr><td colspan="3" class="text-center">No products found</td></tr>`;
       } else {
         products.forEach(item => {
+          const maxQty = (item.remaining_qty ?? item.sold_qty ?? 0);
           const tr = document.createElement('tr');
           tr.innerHTML = `
             <td>${item.product_name}</td>
-            <td><input type="number" name="refund_items[${item.product_id}]"
-                       min="0" max="${item.quantity}" value="${item.quantity}"
-                       class="form-control form-control-sm"></td>
-            <td>₱${parseFloat(item.price).toFixed(2)}</td>`;
+            <td>
+              <input type="number" name="refund_items[${item.product_id}]"
+                     min="0" max="${maxQty}" value="${maxQty}"
+                     class="form-control form-control-sm" ${maxQty === 0 ? 'disabled' : ''}>
+            </td>
+            <td>₱${(+item.price).toFixed(2)}</td>
+          `;
           productsTbody.appendChild(tr);
-          originalSubtotal += item.quantity * item.price;
         });
       }
 
-      // render services
+      // SERVICES (if you keep them)
       if (services.length === 0) {
         servicesTbody.innerHTML = `<tr><td colspan="3" class="text-center">No services found</td></tr>`;
       } else {
         services.forEach(item => {
+          const maxQty = (item.remaining_qty ?? 0);
           const tr = document.createElement('tr');
           tr.innerHTML = `
             <td>${item.service_name}</td>
             <td><input type="number" name="refund_services[${item.service_id}]"
-                       min="0" max="${item.quantity}" value="${item.quantity}"
-                       class="form-control form-control-sm"></td>
-            <td>₱${parseFloat(item.price).toFixed(2)}</td>`;
+                       min="0" max="${maxQty}" value="${maxQty}"
+                       class="form-control form-control-sm" ${maxQty === 0 ? 'disabled' : ''}></td>
+            <td>₱${(+item.price).toFixed(2)}</td>`;
           servicesTbody.appendChild(tr);
-          originalSubtotal += item.quantity * item.price;
         });
       }
 
-      // Recalculation function
       function recalcRefund() {
         let refundSubtotal = 0;
         products.forEach(item => {
           const qty = parseFloat(document.querySelector(`input[name="refund_items[${item.product_id}]"]`)?.value || 0);
-          refundSubtotal += qty * item.price;
+          refundSubtotal += qty * (+item.price);
         });
         services.forEach(item => {
           const qty = parseFloat(document.querySelector(`input[name="refund_services[${item.service_id}]"]`)?.value || 0);
-          refundSubtotal += qty * item.price;
+          refundSubtotal += qty * (+item.price);
         });
-
-        // ✅ Compute refund VAT using actual VAT rate from the sale
         const refundVat = refundSubtotal * vatRate;
         const refundTotal = refundSubtotal + refundVat;
-
         refundAmountInput.value = refundSubtotal.toFixed(2);
-        refundVATInput.value = refundVat.toFixed(2);
-        refundTotalInput.value = refundTotal.toFixed(2);
+        refundVATInput.value    = refundVat.toFixed(2);
+        refundTotalInput.value  = refundTotal.toFixed(2);
       }
 
       recalcRefund();
-      const allInputs = [...productsTbody.querySelectorAll('input'), ...servicesTbody.querySelectorAll('input')];
-      allInputs.forEach(input => input.addEventListener('input', recalcRefund));
+      [...productsTbody.querySelectorAll('input'), ...servicesTbody.querySelectorAll('input')]
+        .forEach(i => i.addEventListener('input', recalcRefund));
     })
     .catch(err => {
-      console.error("Error fetching sale products:", err);
+      console.error('Error fetching sale products:', err);
       productsTbody.innerHTML = `<tr><td colspan="3" class="text-center text-danger">Error loading products</td></tr>`;
       servicesTbody.innerHTML = `<tr><td colspan="3" class="text-center text-danger">Error loading services</td></tr>`;
     });
 
   new bootstrap.Modal(document.getElementById('returnModal')).show();
 }
-
 </script>
+<script>
+function openReceiptModal(saleId) {
+  const frame = document.getElementById('receiptFrame');
+  frame.src = `receipt.php?sale_id=${saleId}&autoprint=1`;
+  new bootstrap.Modal(document.getElementById('receiptModal')).show();
+}
+// Print button handler used by: onclick="printReceipt()"
+function printReceipt() {
+  const frame = document.getElementById('receiptFrame');
+  if (frame && frame.contentWindow) frame.contentWindow.print();
+}
+</script>
+<script>
+(function () {
+  const el    = document.getElementById('appToast');
+  const body  = document.getElementById('appToastBody');
+  const head  = document.getElementById('appToastHeader');
+  const icon  = document.getElementById('appToastIcon');
+  const title = document.getElementById('appToastTitle');
+  const time  = document.getElementById('appToastTime');
+
+  // Map toast variants to header colors & icons
+  const STYLES = {
+    info:    { cls: 'bg-primary',  icon: 'fa-info-circle',   title: 'System Notice' },
+    success: { cls: 'bg-success',  icon: 'fa-check-circle',  title: 'Success' },
+    warning: { cls: 'bg-warning text-dark', icon: 'fa-exclamation-triangle', title: 'Heads up' },
+    danger:  { cls: 'bg-danger',   icon: 'fa-times-circle',  title: 'Error' }
+  };
+
+  function showToast(message, variant = 'info') {
+    const { cls, icon: ico, title: ttl } = STYLES[variant] || STYLES.info;
+
+    // Reset header classes then apply
+    head.className = 'toast-header ' + cls;
+    // Reset icon classes then apply
+    icon.className = 'fas ' + ico + ' me-2';
+    title.textContent = ttl;
+    body.textContent  = message;
+    time.textContent  = 'just now';
+
+    const t = new bootstrap.Toast(el, { delay: 3500 });
+    t.show();
+  }
+
+  // --- Auto triggers ---
+
+  // 1) From session flash (PHP echo into JS safely)
+  <?php if (!empty($flash) && is_array($flash)): ?>
+    showToast(<?= json_encode($flash['msg'] ?? 'Action completed.') ?>,
+              <?= json_encode($flash['type'] ?? 'info') ?>);
+  <?php endif; ?>
+
+  // 2) From query string (?toast=refund_ok | refund_err | filters | search)
+  const params = new URLSearchParams(location.search);
+  const toastKey = params.get('toast'); // e.g., refund_ok
+  if (toastKey) {
+    switch (toastKey) {
+      case 'refund_ok':
+        showToast('Refund processed successfully.', 'success');
+        break;
+      case 'refund_err':
+        showToast('Refund failed. Please try again.', 'danger');
+        break;
+      case 'filters':
+        showToast('Filters applied.', 'info');
+        break;
+      case 'search':
+        showToast(`Showing results for "${params.get('q') || ''}"`, 'info');
+        break;
+      default:
+        showToast('Action completed.', 'info');
+    }
+  }
+
+  // 3) Gentle “filters applied” nudge when any filter is present
+  const anyFilter = ['from_date','to_date','sale_id','branch_id','q']
+    .some(k => (params.get(k) || '').trim() !== '');
+  if (anyFilter && !toastKey && (params.get('page') || '1') === '1') {
+    // Only show once, not on every paginated click
+    showToast('Filters applied.', 'info');
+  }
+
+  // Make it globally available if you want to call it manually
+  window.appToast = showToast;
+})();
+</script>
+
 <script src="notifications.js"></script>
 <script src="sidebar.js"></script>
 </body>

@@ -35,6 +35,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $branch_id = (int)$sale['branch_id'];
     $totalSale = (float)$sale['total'];
 
+    $refItems = [];   // [product_id, qty, price]
     $refundAmount = 0.0; // net refund (ex VAT)
     $refundVAT    = 0.0; // VAT refund
 
@@ -71,6 +72,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             $refundAmount += $subtotalNet;
             $refundVAT    += $vatPortion;
+
+            
+            // keep a line for later insert
+            $refItems[] = [(int)$product_id, (int)$qty, (float)$sold['price']];
 
             // Return stock
             $updateInventory->bind_param("iii", $qty, $product_id, $branch_id);
@@ -117,6 +122,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $refundTotal
         );
         $insertRefund->execute();
+        $refund_id = $conn->insert_id;  // <-- capture it
+
+        // Insert product lines
+        if (!empty($refItems)) {
+        $insItem = $conn->prepare("
+            INSERT INTO sales_refund_items (refund_id, sale_id, product_id, qty, price)
+            VALUES (?, ?, ?, ?, ?)
+        ");
+        foreach ($refItems as [$pid, $q, $price]) {
+            $insItem->bind_param("iiiid", $refund_id, $sale_id, $pid, $q, $price);
+            $insItem->execute();
+        }
+        $insItem->close();
+        }
 
         // --- Update Sale Status ---
         if ($refundTotal >= $totalSale) {
@@ -124,15 +143,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } else {
             $conn->query("UPDATE sales SET status = 'Partial Refund' WHERE sale_id = $sale_id");
         }
-
+        
         // Commit
         $conn->commit();
-        header("Location: history.php?msg=Refund processed successfully");
-        exit;
+           // ✅ Success toast
+            $_SESSION['toast'] = ['type' => 'success', 'msg' => 'Refund processed successfully.'];
+            header("Location: history.php?toast=refund_ok");
+            exit;
 
-    } catch (Exception $e) {
-        $conn->rollback();
-        die("Refund failed: " . $e->getMessage());
-    }
-}
+        } catch (Throwable $e) {
+            $conn->rollback();
+            // ❌ Error toast
+            $_SESSION['toast'] = ['type' => 'danger', 'msg' => 'Refund failed: ' . $e->getMessage()];
+            header("Location: history.php?toast=refund_err");
+            exit;
+        }
+        }
+
 ?>

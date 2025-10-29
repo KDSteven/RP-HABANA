@@ -24,66 +24,58 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
                 FROM users WHERE username = ?";
         $stmt = $conn->prepare($sql);
 
-        if ($stmt) {
-            $stmt->bind_param("s", $username);
-            $stmt->execute();
-            $result = $stmt->get_result();
+          if ($stmt) {
+              $stmt->bind_param("s", $username);
+              $stmt->execute();
+              $result = $stmt->get_result();
 
-            if ($result && $result->num_rows === 1) {
-                $user = $result->fetch_assoc();
-                $stmt->close();
+              if ($result && $result->num_rows === 1) {
+                  $user = $result->fetch_assoc();
+                  $stmt->close();
 
-                // Check if pending reset (note the status 'Pending' per your earlier code)
-                $stmt = $conn->prepare("SELECT 1 FROM password_resets WHERE user_id=? AND status='Pending' LIMIT 1");
-                $stmt->bind_param("i", $user['id']);
-                $stmt->execute();
-                $pendingRes = $stmt->get_result();
-                $hasPendingReset = ($pendingRes && $pendingRes->num_rows > 0);
-                $stmt->close();
+                  // ✅ Removed pending reset check
 
-                if ($hasPendingReset) {
-                    $error = "Your account has a pending password reset. Please wait for Admin approval.";
-                } elseif (password_verify($password, $user['password'])) {
-                    // Login success
-                    $_SESSION['user_id']   = $user['id'];
-                    $_SESSION['username']  = $user['username'];
-                    $_SESSION['role']      = $user['role'];
-                    $_SESSION['branch_id'] = $user['branch_id'] ?? null;
+                  if (password_verify($password, $user['password'])) {
+                      // Login success
+                      $_SESSION['user_id']   = (int)$user['id'];
+                      $_SESSION['username']  = $user['username'];
+                      $_SESSION['role']      = $user['role'];
+                      $_SESSION['branch_id'] = $user['branch_id'] ?? null;
 
-                    // Insert login log WITH branch
-                    $action       = "Login successful";
-                    $branchForLog = $user['branch_id'] ?? null;
+                      // Insert login log WITH branch
+                      $action       = "Login successful";
+                      $branchForLog = $user['branch_id'] ?? null;
 
-                    $logStmt = $conn->prepare("
-                        INSERT INTO logs (user_id, action, details, timestamp, branch_id)
-                        VALUES (?, ?, '', NOW(), ?)
-                    ");
-                    if ($logStmt) {
-                        $logStmt->bind_param("isi", $user['id'], $action, $branchForLog);
-                        $logStmt->execute();
-                        $logStmt->close();
-                    }
+                      if ($logStmt = $conn->prepare("
+                          INSERT INTO logs (user_id, action, details, timestamp, branch_id)
+                          VALUES (?, ?, '', NOW(), ?)
+                      ")) {
+                          $logStmt->bind_param("isi", $user['id'], $action, $branchForLog);
+                          $logStmt->execute();
+                          $logStmt->close();
+                      }
 
-                    // Force password change if required
-                    if ((int)$user['must_change_password'] === 1) {
-                        header("Location: change_password.php");
-                        $conn->close();
-                        exit();
-                    }
+                      // Force password change if required
+                      if ((int)$user['must_change_password'] === 1) {
+                          header("Location: change_password.php");
+                          $conn->close();
+                          exit();
+                      }
 
-                    // Success -> go to dashboard
-                    header("Location: dashboard.php");
-                    $conn->close();
-                    exit();
-                } else {
-                    $error = "Invalid username or password.";
-                }
-            } else {
-                $error = "Invalid username or password.";
-            }
-        } else {
-            $error = "Database error: " . $conn->error;
-        }
+                      // Redirect to dashboard
+                      header("Location: dashboard.php");
+                      $conn->close();
+                      exit();
+                  } else {
+                      $error = "Invalid username or password.";
+                  }
+              } else {
+                  $error = "Invalid username or password.";
+                  $stmt->close();
+              }
+          } else {
+              $error = "Database error: " . $conn->error;
+          }
     }
 
     // Failed login attempt log (no IP)
@@ -118,18 +110,79 @@ $conn->close();
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
   <style>
     body { height: 100vh; }
-    .left-section {
-      display: flex; align-items: center; justify-content: center; text-align: center; height: 100vh;
-      background:
-        linear-gradient(rgba(0,0,0,0.2), rgba(0,0,0,0.2)),
-        url('img/index.jpg') center/cover no-repeat;
-    }
-    .left-section h1 { color: #f39200; font-weight: bold; font-size: 5em; }
-    .left-section p { font-size: 2em; color: #ffffff;}
-    .right-section { background: url('img/bg.jpg') center/cover no-repeat; position: relative; }
-    .overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(255, 153, 0, 0.7); }
-    .login-box { background: rgba(0, 0, 0, 0.7); padding: 40px; width: 550px; border-radius: 10px; color: #fff; }
-    hr { height: 3px; background-color: #fff; color: #fff; }
+   /* === Full-bleed layout (no card) === */
+html, body { height: 100%; }
+
+.auth-shell{
+  min-height: 100vh;
+  padding: 0;                 /* remove page padding */
+  display: block;             /* stop grid centering */
+  background: transparent;    /* no page bg */
+}
+
+.auth-frame{
+  width: 100%;
+  min-height: 100vh;          /* fill full page height */
+  border: 0;
+  box-shadow: none;           /* remove card shadow */
+  border-radius: 0;           /* no outer rounding */
+  overflow: hidden;           /* keep inner curves clean */
+}
+
+/* Panels still get only INNER curves */
+
+.auth-left{
+  background: #fff;
+  padding: clamp(24px, 3vw, 48px);
+  min-height: 100vh;          /* stretch with viewport */
+  display: flex; align-items: center; justify-content: center;
+}
+
+.auth-right{
+  position: relative;
+  background: url('img/bg.jpg') center/cover no-repeat;
+  border-top-left-radius: var(--curve);
+  border-bottom-left-radius: var(--curve);
+  min-height: 100vh;          /* stretch with viewport */
+}
+
+.auth-overlay{
+  position: absolute; inset: 0;
+  background: linear-gradient(135deg, rgba(255,115,0,.55), rgba(160,30,0,.35));
+  pointer-events: none;
+}
+
+/* Stack nicely on mobile (adjust curves when vertical) */
+@media (max-width: 991.98px){
+  .auth-left{
+    border-top-right-radius: var(--curve);
+    border-bottom-right-radius: 0;
+    min-height: auto;         /* allow content height */
+    padding-block: 40px;
+  }
+  .auth-right{
+    border-top-left-radius: 0;
+    border-bottom-left-radius: var(--curve);
+    min-height: 46vh;
+  }
+}
+/* Make "Forgot password" link visible on light backgrounds */
+.link-ghost {
+  color: #ff9d2f !important; /* Bootstrap primary blue */
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.link-ghost:hover,
+.link-ghost:focus {
+  color: #ff9d2f !important; /* darker on hover */
+  text-decoration: underline;
+}
+
+/* Optional: keep underline-slide animation */
+.underline-slide::after {
+  background: #ff9d2f;
+}
 
     /* Card + inputs */
     .fp-card { border: 0; border-radius: 16px; overflow: hidden;
@@ -166,49 +219,74 @@ $conn->close();
     .strength-weak { color: #ef4444; font-weight: 600; }
     .strength-normal { color: #f59e0b; font-weight: 600; }
     .strength-strong { color: #22c55e; font-weight: 600; }
+  #togglePassword {
+  border-color: #ced4da;
+  background: #fff;
+  }
+  #togglePassword:hover {
+    background: #6d6d6d50;
+  }
   </style>
 </head>
 <body>
-  <div class="container-fluid h-100">
-    <div class="row h-100">
-      <!-- Left Section -->
-      <div class="col-md-6 left-section">
-        <div>
-          <h1>R.P HABANA</h1>
-          <p>Inventory and Sales Management System</p>
+  <div class="auth-shell">
+  <div class="row g-0 auth-frame">
+    <!-- Left: form panel (white) -->
+    <div class="col-12 col-lg-5 auth-left d-flex align-items-center justify-content-center">
+      <div class="auth-left-inner w-100" style="max-width: 440px;">
+        <div class="brand mb-4">
+          <h3 class="m-0 fw-bold"><span class="text" style="color: #ff9d2f;">R.P</span> HABANA</h3>
+          <small class="text-muted">Sign in to start your session</small>
         </div>
-      </div>
 
-      <!-- Right Section -->
-      <div class="col-md-6 right-section d-flex align-items-center justify-content-center">
-        <div class="overlay"></div>
-        <div class="login-box position-relative">
-          <h4 class="text-start">SIGN-IN</h4>
-          <hr>
-          <form id="loginForm" action="admin_portal.php" method="POST" novalidate>
-            <div class="mb-3">
-              <i class="fas fa-user"></i>
-              <label class="form-label">Username</label>
-              <input type="text" id="username" name="username" class="form-control" placeholder="Enter your username" required>
-            </div>
-            <div class="mb-3">
-              <i class="fas fa-lock"></i>
-              <label class="form-label">Password</label>
+        <form id="loginForm" action="admin_portal.php" method="POST" novalidate>
+          <div class="mb-3">
+            <label class="form-label">Username</label>
+            <input type="text" id="username" name="username" class="form-control" placeholder="Enter your username" required>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label">Password</label>
+            <div class="input-group">
               <input type="password" id="password" name="password" class="form-control" placeholder="Enter your password" required>
-            </div>
-            <button type="submit" class="btn btn-primary w-100">SIGN-IN</button>
-
-            <div class="d-flex justify-content-between align-items-center mt-3">
-              <small class="text-muted">Trouble signing in?</small>
-
-              <button type="button"
-                      class="btn btn-link p-0 link-ghost underline-slide d-inline-flex align-items-center gap-2"
-                      data-bs-toggle="modal"
-                      data-bs-target="#forgotAccountModal"
-                      aria-label="Open password recovery">
-                <i class="fas fa-key" aria-hidden="true"></i>
-                <span>Forgot password</span>
+              <button type="button" class="btn btn-outline-secondary" id="togglePassword" tabindex="-1" aria-label="Show/Hide password">
+                <i class="fas fa-eye"></i>
               </button>
+            </div>
+          </div>
+
+          <button type="submit"
+            class="btn w-100"
+            style="background-color:#ff9d2f; border-color:#ff9d2f; color:#fff;">
+            Sign in
+          </button>
+
+          <div class="d-flex justify-content-between align-items-center mt-3">
+            <small class="text-muted">Trouble signing in?</small>
+            <button type="button"
+                    class="btn btn-link p-0 link-ghost underline-slide d-inline-flex align-items-center gap-2"
+                    data-bs-toggle="modal"
+                    data-bs-target="#forgotAccountModal">
+              <i class="fas fa-key me-1"></i> Forgot password
+            </button>
+          </div>
+
+          <p class="mt-4 text-muted small">
+            By using this service, you understand and agree to the R.P. Habana Online Services Terms of Use and Privacy Statement.
+          </p>
+        </form>
+      </div>
+    </div>
+
+    <!-- Right: image side with overlay and curved inner edge -->
+    <div class="col-12 col-lg-7 auth-right">
+      <div class="auth-overlay"></div>
+      <!-- Optional center mark / logo -->
+      <!-- <img src="img/R.P.png" class="auth-logo" alt="Logo"> -->
+    </div>
+  </div>
+</div>
+
 <!-- 
               <button type="button"
                       class="btn btn-link p-0 link-ghost underline-slide d-inline-flex align-items-center gap-2"
@@ -815,7 +893,23 @@ document.getElementById('verifyCancelBtn')?.addEventListener('click', () => {
   m.textContent = 'Please enter the OTP to proceed with password reset.';
   m.classList.remove('text-danger','text-success');
 });
-
   </script>
+
+<!-- show password -->
+  <script>
+document.addEventListener("DOMContentLoaded", function () {
+  const passwordInput = document.getElementById("password");
+  const togglePassword = document.getElementById("togglePassword");
+  const icon = togglePassword.querySelector("i");
+
+  togglePassword.addEventListener("click", () => {
+    const isPassword = passwordInput.getAttribute("type") === "password";
+    passwordInput.setAttribute("type", isPassword ? "text" : "password");
+    icon.classList.toggle("fa-eye");
+    icon.classList.toggle("fa-eye-slash");
+  });
+});
+</script>
+
 </body>
 </html>

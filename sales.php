@@ -36,6 +36,24 @@ if ($role === 'admin') {
     $branchCondition = " AND s.branch_id = $branch_id";
 }
 
+// --- KEYWORD SEARCH (safe-ish + fast to add) ---
+$q = trim($_GET['q'] ?? '');
+$searchSql = '';
+if ($q !== '') {
+    // escape once for LIKE; exact match when numeric for sale_id
+    $safe = '%' . $conn->real_escape_string($q) . '%';
+    $exactId = ctype_digit($q) ? (int)$q : null;
+
+    // Search in branch name and refund reason; exact match on sale_id if numeric
+    $searchSql  = " AND (";
+    $searchSql .= " b.branch_name LIKE '$safe'";
+    $searchSql .= " OR r.refund_reason LIKE '$safe'";
+    if ($exactId !== null) {
+        $searchSql .= " OR s.sale_id = $exactId";
+    }
+    $searchSql .= " )";
+}
+
 // Determine period/group
 switch($reportType){
     case 'weekly':
@@ -57,63 +75,57 @@ switch($reportType){
 
 // Build query
 if ($reportType === 'itemized') {
-    $query = "
-        SELECT 
-            s.sale_id,
-            s.sale_date,
-            b.branch_name,
-            ROUND(s.total, 2) AS subtotal,
-            ROUND(s.vat, 2) AS vat,
-            ROUND(s.total + s.vat, 2) AS grand_total,
-
-            TRIM(BOTH ', ' FROM CONCAT_WS(', ',
-                (SELECT GROUP_CONCAT(CONCAT(p.product_name, ' (', si.quantity, 'x₱', FORMAT(si.price, 2), ')') SEPARATOR ', ')
-                 FROM sales_items si
-                 JOIN products p ON si.product_id = p.product_id
-                 WHERE si.sale_id = s.sale_id),
-                (SELECT GROUP_CONCAT(CONCAT(sv.service_name, ' (₱', FORMAT(ss.price, 2), ')') SEPARATOR ', ')
-                 FROM sales_services ss
-                 JOIN services sv ON ss.service_id = sv.service_id
-                 WHERE ss.sale_id = s.sale_id)
-            )) AS item_list,
-
-            COALESCE(SUM(r.refund_total), 0) AS total_refunded,
-            TRIM(BOTH '; ' FROM COALESCE(
-                NULLIF(GROUP_CONCAT(DISTINCT r.refund_reason ORDER BY r.refund_date SEPARATOR '; '), ''), ''
-            )) AS refund_reason
-        FROM sales s
-        LEFT JOIN branches b ON s.branch_id = b.branch_id
-        LEFT JOIN sales_refunds r ON r.sale_id = s.sale_id
-        WHERE s.sale_date BETWEEN '$startDate' AND '$endDate'
-        $branchCondition
-        GROUP BY s.sale_id
-        ORDER BY s.sale_date DESC
-    ";
+$query = "
+  SELECT 
+      s.sale_id,
+      s.sale_date,
+      b.branch_name,
+      ROUND(s.total, 2) AS subtotal,
+      ROUND(s.vat, 2) AS vat,
+      ROUND(s.total + s.vat, 2) AS grand_total,
+      TRIM(BOTH ', ' FROM CONCAT_WS(', ',
+          (SELECT GROUP_CONCAT(CONCAT(p.product_name, ' (', si.quantity, 'x₱', FORMAT(si.price, 2), ')') SEPARATOR ', ')
+           FROM sales_items si
+           JOIN products p ON si.product_id = p.product_id
+           WHERE si.sale_id = s.sale_id),
+          (SELECT GROUP_CONCAT(CONCAT(sv.service_name, ' (₱', FORMAT(ss.price, 2), ')') SEPARATOR ', ')
+           FROM sales_services ss
+           JOIN services sv ON ss.service_id = sv.service_id
+           WHERE ss.sale_id = s.sale_id)
+      )) AS item_list,
+      COALESCE(SUM(r.refund_total), 0) AS total_refunded,
+      TRIM(BOTH '; ' FROM COALESCE(
+          NULLIF(GROUP_CONCAT(DISTINCT r.refund_reason ORDER BY r.refund_date SEPARATOR '; '), ''), ''
+      )) AS refund_reason
+  FROM sales s
+  LEFT JOIN branches b ON s.branch_id = b.branch_id
+  LEFT JOIN sales_refunds r ON r.sale_id = s.sale_id
+  WHERE s.sale_date BETWEEN '$startDate' AND '$endDate'
+  $branchCondition
+  $searchSql
+  GROUP BY s.sale_id
+  ORDER BY s.sale_date DESC
+";
 } else {
-    $query = "
-        SELECT
-            $periodLabel AS period,
-            COUNT(DISTINCT s.sale_id) AS total_transactions,
-            ROUND(SUM(s.total + s.vat), 2) AS total_sales,
-            ROUND(COALESCE(SUM(r.refund_total), 0), 2) AS total_refunded
-        FROM sales s
-        LEFT JOIN sales_refunds r ON r.sale_id = s.sale_id
-        WHERE s.sale_date BETWEEN '$startDate' AND '$endDate'
-        $branchCondition
-        GROUP BY $groupBy
-        ORDER BY MIN(s.sale_date) DESC
-    ";
+$query = "
+  SELECT
+      $periodLabel AS period,
+      COUNT(DISTINCT s.sale_id) AS total_transactions,
+      ROUND(SUM(s.total + s.vat), 2) AS total_sales,
+      ROUND(COALESCE(SUM(r.refund_total), 0), 2) AS total_refunded
+  FROM sales s
+  LEFT JOIN sales_refunds r ON r.sale_id = s.sale_id
+  LEFT JOIN branches b ON s.branch_id = b.branch_id
+  WHERE s.sale_date BETWEEN '$startDate' AND '$endDate'
+  $branchCondition
+  $searchSql
+  GROUP BY $groupBy
+  ORDER BY MIN(s.sale_date) DESC
+";
 }
 
 
 $salesReportResult = $conn->query($query);
-
-
-$pendingResetsCount = 0;
-if ($role === 'admin') {
-  $res = $conn->query("SELECT COUNT(*) AS c FROM password_resets WHERE status='pending'");
-  $pendingResetsCount = $res ? (int)$res->fetch_assoc()['c'] : 0;
-}
 
 $pendingTransfers = 0;
 if ($role === 'admin') {
@@ -241,9 +253,6 @@ $toolsOpen = ($self === 'backup_admin.php' || $isArchive);
 
 <a href="accounts.php" class="<?= $self === 'accounts.php' ? 'active' : '' ?>">
   <i class="fas fa-users"></i> Accounts & Branches
-  <?php if ($pendingResetsCount > 0): ?>
-    <span class="badge-pending"><?= $pendingResetsCount ?></span>
-  <?php endif; ?>
 </a>
 
   <!-- NEW: Backup & Restore group with Archive inside -->
@@ -304,7 +313,10 @@ $toolsOpen = ($self === 'backup_admin.php' || $isArchive);
 
 
 <div class="content">
-<h2>📊 Sales Report</h2>
+<h1 style="display:flex;align-items:center;gap:8px;">
+  <i class="fas fa-chart-line" style="color:#f97316;"></i> Sales Report
+</h1>
+
 
 <!-- Filters -->
 <form method="get" class="mb-3 d-flex align-items-center gap-2">
@@ -335,6 +347,20 @@ $toolsOpen = ($self === 'backup_admin.php' || $isArchive);
             <?php endwhile; ?>
         </select>
     <?php endif; ?>
+
+    <?php
+      $q = trim($_GET['q'] ?? '');
+    ?>
+    <input
+      type="text"
+      name="q"
+      value="<?= htmlspecialchars($q) ?>"
+      class="form-control w-25"
+      placeholder="Search sale ID, branch, refund reason…">
+
+    <button type="submit" class="btn btn-primary d-inline-flex align-items-center">
+      <i class="fas fa-search me-1"></i> Search
+    </button>
 </form>
 
 <!-- Table -->

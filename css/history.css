@@ -118,7 +118,9 @@ body {
   text-transform: uppercase;
   border: 0;
 }
-
+form .form-control, form .btn {
+  height: 42px;
+}
 .table-modern tbody td {
   vertical-align: middle;
   color: var(--gray-700);

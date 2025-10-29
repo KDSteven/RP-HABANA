@@ -310,11 +310,6 @@ function logAction($conn, $action, $details, $user_id = null, $branch_id = null)
     $stmt->execute();
     $stmt->close();
 }
-$pendingResetsCount = 0;
-if ($role === 'admin') {
-  $res = $conn->query("SELECT COUNT(*) AS c FROM password_resets WHERE status='pending'");
-  $pendingResetsCount = $res ? (int)$res->fetch_assoc()['c'] : 0;
-}
 
 $pendingTransfers = 0;
 if ($role === 'admin') {
@@ -431,7 +426,7 @@ if (isset($_SESSION['user_id'])) {
     </h2>
 
         <!-- Common -->
-    <a href="dashboard.php"><i class="fas fa-tv"></i> Dashboard</a>
+    <a href="../../dashboard.php"><i class="fas fa-tv"></i> Dashboard</a>
 
     <?php
 // put this once before the sidebar (top of file is fine)
@@ -484,9 +479,6 @@ $toolsOpen = ($self === 'backup_admin.php' || $isArchive);
 
 <a href="../../accounts.php" class="<?= $self === 'accounts.php' ? 'active' : '' ?>">
   <i class="fas fa-users"></i> Accounts & Branches
-  <?php if ($pendingResetsCount > 0): ?>
-    <span class="badge-pending"><?= $pendingResetsCount ?></span>
-  <?php endif; ?>
 </a>
 
   <!-- NEW: Backup & Restore group with Archive inside -->

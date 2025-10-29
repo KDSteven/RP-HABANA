@@ -2,17 +2,6 @@
 session_start();
 include 'config/db.php';
 
-function generateTempPassword(): string {
-    // 10 chars: mix upper/lower/digits; you can tweak length/complexity
-    $alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789';
-    $len = strlen($alphabet);
-    $out = '';
-    for ($i = 0; $i < 10; $i++) {
-        $out .= $alphabet[random_int(0, $len - 1)];
-    }
-    return $out;
-}
-
 if (!isset($_SESSION['user_id'])) {
     header('Location: index.html');
     
@@ -141,63 +130,6 @@ if ($role === 'admin') {
     }
 }
 
-// ===== Handle Password Reset Approvals (Admin only) =====
-if (isset($_POST['reset_action'], $_POST['reset_id']) && $role === 'admin') {
-    $reset_id = (int) $_POST['reset_id'];
-    $reset_action = $_POST['reset_action'];
-
-    if ($reset_action === 'approve') {
-        // Lookup user for this reset
-        $stmt = $conn->prepare("SELECT user_id FROM password_resets WHERE id=? AND status='pending'");
-        $stmt->bind_param("i", $reset_id);
-        $stmt->execute();
-        $res = $stmt->get_result();
-        $row = $res->fetch_assoc();
-        $stmt->close();
-
-        if ($row) {
-            $user_id = (int) $row['user_id'];
-            $tempPassword = generateTempPassword();
-            $hashed = password_hash($tempPassword, PASSWORD_DEFAULT);
-
-            // Update user's password and force change on next login
-            $stmt = $conn->prepare("UPDATE users SET password=?, must_change_password=1 WHERE id=?");
-            $stmt->bind_param("si", $hashed, $user_id);
-            $stmt->execute();
-            $stmt->close();
-
-            // Mark request as approved
-            $stmt = $conn->prepare("UPDATE password_resets SET status='approved', decided_by=?, decided_at=NOW() WHERE id=?");
-            $stmt->bind_param("ii", $_SESSION['user_id'], $reset_id);
-            $stmt->execute();
-            $stmt->close();
-
-            $_SESSION['flash'] = "Password reset approved. Temporary password for user #$user_id: <b>$tempPassword</b>";
-        } else {
-            $_SESSION['flash'] = "Reset request not found or already processed.";
-        }
-    } elseif ($reset_action === 'reject') {
-        $stmt = $conn->prepare("UPDATE password_resets SET status='rejected', decided_by=?, decided_at=NOW() WHERE id=? AND status='pending'");
-        $stmt->bind_param("ii", $_SESSION['user_id'], $reset_id);
-        $stmt->execute();
-        $stmt->close();
-
-        $_SESSION['flash'] = "Password reset request rejected.";
-    }
-
-    header("Location: approvals.php");
-    exit;
-}
-
-
-// Fetch Pending Reset Requests
-$resetRequests = $conn->query("
-    SELECT pr.id AS reset_id, u.username, u.role, pr.requested_at
-    FROM password_resets pr
-    JOIN users u ON pr.user_id = u.id
-    WHERE pr.status = 'pending'
-    ORDER BY pr.requested_at ASC
-");
 ?>
 
 
@@ -327,52 +259,6 @@ $resetRequests = $conn->query("
         <?php unset($_SESSION['flash']); ?>
     <?php endif; ?>
 
-
-    <!-- ===== Password Reset Approvals (box #2) ===== -->
-    <div class="approval-section">
-        <div class="section-title">
-            <h2><i class="fas fa-key fa-xs text-primary"></i> Pending Password Reset Requests</h2>
-        </div>
-
-    <?php if ($role !== 'admin'): ?>
-        <p>Only Admin can view and process password reset requests.</p>
-    <?php else: ?>
-        <?php if ($resetRequests && $resetRequests->num_rows > 0): ?>
-        <table class="table table-striped table-hover align-middle">
-            <thead class="table-dark">
-            <tr>
-                <th>Username</th>
-                <th>Role</th>
-                <th>Requested At</th>
-                <th>Action</th>
-            </tr>
-            </thead>
-            <tbody>
-            <?php while ($r = $resetRequests->fetch_assoc()): ?>
-            <tr>
-                <td><?= htmlspecialchars($r['username']) ?></td>
-                <td><?= htmlspecialchars($r['role']) ?></td>
-                <td><?= date('Y-m-d H:i', strtotime($r['requested_at'])) ?></td>
-                <td>
-                <form method="POST" class="d-inline">
-                    <input type="hidden" name="reset_id" value="<?= (int)$r['reset_id'] ?>">
-                    <button type="submit" name="reset_action" value="approve" class="btn btn-approve">
-                    Approve & Generate Temp Password
-                    </button>
-                    <button type="submit" name="reset_action" value="reject" class="btn btn-reject ms-1">
-                    Reject
-                    </button>
-                </form>
-                </td>
-            </tr>
-            <?php endwhile; ?>
-            </tbody>
-        </table>
-        <?php else: ?>
-        <p>No pending password reset requests.</p>
-        <?php endif; ?>
-    <?php endif; ?>
-    </div>
 </div>
 
 <!-- try -->
@@ -427,13 +313,6 @@ $resetRequests = $conn->query("
   if (success) {
     url.searchParams.delete('success');
     window.history.replaceState({}, '', url.pathname + (url.search ? '?' + url.searchParams.toString() : ''));
-  }
-
-  // 2) Handle password reset flash (from session)
-  const flashEl = document.getElementById('flashMessage');
-  if (flashEl) {
-    showToast(flashEl.dataset.message || 'Action completed.', 'info');
-    flashEl.remove();
   }
 })();
 </script>

@@ -204,62 +204,92 @@ if ($role !== 'admin' || $AUTO_APPROVE_ADMIN === false) {
 }
 
 /* Admin auto-approve path: apply stock now, then mark approved for audit trail */
+/* Admin auto-approve path: apply stock now, then mark approved for audit trail */
 $conn->begin_transaction();
 try {
-  // totals
-  $stmt = $conn->prepare("SELECT inventory_id, stock FROM inventory WHERE product_id=? AND branch_id=? LIMIT 1");
-  $stmt->bind_param("ii", $product_id, $branch_id);
-  $stmt->execute();
-  $stmt->bind_result($inventory_id, $current_stock);
-  $hasRow = $stmt->fetch();
-  $stmt->close();
-
-  if ($hasRow) {
-    $newStock = (int)$current_stock + $stock_amount;
-    $stmt = $conn->prepare("UPDATE inventory SET stock=? WHERE inventory_id=?");
-    $stmt->bind_param("ii", $newStock, $inventory_id);
-    $stmt->execute(); $stmt->close();
-  } else {
-    $stmt = $conn->prepare("INSERT INTO inventory (product_id, branch_id, stock) VALUES (?, ?, ?)");
-    $stmt->bind_param("iii", $product_id, $branch_id, $stock_amount);
-    $stmt->execute(); $stmt->close();
-    $current_stock = 0; $newStock = $stock_amount;
-  }
-
-  // lots
-  if ($expiryDateForLot) {
+    // Lock product + inventory row, fetch ceiling + current stock
     $stmt = $conn->prepare("
-      INSERT INTO inventory_lots (product_id, branch_id, expiry_date, qty)
-      VALUES (?, ?, ?, ?)
-      ON DUPLICATE KEY UPDATE qty = qty + VALUES(qty)
+        SELECT p.ceiling_point,
+               i.inventory_id,
+               COALESCE(i.stock,0) AS stock
+        FROM products p
+        LEFT JOIN inventory i
+          ON i.product_id = p.product_id AND i.branch_id = ?
+        WHERE p.product_id = ?
+        FOR UPDATE
     ");
-    $stmt->bind_param("iisi", $product_id, $branch_id, $expiryDateForLot, $stock_amount);
-    if (!$stmt->execute()) { $err = $stmt->error; $stmt->close(); $conn->rollback(); die("Failed lots: ".htmlspecialchars($err)); }
+    $stmt->bind_param("ii", $branch_id, $product_id);
+    $stmt->execute();
+    $stmt->bind_result($ceiling_point, $inventory_id, $current_stock);
+    if (!$stmt->fetch()) { $stmt->close(); throw new Exception("Product not found."); }
     $stmt->close();
-  }
 
-  // log
-  $extra = $expiryDateForLot ? " (Expiry: $expiryDateForLot)" : "";
-  if (function_exists('logAction')) {
-    logAction($conn, "Add Stock", "Added $stock_amount to $product_name (ID:$product_id)$extra", null, $branch_id);
-  }
+    $ceiling_point = (int)($ceiling_point ?? 0);
+    $current_stock = (int)($current_stock ?? 0);
+    $newStock      = $current_stock + $stock_amount;
 
-  // (optional) also write an approved row to requests for traceability
-  $stmt = $conn->prepare("
-    INSERT INTO stock_in_request
-      (product_id, branch_id, quantity, expiry_date, remarks, status, requested_by, request_date, decided_by, decision_date, archived)
-    VALUES (?, ?, ?, ?, ?, 'approved', ?, NOW(), ?, NOW(), 0)
-  ");
-  $stmt->bind_param("iiissii", $product_id, $branch_id, $stock_amount, $expiryDateForLot, $remarks, $user_id, $user_id);
-  $stmt->execute(); $stmt->close();
+    // Block if ceiling is set (>0) and would be exceeded
+    if ($ceiling_point > 0 && $newStock > $ceiling_point) {
+        throw new Exception("Final stock ($newStock) exceeds ceiling ($ceiling_point).");
+    }
 
-  $conn->commit();
+    // Upsert inventory using existence (inventory_id), not stock value
+    if ($inventory_id) {
+        $stmt = $conn->prepare("UPDATE inventory SET stock = ? WHERE inventory_id = ?");
+        $stmt->bind_param("ii", $newStock, $inventory_id);
+        $stmt->execute();
+        $stmt->close();
+    } else {
+        $stmt = $conn->prepare("INSERT INTO inventory (product_id, branch_id, stock, archived) VALUES (?, ?, ?, 0)");
+        $stmt->bind_param("iii", $product_id, $branch_id, $stock_amount);
+        $stmt->execute();
+        $stmt->close();
+    }
 
-  $_SESSION['stock_message'] =
-    "✅ $product_name stock updated successfully$extra<br>" .
-    "Old stock: " . (int)$current_stock . " → New stock: " . (int)$newStock . " (Branch ID: $branch_id)";
-  header("Location: inventory.php?stock=success"); exit;
+    // Track per-expiry lots (optional table; requires UNIQUE(product_id,branch_id,expiry_date))
+    if ($expiryDateForLot) {
+        $stmt = $conn->prepare("
+            INSERT INTO inventory_lots (product_id, branch_id, expiry_date, qty)
+            VALUES (?, ?, ?, ?)
+            ON DUPLICATE KEY UPDATE qty = qty + VALUES(qty)
+        ");
+        $stmt->bind_param("iisi", $product_id, $branch_id, $expiryDateForLot, $stock_amount);
+        $stmt->execute();
+        $stmt->close();
+    }
 
+    // Audit trail: write an 'approved' row into stock_in_requests
+    $stmt = $conn->prepare("
+        INSERT INTO stock_in_requests
+            (product_id, branch_id, quantity, expiry_date, remarks, status,
+             requested_by, request_date, decided_by, decision_date, archived)
+        VALUES (?, ?, ?, ?, ?, 'approved', ?, NOW(), ?, NOW(), 0)
+    ");
+    $stmt->bind_param("iiissii", $product_id, $branch_id, $stock_amount,
+                      $expiryDateForLot, $remarks, $user_id, $user_id);
+    $stmt->execute();
+    $stmt->close();
+
+    // Log + commit
+    if (function_exists('logAction')) {
+        $extra = $expiryDateForLot ? " (Expiry: $expiryDateForLot)" : "";
+        logAction($conn, "Add Stock", "Added $stock_amount to $product_name (ID:$product_id)$extra", null, $branch_id);
+    }
+
+    $conn->commit();
+
+    $_SESSION['stock_message'] =
+        "✅ $product_name stock updated successfully" .
+        ($expiryDateForLot ? " (Expiry: $expiryDateForLot)" : "") . "<br>" .
+        "Old stock: $current_stock → New stock: $newStock (Branch ID: $branch_id)";
+    header("Location: inventory.php?stock=success");
+    exit;
+
+} catch (Throwable $e) {
+    $conn->rollback();
+    $_SESSION['stock_message'] = "❌ Add stock failed: " . $e->getMessage();
+    header("Location: inventory.php?stock=error");
+    exit;
 } catch (Throwable $e) {
   $conn->rollback(); die("Failed to add stock. Please try again.");
 }
