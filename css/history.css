@@ -230,3 +230,30 @@ form .form-control, form .btn {
   from { opacity: 0; transform: translateY(-6px); }
   to   { opacity: 1; transform: translateY(0); }
 }
+
+/* --- define the same widths your app uses --- */
+:root{
+  --sidebar-desktop: 260px; /* expanded sidebar width */
+  --sidebar-rail: 72px;     /* collapsed rail width */
+}
+
+/* Push the page content to the right of the fixed sidebar */
+@media (min-width: 992px){
+  #mainSidebar ~ .container-fluid{ margin-left: var(--sidebar-desktop) !important; }
+}
+@media (min-width: 768px) and (max-width: 991.98px){
+  #mainSidebar ~ .container-fluid{ margin-left: var(--sidebar-rail) !important; }
+  /* if your JS adds .expanded on tablet, respect it */
+  #mainSidebar.expanded ~ .container-fluid{ margin-left: var(--sidebar-desktop) !important; }
+}
+@media (max-width: 767.98px){
+  #mainSidebar ~ .container-fluid{ margin-left: 0 !important; } /* sidebar overlays on mobile */
+}
+
+/* Keep table inside the white card and avoid sideways bleed */
+.table-responsive{ overflow-x:auto; -webkit-overflow-scrolling:touch; }
+.table.table-modern{ table-layout: fixed; width:100%; }
+.table.table-modern th, .table.table-modern td{
+  white-space: normal; word-break: break-word; overflow-wrap: anywhere;
+}
+html, body{ overflow-x:hidden; } /* belt & suspenders */

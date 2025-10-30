@@ -181,6 +181,7 @@ function keep_qs(array $overrides = []): string {
 <html lang="en">
 <head>
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <?php $pageTitle = 'Sales History'; ?>
   <title><?= htmlspecialchars("RP Habana — $pageTitle") ?></title>
   <link rel="icon" href="img/R.P.png">
@@ -323,51 +324,50 @@ $toolsOpen = ($self === 'backup_admin.php' || $isArchive);
     <?php endif; ?>
 
     <a href="logout.php"><i class="fas fa-sign-out-alt"></i> Logout</a>
-</div>
-  </div>
-</div>
+    </div>
+  </div>                                  
 
-<div class="container py-5">
-  <div class="page-header">
-    <h2><i class="fas fa-history"></i> Sales History</h2>
-  </div>
 
-  <!-- Filter Card -->
-  <form method="GET" class="d-flex flex-wrap align-items-end gap-3 mb-4">
+  <div class="container py-5">
+    <div class="page-header">
+      <h2><i class="fas fa-history"></i> Sales History</h2>
+    </div>
 
-  <div class="d-flex flex-column">
-    <label class="form-label">From</label>
-    <input type="date" name="from_date" class="form-control"
-           value="<?= htmlspecialchars($_GET['from_date'] ?? '') ?>">
-  </div>
+    <!-- Filter Card -->
+    <form method="GET" class="d-flex flex-wrap align-items-end gap-3 mb-4">
 
-  <div class="d-flex flex-column">
-    <label class="form-label">To</label>
-    <input type="date" name="to_date" class="form-control"
-           value="<?= htmlspecialchars($_GET['to_date'] ?? '') ?>">
-  </div>
+    <div class="d-flex flex-column">
+      <label class="form-label">From</label>
+      <input type="date" name="from_date" class="form-control"
+            value="<?= htmlspecialchars($_GET['from_date'] ?? '') ?>">
+    </div>
 
-  <div class="d-flex flex-column">
-    <label class="form-label">Sale ID</label>
-    <input type="text" name="sale_id" class="form-control"
-           placeholder="Sale ID" value="<?= htmlspecialchars($_GET['sale_id'] ?? '') ?>">
-  </div>
+    <div class="d-flex flex-column">
+      <label class="form-label">To</label>
+      <input type="date" name="to_date" class="form-control"
+            value="<?= htmlspecialchars($_GET['to_date'] ?? '') ?>">
+    </div>
 
-  <div class="flex-grow-1 d-flex flex-column">
-    <label class="form-label">Search</label>
-    <input type="text" name="q" class="form-control"
-           placeholder="Search sale ID, branch, remarks..."
-           value="<?= htmlspecialchars($_GET['q'] ?? '') ?>">
-  </div>
+    <div class="d-flex flex-column">
+      <label class="form-label">Sale ID</label>
+      <input type="text" name="sale_id" class="form-control"
+            placeholder="Sale ID" value="<?= htmlspecialchars($_GET['sale_id'] ?? '') ?>">
+    </div>
 
-  <button type="submit" class="btn btn-modern btn-gradient-blue">
-    <i class="fas fa-search"></i> Search
-  </button>
+    <div class="flex-grow-1 d-flex flex-column">
+      <label class="form-label">Search</label>
+      <input type="text" name="q" class="form-control"
+            placeholder="Search sale ID, branch, remarks..."
+            value="<?= htmlspecialchars($_GET['q'] ?? '') ?>">
+    </div>
 
-  <button type="submit" class="btn btn-neutral">
-    <i class="fas fa-filter"></i> Filter
-  </button>
+    <button type="submit" class="btn btn-modern btn-gradient-blue">
+      <i class="fas fa-search"></i> Search
+    </button>
 
+    <button type="submit" class="btn btn-neutral">
+      <i class="fas fa-filter"></i> Filter
+    </button>
 </form>
 
   <!-- Sales Table -->

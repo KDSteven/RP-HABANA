@@ -1,6 +1,7 @@
 <?php
 session_start();
 include 'config/db.php';
+include 'functions.php'; // must provide get_active_shift($conn, $user_id, $branch_id)
 
 // ---------------- Authorization ----------------
 if (!isset($_SESSION['user_id'], $_SESSION['role'])) {
@@ -29,6 +30,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         WHERE sale_id = $sale_id
     ")->fetch_assoc();
 
+    // --- Cumulative refund total (for status) ---
+    $prevRefundedTotal = (float)($conn->query("
+        SELECT COALESCE(SUM(refund_total),0) AS t
+        FROM sales_refunds
+        WHERE sale_id = $sale_id
+    ")->fetch_assoc()['t'] ?? 0);
+
+    // --- Already refunded qty per product ---
+    $alreadyRefundedQty = [];
+    $res = $conn->query("
+        SELECT product_id, SUM(qty) AS qty_refunded
+        FROM sales_refund_items
+        WHERE sale_id = $sale_id
+        GROUP BY product_id
+    ");
+    if ($res) {
+        while ($r = $res->fetch_assoc()) {
+            $alreadyRefundedQty[(int)$r['product_id']] = (int)$r['qty_refunded'];
+        }
+    }
+
     if (!$sale) die("Sale not found.");
     if ($sale['status'] === 'Refunded') die("Sale already fully refunded.");
 
@@ -51,36 +73,37 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         ");
 
         // --- Refund Products ---
-        foreach ($refund_products as $product_id => $qty) {
-            $product_id = (int)$product_id;
-            $qty = (int)$qty;
-            if ($qty <= 0) continue;
+        foreach ($refund_products as $product_id => $qtyReq) {
+        $product_id = (int)$product_id;
+        $qtyReq = (int)$qtyReq;
+        if ($qtyReq <= 0) continue;
 
-            $sold = $conn->query("
-                SELECT quantity, price 
-                FROM sales_items 
-                WHERE sale_id = $sale_id AND product_id = $product_id
-            ")->fetch_assoc();
-            if (!$sold) continue;
+        $sold = $conn->query("
+            SELECT quantity, price 
+            FROM sales_items 
+            WHERE sale_id = $sale_id AND product_id = $product_id
+        ")->fetch_assoc();
+        if (!$sold) continue;
 
-            $qty = min($qty, (int)$sold['quantity']); // prevent over-refund
+        $soldQty = (int)$sold['quantity'];
+        $refundedSoFar = $alreadyRefundedQty[$product_id] ?? 0;
+        $remaining = max(0, $soldQty - $refundedSoFar);
+        if ($remaining <= 0) continue;
 
-            // --- VAT Calculation (treat price as net, then add 12%) ---
-            $subtotalNet   = $sold['price'] * $qty; 
-            $vatPortion    = $subtotalNet * 0.12;
-            $subtotalTotal = $subtotalNet + $vatPortion;
+        $qty = min($qtyReq, $remaining);
 
-            $refundAmount += $subtotalNet;
-            $refundVAT    += $vatPortion;
+        $subtotalNet = (float)$sold['price'] * $qty;
+        $vatPortion  = $subtotalNet * 0.12;
 
-            
-            // keep a line for later insert
-            $refItems[] = [(int)$product_id, (int)$qty, (float)$sold['price']];
+        $refundAmount += $subtotalNet;
+        $refundVAT    += $vatPortion;
 
-            // Return stock
-            $updateInventory->bind_param("iii", $qty, $product_id, $branch_id);
-            $updateInventory->execute();
-        }
+        $refItems[] = [$product_id, $qty, (float)$sold['price']];
+
+        $updateInventory->bind_param("iii", $qty, $product_id, $branch_id);
+        $updateInventory->execute();
+    }
+
 
         // --- Refund Services ---
         foreach ($refund_services as $service_id => $qty) {
@@ -104,8 +127,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $refundVAT    += $vatPortion;
         }
 
+        if ($refundAmount <= 0 && $refundVAT <= 0) {
+        $conn->rollback();
+        $_SESSION['toast'] = ['type' => 'warning', 'msg' => 'No refundable quantity left for the selected items.'];
+        header("Location: history.php?toast=refund_none");
+        exit;
+        }
+
         // --- Insert Refund Record ---
         $refundTotal = $refundAmount + $refundVAT;
+
+        // get current active shift for the user (null if none)
+        $active = get_active_shift($conn, $user_id, (int)$sale['branch_id']);
+        $refund_shift_id = $active ? (int)$active['shift_id'] : null;
 
         $insertRefund = $conn->prepare("
             INSERT INTO sales_refunds 
@@ -137,13 +171,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $insItem->close();
         }
 
-        // --- Update Sale Status ---
-        if ($refundTotal >= $totalSale) {
+        // ✅ Update sale status based on cumulative refunds
+        $upd = $conn->prepare("
+            UPDATE sales s
+            LEFT JOIN (
+                SELECT sale_id, COALESCE(SUM(refund_total), 0) AS refunded
+                FROM sales_refunds
+                WHERE sale_id = ?
+            ) r ON r.sale_id = s.sale_id
+            SET s.status = CASE
+                WHEN r.refunded >= s.total - 0.0001 THEN 'Refunded'
+                WHEN r.refunded > 0 THEN 'Partial Refund'
+                ELSE 'Paid'
+            END
+            WHERE s.sale_id = ?
+        ");
+        $upd->bind_param("ii", $sale_id, $sale_id);
+        $upd->execute();
+        $upd->close();
+
+        // --- Determine new cumulative refund total ---
+        $refundTotal = $refundAmount + $refundVAT;
+        $newCumulative = $prevRefundedTotal + $refundTotal;
+
+        if ($newCumulative + 0.0001 >= (float)$sale['total']) {
             $conn->query("UPDATE sales SET status = 'Refunded' WHERE sale_id = $sale_id");
         } else {
             $conn->query("UPDATE sales SET status = 'Partial Refund' WHERE sale_id = $sale_id");
         }
-        
+
         // Commit
         $conn->commit();
            // ✅ Success toast
@@ -153,7 +209,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         } catch (Throwable $e) {
             $conn->rollback();
-            // ❌ Error toast
+            // ❌ Error toast               
             $_SESSION['toast'] = ['type' => 'danger', 'msg' => 'Refund failed: ' . $e->getMessage()];
             header("Location: history.php?toast=refund_err");
             exit;

@@ -76,36 +76,45 @@ switch($reportType){
 // Build query
 if ($reportType === 'itemized') {
 $query = "
-  SELECT 
-      s.sale_id,
-      s.sale_date,
-      b.branch_name,
-      ROUND(s.total, 2) AS subtotal,
-      ROUND(s.vat, 2) AS vat,
-      ROUND(s.total + s.vat, 2) AS grand_total,
-      TRIM(BOTH ', ' FROM CONCAT_WS(', ',
-          (SELECT GROUP_CONCAT(CONCAT(p.product_name, ' (', si.quantity, 'x₱', FORMAT(si.price, 2), ')') SEPARATOR ', ')
-           FROM sales_items si
-           JOIN products p ON si.product_id = p.product_id
-           WHERE si.sale_id = s.sale_id),
-          (SELECT GROUP_CONCAT(CONCAT(sv.service_name, ' (₱', FORMAT(ss.price, 2), ')') SEPARATOR ', ')
-           FROM sales_services ss
-           JOIN services sv ON ss.service_id = sv.service_id
-           WHERE ss.sale_id = s.sale_id)
-      )) AS item_list,
-      COALESCE(SUM(r.refund_total), 0) AS total_refunded,
-      TRIM(BOTH '; ' FROM COALESCE(
-          NULLIF(GROUP_CONCAT(DISTINCT r.refund_reason ORDER BY r.refund_date SEPARATOR '; '), ''), ''
-      )) AS refund_reason
-  FROM sales s
-  LEFT JOIN branches b ON s.branch_id = b.branch_id
-  LEFT JOIN sales_refunds r ON r.sale_id = s.sale_id
-  WHERE s.sale_date BETWEEN '$startDate' AND '$endDate'
-  $branchCondition
-  $searchSql
-  GROUP BY s.sale_id
-  ORDER BY s.sale_date DESC
-";
+SELECT 
+  s.sale_id,
+  s.sale_date,
+  b.branch_name,
+
+  /* Subtotals (net + vat) rounded to 2dp */
+  ROUND(s.total, 2)              AS subtotal,
+  ROUND(s.vat, 2)                AS vat,
+  ROUND(s.total + s.vat, 2)      AS grand_total,
+
+  /* Items list (unchanged) */
+  TRIM(BOTH ', ' FROM CONCAT_WS(', ',
+      (SELECT GROUP_CONCAT(CONCAT(p.product_name, ' (', si.quantity, 'x₱', FORMAT(si.price, 2), ')') SEPARATOR ', ')
+       FROM sales_items si
+       JOIN products p ON si.product_id = p.product_id
+       WHERE si.sale_id = s.sale_id),
+      (SELECT GROUP_CONCAT(CONCAT(sv.service_name, ' (₱', FORMAT(ss.price, 2), ')') SEPARATOR ', ')
+       FROM sales_services ss
+       JOIN services sv ON ss.service_id = sv.service_id
+       WHERE ss.sale_id = s.sale_id)
+  )) AS item_list,
+
+  /* RAW sum, then rounded, then CAPPED to grand total */
+  ROUND(COALESCE(SUM(r.refund_total), 0), 2)                                         AS total_refunded_raw,
+  ROUND(LEAST(COALESCE(SUM(r.refund_total), 0), (s.total + s.vat)), 2)               AS total_refunded,
+
+  TRIM(BOTH '; ' FROM COALESCE(
+      NULLIF(GROUP_CONCAT(DISTINCT r.refund_reason ORDER BY r.refund_date SEPARATOR '; '), ''), ''
+  )) AS refund_reason
+
+FROM sales s
+LEFT JOIN branches b   ON s.branch_id = b.branch_id
+LEFT JOIN sales_refunds r ON r.sale_id = s.sale_id
+WHERE s.sale_date BETWEEN '$startDate' AND '$endDate'
+$branchCondition
+$searchSql
+GROUP BY s.sale_id
+ORDER BY s.sale_date DESC";
+
 } else {
 $query = "
   SELECT
@@ -404,18 +413,24 @@ $toolsOpen = ($self === 'backup_admin.php' || $isArchive);
   usort($salesDataArr, fn($a, $b) => strcmp($b['sale_date'], $a['sale_date']));
 
   foreach ($salesDataArr as $row):
-      $total    = (float)$row['grand_total'];
-      $refunded = (float)$row['total_refunded'];
+    $gt   = round((float)$row['grand_total'], 2);
+    $rf   = round((float)$row['total_refunded'], 2); // capped by SQL
+    $eps  = 0.01;
 
-      if ($refunded <= 0) {
-          $status = 'Not Refunded'; $badge = 'secondary';
-      } elseif ($refunded < $total - 0.01) {
-          $status = 'Partial'; $badge = 'warning';
-      } elseif ($refunded <= $total + 0.01) {
-          $status = 'Full'; $badge = 'success';
-      } else {
-          $status = 'Over-refunded'; $badge = 'danger';
-      }
+    if ($rf <= 0) {
+        $status = 'Not Refunded'; 
+        $badge = 'secondary';
+    } elseif ($rf + $eps < $gt) {
+        $status = 'Partial';
+        $badge = 'warning';
+    } elseif ($rf <= $gt + $eps) {
+        $status = 'Full';
+        $badge = 'success';
+    } else {
+        // should no longer happen because SQL caps, but kept for safety
+        $status = 'Over-refunded';
+        $badge = 'danger';
+    }
   ?>
   <tr>
       <td><?= htmlspecialchars($row['sale_id']) ?></td>
@@ -426,7 +441,7 @@ $toolsOpen = ($self === 'backup_admin.php' || $isArchive);
       <td>₱<?= number_format($row['vat'], 2) ?></td>
       <td><strong>₱<?= number_format($row['grand_total'], 2) ?></strong></td>
       <td class="<?= $refunded > 0 ? 'text-danger fw-bold' : 'text-muted' ?>">
-          ₱<?= number_format($refunded, 2) ?>
+          ₱<?= number_format($rf, 2) ?>
       </td>
       <td><?= htmlspecialchars($row['refund_reason'] ?: '—') ?></td>
       <td><span class="badge bg-<?= $badge ?>"><?= $status ?></span></td>

@@ -8,6 +8,8 @@ if (!isset($_SESSION['role'])) {
     exit;
 }
 
+
+
 $user_id   = (int)($_SESSION['user_id'] ?? 0);
 $role      = $_SESSION['role'];
 $branch_id = (int)($_SESSION['branch_id'] ?? 0);
@@ -15,6 +17,35 @@ $search    = trim($_GET['search'] ?? '');
 $errorMessage = '';
 $showReceiptModal = false;
 $lastSaleId = null;
+
+$activeShift = get_active_shift($conn, $user_id, $branch_id);
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['shift_action'])) {
+    try {
+        if ($_POST['shift_action'] === 'start') {
+            $opening = (float)($_POST['opening_cash'] ?? 0);
+            $note    = trim($_POST['opening_note'] ?? '');
+            $sid = start_shift($conn, $user_id, $branch_id, $opening, $note);
+            // refresh state
+            $activeShift = get_active_shift($conn, $user_id, $branch_id);
+            $_SESSION['toast'] = ['type'=>'success','msg'=>'Shift started.'];
+            header("Location: pos.php"); exit;
+        }
+        if ($_POST['shift_action'] === 'end' && $activeShift) {
+            $closing = (float)($_POST['closing_cash'] ?? 0);
+            $note    = trim($_POST['closing_note'] ?? '');
+            $r = end_shift($conn, (int)$activeShift['shift_id'], $closing, $note);
+            $_SESSION['toast'] = [
+              'type'=>'success',
+              'msg'=>'Shift closed. Diff: '.number_format($r['difference'],2).' (Expected: ₱'.number_format($r['expected'],2).')'
+            ];
+            header("Location: pos.php"); exit;
+        }
+    } catch (Exception $e) {
+        $_SESSION['toast'] = ['type'=>'danger','msg'=>$e->getMessage()];
+        header("Location: pos.php"); exit;
+    }
+}
 
 $pending = $conn->query("SELECT COUNT(*) AS pending FROM transfer_requests WHERE status='Pending'")
            ->fetch_assoc()['pending'] ?? 0;
@@ -51,6 +82,13 @@ function checkoutCart($conn, $user_id, $branch_id, $payment, $discount = 0, $dis
     if (empty($_SESSION['cart'])) {
         throw new Exception("Cart is empty.");
     }
+    // require an open shift
+    $active = get_active_shift($conn, $user_id, $branch_id);
+    if (!$active) {
+        throw new Exception("You must Start Shift before processing sales.");
+    }
+    $shift_id = (int)$active['shift_id'];
+
 
     // ---------- 1. CALCULATE SUBTOTAL ----------
   $subtotal = 0.0;
@@ -107,11 +145,14 @@ foreach ($_SESSION['cart'] as $i => $item) {
     try {
         // --- Insert sale ---
         $stmt = $conn->prepare("
-            INSERT INTO sales 
-            (branch_id, total, discount, discount_type, vat, payment, change_given, processed_by, status)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'completed')
-        ");
-        $stmt->bind_param("iddsddis", $branch_id, $subtotal, $discount_value, $discount_type, $totalVat, $payment, $change, $user_id);
+        INSERT INTO sales 
+        (branch_id, shift_id, total, discount, discount_type, vat, payment, change_given, processed_by, status)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'completed')
+      ");
+        $stmt->bind_param(
+          "iiddsdddi",
+          $branch_id, $shift_id, $subtotal, $discount_value, $discount_type, $totalVat, $payment, $change, $user_id
+        );
         $stmt->execute();
         $sale_id = $conn->insert_id;
         $stmt->close();
@@ -427,13 +468,41 @@ $toolsOpen = ($self === 'backup_admin.php' || $isArchive);
 <!-- POS Wrapper -->
 <div class="pos-wrapper">
 
+  <div class="card w-100 mb-3">
+    <div class="card-body d-flex flex-wrap align-items-center justify-content-between gap-2">
+      <?php if ($activeShift): ?>
+        <div>
+          <strong>Shift:</strong> #<?= (int)$activeShift['shift_id'] ?> |
+          <strong>Opened:</strong> <?= htmlspecialchars($activeShift['start_time']) ?> |
+          <strong>Opening Cash:</strong> ₱<?= number_format((float)$activeShift['opening_cash'],2) ?>
+        </div>
+        <div class="d-flex gap-2">
+          <button class="btn btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#payInOutModal">
+            Petty Cash
+          </button>
+          <button class="btn btn-danger" data-bs-toggle="modal" data-bs-target="#endShiftModal">
+            End Shift
+          </button>
+        </div>
+      <?php else: ?>
+        <div class="text-danger fw-semibold">
+          No active shift. Start a shift to enable POS.
+        </div>
+        <button class="btn btn-success" data-bs-toggle="modal" data-bs-target="#startShiftModal">
+          Start Shift
+        </button>
+      <?php endif; ?>
+    </div>
+  </div>
+
   <!-- Cart Section -->
   <div class="cart-section" id="cartSection">
     <?php include 'pos_cart_partial.php'; ?>
   </div>
 
-  <!-- Controls Section -->
-  <div class="controls-section">
+<?php $posDisabled = !$activeShift; ?>
+<div class="controls-section <?= $posDisabled ? 'pe-none opacity-50' : '' ?>">
+
 
     <!-- Search -->
     <div class="card mb-2">
@@ -611,6 +680,70 @@ $toolsOpen = ($self === 'backup_admin.php' || $isArchive);
     </div>
   </div>
 </div>
+
+<!-- Start Shift -->
+<div class="modal fade" id="startShiftModal" tabindex="-1">
+  <div class="modal-dialog modal-sm modal-dialog-centered">
+    <form method="post" class="modal-content">
+      <input type="hidden" name="shift_action" value="start">
+      <div class="modal-header bg-success text-white"><h5 class="m-0">Start Shift</h5>
+        <button class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div>
+      <div class="modal-body">
+        <label class="form-label">Opening Cash (₱)</label>
+        <input type="number" name="opening_cash" step="0.01" min="0" class="form-control" required>
+        <label class="form-label mt-2">Note (optional)</label>
+        <input type="text" name="opening_note" class="form-control">
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-success w-100" type="submit">Start</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- End Shift -->
+<div class="modal fade" id="endShiftModal" tabindex="-1">
+  <div class="modal-dialog modal-sm modal-dialog-centered">
+    <form method="post" class="modal-content">
+      <input type="hidden" name="shift_action" value="end">
+      <div class="modal-header bg-danger text-white"><h5 class="m-0">End Shift</h5>
+        <button class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div>
+      <div class="modal-body">
+        <label class="form-label">Counted Cash (₱)</label>
+        <input type="number" name="closing_cash" step="0.01" min="0" class="form-control" required>
+        <label class="form-label mt-2">Note (optional)</label>
+        <input type="text" name="closing_note" class="form-control">
+        <div class="small text-muted mt-2">
+          System will compare this to expected cash and save the difference.
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-danger w-100" type="submit">Close Shift</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="modal fade" id="payInOutModal" tabindex="-1">
+  <div class="modal-dialog modal-sm modal-dialog-centered">
+    <form method="post" class="modal-content" action="shift_cash_move.php">
+      <div class="modal-header bg-secondary text-white"><h5 class="m-0">Petty Cash</h5>
+        <button class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div>
+      <div class="modal-body">
+        <select class="form-select" name="move_type" required>
+          <option value="pay_in">Pay In (+)</option>
+          <option value="pay_out">Pay Out (−)</option>
+        </select>
+        <input type="number" step="0.01" min="0" name="amount" class="form-control mt-2" placeholder="Amount" required>
+        <input type="text" name="reason" class="form-control mt-2" placeholder="Reason (optional)">
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary w-100" type="submit">Record</button>
+      </div>
+    </form>
+  </div>
+</div>
+
 
 <!-- Toasts -->
 <div class="toast-container position-fixed top-0 end-0 p-3" style="z-index: 9999;"></div>
@@ -1134,8 +1267,17 @@ paymentInput.addEventListener('keydown', function(e) {
     e.preventDefault();
   }
 });
-
 </script>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  <?php if (!$activeShift): ?>
+    const m = new bootstrap.Modal(document.getElementById('startShiftModal'));
+    m.show();
+  <?php endif; ?>
+});
+</script>
+
 
 <script src="sidebar.js"></script>
 
