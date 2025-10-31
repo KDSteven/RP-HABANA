@@ -18,124 +18,127 @@ if ($role === 'admin') {
     $pending = $result ? (int)($result->fetch_assoc()['pending'] ?? 0) : 0;
 }
 
-// Report filters
-$reportType = $_GET['report'] ?? 'itemized'; // daily | weekly | monthly | itemized
-$selectedMonth = $_GET['month'] ?? date('Y-m');
-$startDate = $selectedMonth . "-01";
-$endDate = date("Y-m-t", strtotime($startDate));
+date_default_timezone_set('Asia/Manila'); // keep reports aligned with local time
+
+// ---- Inputs / defaults
+$reportType    = $_GET['report'] ?? 'itemized'; // daily | weekly | monthly | itemized
+$selectedMonth = $_GET['month']  ?? date('Y-m');
+
+// Compute month range with full-day coverage (00:00:00 → 23:59:59)
+$startDateTime = date('Y-m-01 00:00:00', strtotime($selectedMonth . '-01'));
+$endDateTime   = date('Y-m-t 23:59:59',  strtotime($selectedMonth . '-01'));
+
+// ---- Dynamic WHERE parts
+$conds  = ["s.sale_date >= ? AND s.sale_date <= ?"];
+$params = [$startDateTime, $endDateTime];
+$types  = "ss";
 
 // Branch filter
-$branchCondition = '';
-if ($role === 'admin') {
-    if (!empty($_GET['branch_id']) && is_numeric($_GET['branch_id'])) {
-        $branch_id = intval($_GET['branch_id']);
-        $branchCondition = " AND s.branch_id = $branch_id";
-    }
-} else if ($role === 'staff') {
-    // Staff can only see their branch
-    $branchCondition = " AND s.branch_id = $branch_id";
+if ($role === 'admin' && !empty($_GET['branch_id']) && ctype_digit($_GET['branch_id'])) {
+  $branch_id = (int)$_GET['branch_id'];
+  $conds[] = "s.branch_id = ?";
+  $params[] = $branch_id;
+  $types   .= "i";
+} elseif ($role === 'staff' && $branch_id) {
+  $conds[] = "s.branch_id = ?";
+  $params[] = (int)$branch_id;
+  $types   .= "i";
 }
 
-// --- KEYWORD SEARCH (safe-ish + fast to add) ---
+// Keyword search (branch name, refund reason, exact sale_id if numeric)
 $q = trim($_GET['q'] ?? '');
-$searchSql = '';
 if ($q !== '') {
-    // escape once for LIKE; exact match when numeric for sale_id
-    $safe = '%' . $conn->real_escape_string($q) . '%';
-    $exactId = ctype_digit($q) ? (int)$q : null;
-
-    // Search in branch name and refund reason; exact match on sale_id if numeric
-    $searchSql  = " AND (";
-    $searchSql .= " b.branch_name LIKE '$safe'";
-    $searchSql .= " OR r.refund_reason LIKE '$safe'";
-    if ($exactId !== null) {
-        $searchSql .= " OR s.sale_id = $exactId";
-    }
-    $searchSql .= " )";
+  $conds[]  = "(b.branch_name LIKE ? OR r.refund_reason LIKE ?" . (ctype_digit($q) ? " OR s.sale_id = ?" : "") . ")";
+  $params[] = "%$q%";
+  $params[] = "%$q%";
+  $types   .= "ss";
+  if (ctype_digit($q)) { $params[] = (int)$q; $types .= "i"; }
 }
 
-// Determine period/group
-switch($reportType){
-    case 'weekly':
-        $periodLabel = "CONCAT('Week ', WEEK(s.sale_date,1),' - ',YEAR(s.sale_date))";
-        $groupBy = "YEAR(s.sale_date), WEEK(s.sale_date,1)";
-        break;
-    case 'monthly':
-        $periodLabel = "CONCAT(MONTHNAME(s.sale_date),' ',YEAR(s.sale_date))";
-        $groupBy = "YEAR(s.sale_date), MONTH(s.sale_date)";
-        break;
-    case 'daily':
-        $periodLabel = "DATE(s.sale_date)";
-        $groupBy = "DATE(s.sale_date)";
-        break;
-    default: // itemized
-        $periodLabel = "DATE(s.sale_date)";
-        $groupBy = null;
+$whereSql = $conds ? ("WHERE " . implode(' AND ', $conds)) : "";
+
+// ---- Period label / grouping for non-itemized
+switch ($reportType) {
+  case 'daily':
+    $periodLabel = "DATE(s.sale_date)";
+    $groupBy     = "DATE(s.sale_date)";
+    break;
+  case 'weekly':
+    $periodLabel = "CONCAT('Week ', WEEK(s.sale_date, 1), ' - ', YEAR(s.sale_date))";
+    $groupBy     = "YEAR(s.sale_date), WEEK(s.sale_date, 1)";
+    break;
+  case 'monthly':
+    $periodLabel = "CONCAT(MONTHNAME(s.sale_date), ' ', YEAR(s.sale_date))";
+    $groupBy     = "YEAR(s.sale_date), MONTH(s.sale_date)";
+    break;
+  default: // itemized
+    $periodLabel = null;
+    $groupBy     = null;
 }
 
-// Build query
+// ---- Build SQL (itemized vs grouped)
 if ($reportType === 'itemized') {
-$query = "
-SELECT 
-  s.sale_id,
-  s.sale_date,
-  b.branch_name,
+  $sql = "
+    SELECT 
+      s.sale_id,
+      s.sale_date,
+      b.branch_name,
 
-  /* Subtotals (net + vat) rounded to 2dp */
-  ROUND(s.total, 2)              AS subtotal,
-  ROUND(s.vat, 2)                AS vat,
-  ROUND(s.total + s.vat, 2)      AS grand_total,
+      ROUND(s.total, 2)               AS subtotal,
+      ROUND(s.vat, 2)                 AS vat,
+      ROUND(s.total + s.vat, 2)       AS grand_total,
 
-  /* Items list (unchanged) */
-  TRIM(BOTH ', ' FROM CONCAT_WS(', ',
-      (SELECT GROUP_CONCAT(CONCAT(p.product_name, ' (', si.quantity, 'x₱', FORMAT(si.price, 2), ')') SEPARATOR ', ')
-       FROM sales_items si
-       JOIN products p ON si.product_id = p.product_id
-       WHERE si.sale_id = s.sale_id),
-      (SELECT GROUP_CONCAT(CONCAT(sv.service_name, ' (₱', FORMAT(ss.price, 2), ')') SEPARATOR ', ')
-       FROM sales_services ss
-       JOIN services sv ON ss.service_id = sv.service_id
-       WHERE ss.sale_id = s.sale_id)
-  )) AS item_list,
+      TRIM(BOTH ', ' FROM CONCAT_WS(', ',
+        (SELECT GROUP_CONCAT(CONCAT(p.product_name, ' (', si.quantity, 'x₱', FORMAT(si.price, 2), ')') SEPARATOR ', ')
+           FROM sales_items si
+           JOIN products p ON si.product_id = p.product_id
+          WHERE si.sale_id = s.sale_id),
+        (SELECT GROUP_CONCAT(CONCAT(sv.service_name, ' (₱', FORMAT(ss.price, 2), ')') SEPARATOR ', ')
+           FROM sales_services ss
+           JOIN services sv ON ss.service_id = sv.service_id
+          WHERE ss.sale_id = s.sale_id)
+      )) AS item_list,
 
-  /* RAW sum, then rounded, then CAPPED to grand total */
-  ROUND(COALESCE(SUM(r.refund_total), 0), 2)                                         AS total_refunded_raw,
-  ROUND(LEAST(COALESCE(SUM(r.refund_total), 0), (s.total + s.vat)), 2)               AS total_refunded,
+      -- aggregate refunds, cap to grand total
+      ROUND(COALESCE(SUM(r.refund_total), 0), 2)                           AS total_refunded_raw,
+      ROUND(LEAST(COALESCE(SUM(r.refund_total), 0), (s.total + s.vat)), 2) AS total_refunded,
 
-  TRIM(BOTH '; ' FROM COALESCE(
-      NULLIF(GROUP_CONCAT(DISTINCT r.refund_reason ORDER BY r.refund_date SEPARATOR '; '), ''), ''
-  )) AS refund_reason
+      TRIM(BOTH '; ' FROM COALESCE(
+        NULLIF(GROUP_CONCAT(DISTINCT r.refund_reason ORDER BY r.refund_date SEPARATOR '; '), ''),
+        ''
+      )) AS refund_reason
 
-FROM sales s
-LEFT JOIN branches b   ON s.branch_id = b.branch_id
-LEFT JOIN sales_refunds r ON r.sale_id = s.sale_id
-WHERE s.sale_date BETWEEN '$startDate' AND '$endDate'
-$branchCondition
-$searchSql
-GROUP BY s.sale_id
-ORDER BY s.sale_date DESC";
-
+    FROM sales s
+    LEFT JOIN branches b    ON s.branch_id = b.branch_id
+    LEFT JOIN sales_refunds r ON r.sale_id = s.sale_id
+    $whereSql
+    GROUP BY s.sale_id
+    ORDER BY s.sale_date DESC
+  ";
 } else {
-$query = "
-  SELECT
+  // grouped (daily/weekly/monthly)
+  $sql = "
+    SELECT
       $periodLabel AS period,
-      COUNT(DISTINCT s.sale_id) AS total_transactions,
-      ROUND(SUM(s.total + s.vat), 2) AS total_sales,
+      COUNT(DISTINCT s.sale_id)              AS total_transactions,
+      ROUND(SUM(s.total + s.vat), 2)         AS total_sales,
       ROUND(COALESCE(SUM(r.refund_total), 0), 2) AS total_refunded
-  FROM sales s
-  LEFT JOIN sales_refunds r ON r.sale_id = s.sale_id
-  LEFT JOIN branches b ON s.branch_id = b.branch_id
-  WHERE s.sale_date BETWEEN '$startDate' AND '$endDate'
-  $branchCondition
-  $searchSql
-  GROUP BY $groupBy
-  ORDER BY MIN(s.sale_date) DESC
-";
+    FROM sales s
+    LEFT JOIN sales_refunds r ON r.sale_id = s.sale_id
+    LEFT JOIN branches b      ON s.branch_id = b.branch_id
+    $whereSql
+    GROUP BY $groupBy
+    ORDER BY MIN(s.sale_date) DESC
+  ";
 }
 
-
-$salesReportResult = $conn->query($query);
-
+// ---- Execute safely
+$stmt = $conn->prepare($sql);
+if ($types !== '' && $params) {
+  $stmt->bind_param($types, ...$params);
+}
+$stmt->execute();
+$salesReportResult = $stmt->get_result();
 $pendingTransfers = 0;
 if ($role === 'admin') {
     $result = $conn->query("SELECT COUNT(*) AS pending FROM transfer_requests WHERE status='pending'");

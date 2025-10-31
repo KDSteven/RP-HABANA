@@ -231,12 +231,6 @@ form .form-control, form .btn {
   to   { opacity: 1; transform: translateY(0); }
 }
 
-/* --- define the same widths your app uses --- */
-:root{
-  --sidebar-desktop: 260px; /* expanded sidebar width */
-  --sidebar-rail: 72px;     /* collapsed rail width */
-}
-
 /* Push the page content to the right of the fixed sidebar */
 @media (min-width: 992px){
   #mainSidebar ~ .container-fluid{ margin-left: var(--sidebar-desktop) !important; }
@@ -257,3 +251,108 @@ form .form-control, form .btn {
   white-space: normal; word-break: break-word; overflow-wrap: anywhere;
 }
 html, body{ overflow-x:hidden; } /* belt & suspenders */
+
+
+
+
+/* Make the table use horizontal space better */
+.table-modern {
+  table-layout: auto;
+  width: 100%;
+}
+
+/* Column widths (desktop) */
+.col-id      { width: 90px;  white-space: nowrap; }
+.col-branch  { width: 160px; }
+.col-date    { width: 170px; white-space: nowrap; }
+.col-total   { width: 120px; white-space: nowrap; }
+.col-status  { width: 150px; white-space: nowrap; }
+.col-actions { width: 240px; }
+
+/* Let long text wrap to free space for Actions */
+.col-remarks,
+.col-refitems {
+  min-width: 220px;
+  white-space: normal;
+  word-break: break-word;
+}
+
+/* Action buttons: line up nicely and never crush */
+.actions-wrap{
+  display: inline-flex;
+  gap: .5rem;
+  flex-wrap: nowrap;
+  align-items: center;
+  white-space: nowrap;
+}
+
+/* Slightly tighten cell padding to gain a bit more width */
+.table-modern > :not(caption) > * > * {
+  padding: .55rem .75rem;
+}
+
+/* Responsive behavior: allow wrapping when screen narrows */
+@media (max-width: 1400px){
+  .col-actions { width: 260px; } /* a bit more on large laptops */
+}
+@media (max-width: 1200px){
+  .actions-wrap{ flex-wrap: wrap; }
+  .col-actions { width: 100%; min-width: 220px; }
+}
+/* Optional: push Actions cell content to center on narrow screens */
+@media (max-width: 992px){
+  .col-actions { text-align: center; }
+}
+/* --- SALES HISTORY TABLE: viewport fix --- */
+
+/* Keep headers on one line (prevents R E F U N D E D vertical stacking) */
+.table-modern thead th{
+  white-space: nowrap !important;
+  word-break: keep-all !important;
+  overflow-wrap: normal !important;
+}
+
+/* Default body cells: one line unless we opt-in to wrapping */
+.table-modern tbody td{
+  white-space: nowrap;
+}
+
+/* Allow wrapping ONLY for long-text columns:
+   5 = Remarks, 6 = Refunded Items */
+.table-modern thead th:nth-child(5),
+.table-modern thead th:nth-child(6),
+.table-modern tbody td:nth-child(5),
+.table-modern tbody td:nth-child(6){
+  white-space: normal !important;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  min-width: 240px;              /* gives them room at this width */
+}
+
+/* Ensure actions area doesn’t get crushed */
+.table-modern thead th:last-child,
+.table-modern tbody td:last-child{
+  min-width: 220px;
+}
+
+/* Keep date/total readable and on one line */
+.table-modern thead th:nth-child(3),
+.table-modern tbody td:nth-child(3),  /* Date */
+.table-modern thead th:nth-child(4),
+.table-modern tbody td:nth-child(4)   /* Total */
+{
+  white-space: nowrap;
+}
+
+/* Maintain the orange header look */
+.table-modern thead th{
+  background: linear-gradient(135deg, var(--orange-600), var(--orange-500)) !important;
+  color:#fff !important;
+  font-weight:700;
+}
+
+/* Layout: let browser size columns naturally */
+.table-modern{ table-layout:auto !important; }
+
+/* Keep the table inside the card if it still overflows on smaller screens */
+.table-responsive{ overflow-x:auto; -webkit-overflow-scrolling:touch; }

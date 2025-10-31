@@ -85,7 +85,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $targetUserId) {
     unset($_SESSION['pw_reset_ok'], $_SESSION['pw_reset_phone'], $_SESSION['pw_reset_username']);
     $_SESSION['toast_msg']  = "Your password has been updated. Please log in with your new password.";
     $_SESSION['toast_type'] = "success";
-    header("Location: index.php");
+    header("Location: admin_portal.php");
     exit;
 
     }

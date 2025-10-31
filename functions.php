@@ -106,6 +106,11 @@ function start_shift(mysqli $conn, int $user_id, int $branch_id, float $opening_
     if (get_active_shift($conn, $user_id, $branch_id)) {
         throw new Exception("You already have an open shift.");
     }
+     // close any lingering open shifts for this user/branch
+    $conn->query("UPDATE shifts 
+            SET status='closed', end_time=NOW() 
+            WHERE user_id={$user_id} AND branch_id={$branch_id} AND status='open'");
+
     $stmt = $conn->prepare("
       INSERT INTO shifts (user_id, branch_id, opening_cash, opening_note)
       VALUES (?,?,?,?)

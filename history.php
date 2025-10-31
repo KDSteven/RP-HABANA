@@ -46,15 +46,6 @@ if ($role === 'staff') {
     $params[] = (int)$_GET['branch_id'];
     $types .= "i";
 }
-// Keyword search (matches sale_id, branch name, or refund reasons)
-if (!empty($_GET['q'])) {
-    $q = '%' . $_GET['q'] . '%';
-    $where[] = "(CAST(s.sale_id AS CHAR) LIKE ? OR b.branch_name LIKE ? OR r.refund_reason LIKE ?)";
-    $params[] = $q;
-    $params[] = $q;
-    $params[] = $q;
-    $types .= "sss";
-}
 
 // --- PAGINATION (fixed page size) ---
 $perPage = 10; // set what you like
@@ -321,6 +312,8 @@ $toolsOpen = ($self === 'backup_admin.php' || $isArchive);
     <?php if ($role === 'staff'): ?>
         <a href="pos.php"><i class="fas fa-cash-register"></i> Point of Sale</a>
         <a href="history.php" class="active"><i class="fas fa-history"></i> Sales History</a>
+        <a href="shift_summary.php" class="<?= $self === 'shift_summary.php' ? 'active' : '' ?>">
+        <i class="fa-solid fa-clipboard-check"></i> Shift Summary</a>
     <?php endif; ?>
 
     <a href="logout.php"><i class="fas fa-sign-out-alt"></i> Logout</a>
@@ -328,7 +321,7 @@ $toolsOpen = ($self === 'backup_admin.php' || $isArchive);
   </div>                                  
 
 
-  <div class="container py-5">
+  <div class="container-fluid page-content py-5">
     <div class="page-header">
       <h2><i class="fas fa-history"></i> Sales History</h2>
     </div>
@@ -348,18 +341,17 @@ $toolsOpen = ($self === 'backup_admin.php' || $isArchive);
             value="<?= htmlspecialchars($_GET['to_date'] ?? '') ?>">
     </div>
 
-    <div class="d-flex flex-column">
-      <label class="form-label">Sale ID</label>
-      <input type="text" name="sale_id" class="form-control"
-            placeholder="Sale ID" value="<?= htmlspecialchars($_GET['sale_id'] ?? '') ?>">
-    </div>
+<div class="d-flex flex-column">
+  <label class="form-label">Sale ID</label>
+  <div class="input-group">
+    <input type="text" name="sale_id" id="saleIdInput" class="form-control"
+           placeholder="Sale ID" value="<?= htmlspecialchars($_GET['sale_id'] ?? '') ?>">
+    <button type="button" class="btn btn-outline-secondary" id="clearSaleId" title="Clear Sale ID">
+      <i class="fa-solid fa-times"></i>
+    </button>
+  </div>
+</div>
 
-    <div class="flex-grow-1 d-flex flex-column">
-      <label class="form-label">Search</label>
-      <input type="text" name="q" class="form-control"
-            placeholder="Search sale ID, branch, remarks..."
-            value="<?= htmlspecialchars($_GET['q'] ?? '') ?>">
-    </div>
 
     <button type="submit" class="btn btn-modern btn-gradient-blue">
       <i class="fas fa-search"></i> Search
@@ -382,14 +374,14 @@ $toolsOpen = ($self === 'backup_admin.php' || $isArchive);
       <table class="table table-modern table-bordered align-middle">
         <thead>
           <tr>
-            <th>Sale ID</th>
-            <th>Branch</th>
-            <th>Date</th>
-            <th>Total (₱)</th>
-            <th>Remarks</th>
-            <th>Refunded Items</th>
-            <th>Status</th>
-            <th>Actions</th>
+            <th class="col-id">Sale ID</th>
+            <th class="col-branch">Branch</th>
+            <th class="col-date">Date</th>
+            <th class="col-total text-end">Total (₱)</th>
+            <th class="col-remarks">Remarks</th>
+            <th class="col-refitems">Refunded Items</th>
+            <th class="col-status">Status</th>
+            <th class="col-actions text-center">Actions</th>
           </tr>
         </thead>
         <tbody>
@@ -402,13 +394,13 @@ $toolsOpen = ($self === 'backup_admin.php' || $isArchive);
     $totalWithVat = $total + $vat;
 
    if ($refunded <= 0) {
-    $status = "Not Refunded";
+    $status = "Not Refund";
     $badge = "secondary";
 } elseif ($refunded >= $totalWithVat - 0.01) { 
-    $status = "Fully Refunded";
+    $status = "Full Refund";
     $badge = "success";
 } else {
-    $status = "Partially Refunded";
+    $status = "Partial Refund";
     $badge = "warning text-dark";
 }
 
@@ -436,18 +428,22 @@ $remarks = $remarks !== '' ? $remarks : '—';
 </td>
 
     <td><span class="badge bg-<?= $badge ?>"><?= $status ?></span></td>
-    <td>
-          <button type="button" onclick="openReceiptModal(<?= (int)$sale['sale_id'] ?>)" 
+      <td class="col-actions">
+        <div class="actions-wrap">
+          <button type="button"
+            onclick="openReceiptModal(<?= (int)$sale['sale_id'] ?>)"
             class="btn btn-info btn-modern btn-sm">
             <i class="fas fa-receipt"></i> Receipt
           </button>
-        <?php if ($status !== "Fully Refunded"): ?>
-            <button onclick="openReturnModal(<?= (int)$sale['sale_id'] ?>)" 
-              class="btn-action btn-gradient-green">
+
+          <?php if ($status !== "Fully Refunded"): ?>
+            <button onclick="openReturnModal(<?= (int)$sale['sale_id'] ?>)"
+              class="btn-action btn-gradient-green btn-sm">
               <i class="fas fa-undo"></i> Refund
             </button>
-        <?php endif; ?>
-    </td>
+          <?php endif; ?>
+        </div>
+      </td>
 </tr>
 <?php endwhile; ?>
 
@@ -524,11 +520,8 @@ $remarks = $remarks !== '' ? $remarks : '—';
           <label class="form-label">Reason</label>
           <select name="refund_reason" class="form-select" required>
             <option value="" disabled selected>Select a reason</option>
-            <option value="Customer changed mind">Customer changed mind</option>
-            <option value="Wrong item delivered">Wrong item delivered</option>
             <option value="Damaged product">Damaged product</option>
             <option value="Expired product">Expired product</option>
-            <option value="Other">Other</option>
           </select>
         </div>
 
@@ -779,6 +772,22 @@ function printReceipt() {
   window.appToast = showToast;
 })();
 </script>
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  const btn   = document.getElementById('clearSaleId');
+  const input = document.getElementById('saleIdInput');
+  if (!btn || !input) return;
+
+  btn.addEventListener('click', (e) => {
+    e.preventDefault();
+    input.value = '';
+    input.focus();
+    if (input.form) input.form.submit(); // auto-submit with Sale ID cleared
+  });
+});
+</script>
+
+
 
 <script src="notifications.js"></script>
 <script src="sidebar.js"></script>

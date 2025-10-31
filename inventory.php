@@ -723,6 +723,9 @@ $toolsOpen = ($self === 'backup_admin.php' || $isArchive);
     <?php if ($role === 'staff'): ?>
         <a href="pos.php"><i class="fas fa-cash-register"></i> Point of Sale</a>
         <a href="history.php"><i class="fas fa-history"></i> Sales History</a>
+        <a href="shift_summary.php" class="<?= $self === 'shift_summary.php' ? 'active' : '' ?>">
+  <i class="fa-solid fa-clipboard-check"></i> Shift Summary
+  </a>
     <?php endif; ?>
 
     <a href="logout.php"><i class="fas fa-sign-out-alt"></i> Logout</a>

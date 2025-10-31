@@ -212,8 +212,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['checkout'])) {
     try {
         $result = checkoutCart($conn, $user_id, $branch_id, $payment, $discount, $discount_type);
         // Redirect to self with lastSale to show receipt (PRG pattern)
-        header("Location: pos.php?lastSale=" . $result['sale_id']);
-        
+        header("Location: pos.php?lastSale={$result['sale_id']}&print=1");
         exit;
     } catch (Exception $e) {
         $errorMessage = $e->getMessage();
@@ -458,6 +457,8 @@ $toolsOpen = ($self === 'backup_admin.php' || $isArchive);
     <?php if ($role === 'staff'): ?>
         <a href="pos.php" class="active"><i class="fas fa-cash-register"></i> Point of Sale</a>
         <a href="history.php"><i class="fas fa-history"></i> Sales History</a>
+        <a href="shift_summary.php" class="<?= $self === 'shift_summary.php' ? 'active' : '' ?>">
+        <i class="fa-solid fa-clipboard-check"></i> Shift Summary</a>
     <?php endif; ?>
 
     <a href="logout.php"><i class="fas fa-sign-out-alt"></i> Logout</a>
@@ -662,6 +663,25 @@ $toolsOpen = ($self === 'backup_admin.php' || $isArchive);
   </div>
 </div>
 
+<!-- Change Due Modal -->
+<div class="modal fade" id="changeModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-sm modal-dialog-centered">
+    <div class="modal-content border-0 shadow">
+      <div class="modal-header bg-success text-white py-2">
+        <h6 class="modal-title mb-0"><i class="fas fa-money-bill-wave"></i> Change Due</h6>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body text-center">
+        <div class="display-6 fw-bold" id="changeAmountText">₱0.00</div>
+        <div class="text-muted small mt-2">Please hand the change to the customer.</div>
+      </div>
+      <div class="modal-footer py-2">
+        <button type="button" class="btn btn-success w-100" data-bs-dismiss="modal">OK</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- Cancel Order (Bootstrap modal) -->
 <div class="modal fade" id="cancelOrderModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-sm modal-dialog-centered">
@@ -752,33 +772,92 @@ $toolsOpen = ($self === 'backup_admin.php' || $isArchive);
 <script src="notifications.js"></script>
 <script>
 document.addEventListener('DOMContentLoaded', () => {
-  const params = new URLSearchParams(window.location.search);
-  const lastSale = params.get('lastSale');   // from your redirect
+  const params   = new URLSearchParams(window.location.search);
+  const lastSale = params.get('lastSale');
+  const doPrint  = params.get('print') === '1';
+  const changeDueParam = params.get('chg');
+  const changeDue = changeDueParam !== null ? parseFloat(changeDueParam) : NaN;
+
+  function showChangePopup(amount) {
+    // Prefer modal; fallback to toast if amount invalid.
+    if (!isNaN(amount)) {
+      const el = document.getElementById('changeAmountText');
+      if (el) el.textContent = `₱${amount.toFixed(2)}`;
+      const cm = new bootstrap.Modal(document.getElementById('changeModal'));
+      cm.show();
+    } else {
+      // fallback toast
+      if (window.showToast) {
+        showToast('<i class="fas fa-money-bill-wave"></i> Change Due',
+                  'Please hand the change to the customer.',
+                  'success', 5000);
+      }
+    }
+  }
 
   if (lastSale) {
-    // 1) point the iframe to your receipt endpoint (adjust filename if different)
-    const frame = document.getElementById('receiptFrame');
+    const frame   = document.getElementById('receiptFrame');
+    const modalEl = document.getElementById('receiptModal');
+
     if (frame) {
-      frame.src = 'receipt.php?sale_id=' + encodeURIComponent(lastSale);
+      const src = 'receipt.php?sale_id=' + encodeURIComponent(lastSale) + (doPrint ? '&autoprint=1' : '');
+      frame.src = src;
+
+      if (doPrint) {
+        frame.addEventListener('load', () => {
+          try {
+            setTimeout(() => {
+              // Open print dialog from inside the iframe.
+              frame.contentWindow?.focus();
+              frame.contentWindow?.print();
+
+              // Show change AFTER printing completes (best-effort)
+              const afterPrint = () => {
+                try {
+                  // Hide the receipt modal first
+                  const inst = bootstrap.Modal.getInstance(modalEl) || new bootstrap.Modal(modalEl);
+                  inst.hide();
+                } catch {}
+                // Then show change popup
+                showChangePopup(changeDue);
+                // remove listener to avoid double firing
+                frame.contentWindow?.removeEventListener('afterprint', afterPrint);
+              };
+
+              // Some browsers fire 'afterprint'; add a timeout fallback
+              frame.contentWindow?.addEventListener('afterprint', afterPrint);
+              setTimeout(() => {
+                // Fallback in case 'afterprint' doesn’t fire
+                afterPrint();
+              }, 1500);
+            }, 250);
+          } catch (e) {
+            console.warn('Auto-print failed:', e);
+            // If printing blocked, still show change & keep modal open
+            showChangePopup(changeDue);
+          }
+        });
+      }
     }
 
-    // 2) show the modal
-    const modalEl = document.getElementById('receiptModal');
     if (modalEl) {
       const modal = new bootstrap.Modal(modalEl);
       modal.show();
     }
 
-    // 3) clean the URL so reload doesn't re-open the modal
+    // Clean URL so refresh won’t retrigger print or popup
     if (history.replaceState) {
       params.delete('lastSale');
+      params.delete('print');
+      params.delete('chg');
       const newQS = params.toString();
       history.replaceState({}, document.title, window.location.pathname + (newQS ? '?' + newQS : ''));
     }
   }
 });
 
-// Print button handler used by: onclick="printReceipt()"
+
+// Print button handler (manual reprint)
 function printReceipt() {
   const frame = document.getElementById('receiptFrame');
   if (frame && frame.contentWindow) frame.contentWindow.print();

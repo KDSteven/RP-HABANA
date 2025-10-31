@@ -13,6 +13,7 @@ if (!$active) {
   header('Location: pos.php'); exit;
 }
 
+$shift_id = (int)$active['shift_id'];
 $move_type = $_POST['move_type'] ?? '';
 $amount    = (float)($_POST['amount'] ?? 0);
 $reason    = trim($_POST['reason'] ?? '');
