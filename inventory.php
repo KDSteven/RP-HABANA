@@ -643,7 +643,8 @@ $toolsOpen = ($self === 'backup_admin.php' || $isArchive);
     <i class="fas fa-chevron-right caret"></i>
   </button>
   <div class="submenu" <?= $invOpen ? '' : 'hidden' ?>>
-    <a href="inventory.php#pending-requests" class="<?= $self === 'inventory.php#pending-requests' ? 'active' : '' ?>">
+    <!-- removed #pendingrequests |inventory.php#pendingrequests-->
+    <a href="inventory.php" class="<?= $self === 'inventory.php' ? 'active' : '' ?>"> 
       <i class="fas fa-list"></i> Inventory List
         <?php if ($pendingTotalInventory > 0): ?>
           <span class="badge-pending"><?= $pendingTotalInventory ?></span>

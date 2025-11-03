@@ -52,7 +52,9 @@ body {
 }
 
 
-
+.menu-group a {
+  text-decoration: none !important;
+}
 .sidebar a {
     display: flex;
     align-items: center;

@@ -237,13 +237,13 @@ if (isset($_SESSION['user_id'])) {
   .label-code{ font-size:12px; color:#6b7280; margin-top:2px; }
   /* Optional: if using a flex layout container */
 .layout { display: flex; }
-.sidebar { flex: 0 0 var(--sidebar-w); }
+/* .sidebar { flex: 0 0 var(--sidebar-w); } */
 .content-wrap { flex: 1 1 auto; margin-left: 0 !important; }
 
   /* ===== PRINT LAYOUT ONLY ===== */
   @media print {
     /* Hide UI */
-    .sidebar, .page-head, .branch-pills { display: none !important; }
+     .page-head, .branch-pills { display: none !important; }
     .content-wrap { margin: 0; padding: 0; }
     .main-card { border: 0; box-shadow: none; padding: 0; }
 
@@ -279,7 +279,6 @@ if (isset($_SESSION['user_id'])) {
 <body>
 
 <!-- SIDEBAR -->
-<!-- Sidebar -->
 <div class="sidebar" id="mainSidebar">
   <!-- Toggle button always visible on the rail -->
   <button class="sidebar-toggle" id="sidebarToggle" aria-label="Toggle sidebar" aria-expanded="false">
