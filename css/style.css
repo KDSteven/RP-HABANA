@@ -99,7 +99,7 @@ header {
     width: 98%;
     min-height: 100vh;
     position: relative;
-    background: url(img/fixing-tire.png);
+    background: url(/img/fixing-tire.png);
     background-repeat: no-repeat;
     background-position: center right;
     background-size: cover;

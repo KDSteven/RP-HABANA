@@ -290,7 +290,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['create_branch'])) {
         header("Location: accounts.php?branch=invalid_email");
         exit;
     }
-    if (!preg_match("/^[A-Za-z\\s'-]{2,50}$/", $branch_contact)) {
+    if (!preg_match("/^[A-Za-z.\\s'-]{2,50}$/", $branch_contact)) {
         $_SESSION['toast_msg']  = "Contact person is invalid.";
         $_SESSION['toast_type'] = 'danger';
         header("Location: accounts.php?branch=invalid_contact");
@@ -910,15 +910,16 @@ $toolsOpen = ($self === 'backup_admin.php' || $isArchive);
         <input type="hidden" name="edit_user_id" id="editUserId">
 
         <label class="form-label mt-2">Name</label>
-        <input
-          type="text"
-          class="form-control"
-          name="name"
-          id="editName"
-          required
-          pattern="^[A-Za-z\s'-]{2,50}$"
-          title="2–50 characters; letters, spaces, hyphens, apostrophes only.">
-
+       <input
+        type="text"
+        class="form-control"
+        name="branch_contact"
+        id="editBranchContact"
+        required
+        maxlength="50"
+        pattern="^[A-Za-z.\s'-]{2,50}$"
+        title="Letters, spaces, hyphens (-), apostrophes (’), and periods (.) allowed; 2–50 characters.">
+        
         <label class="form-label mt-2">Username</label>
         <input
           type="text"
@@ -1747,16 +1748,17 @@ document.addEventListener('click', function (e) {
           <label class="form-label fw-semibold" for="cb_contact">Contact Person</label>
           <div class="input-group">
             <span class="input-group-text"><i class="fas fa-user"></i></span>
+           <!-- Contact Person (allow letters, spaces, hyphen, apostrophe, period) -->
             <input
               type="text"
               class="form-control"
               id="cb_contact"
               name="branch_contact"
-              placeholder="e.g. Juan Dela Cruz"
+              placeholder="e.g. Juan D. dela Cruz"
               required
               maxlength="50"
-              pattern="^[A-Za-z\s'-]{2,50}$"
-              title="Letters, spaces, hyphens, apostrophes; 2–50 characters.">
+              pattern="^[A-Za-z.\s'-]{2,50}$"
+              title="Letters, spaces, hyphens (-), apostrophes (’), and periods (.) allowed; 2–50 characters.">
           </div>
         </div>
 
