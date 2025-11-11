@@ -243,7 +243,7 @@ if (isset($_SESSION['user_id'])) {
   /* ===== PRINT LAYOUT ONLY ===== */
   @media print {
     /* Hide UI */
-     .page-head, .branch-pills { display: none !important; }
+     #mainSidebar, .page-head, .branch-pills { display: none !important; }
     .content-wrap { margin: 0; padding: 0; }
     .main-card { border: 0; box-shadow: none; padding: 0; }
 

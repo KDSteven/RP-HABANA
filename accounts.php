@@ -1,9 +1,22 @@
 <?php
+/**
+* accounts.php — Accounts & Branches management page
+* --------------------------------------------------
+* This file handles:
+* - Auth guard
+* - Helper functions (logging, temp password generator)
+* - Form POST actions for: archive user, create user, update user,
+* create branch, update branch, archive branch
+* - Data fetching for page render (users list, branches, pending counters)
+* - Full HTML for the page UI (tables, modals)
+* - Client-side JS for toasts, modals, validations, username availability,
+* password strength meter, and sidebar behavior
+*/
 session_start();
 require 'config/db.php';
 
 /* =========================
-   Auth guard
+Auth guard — redirect if not logged in
 ========================= */
 if (!isset($_SESSION['user_id'])) {
     header('Location: index.html');
@@ -13,8 +26,19 @@ $currentRole   = $_SESSION['role'] ?? '';
 $currentBranch = $_SESSION['branch_id'] ?? null;
 
 /* =========================
-   Helpers
+Helpers
 ========================= */
+/**
+* Write an entry to the `logs` table.
+*
+* @param mysqli $conn
+* @param string $action Short action label (e.g., "Create Account")
+* @param string $details Longer description for audit trail
+* @param int|null $user_id Defaults to current session user
+* @param int|null $branch_id Optional: branch context for the action
+*/
+
+
 function logAction($conn, $action, $details, $user_id = null, $branch_id = null) {
     if (!$user_id && isset($_SESSION['user_id']))   $user_id   = (int)$_SESSION['user_id'];
     if (!$branch_id && isset($_SESSION['branch_id'])) $branch_id = $_SESSION['branch_id']; // may be null
@@ -24,22 +48,8 @@ function logAction($conn, $action, $details, $user_id = null, $branch_id = null)
     $stmt->close();
 }
 
-// Temporary password generator used by approvals flow
-function generateTempPassword(mysqli $conn, int $userId): ?string {
-    $stmt = $conn->prepare("SELECT username FROM users WHERE id = ? LIMIT 1");
-    if (!$stmt) return null;
-    $stmt->bind_param("i", $userId);
-    $stmt->execute();
-    $stmt->bind_result($username);
-    if (!$stmt->fetch()) { $stmt->close(); return null; }
-    $stmt->close();
-    $cleanUser = preg_replace('/\s+/', '', $username);
-    $digits    = str_pad((string)random_int(0, 99), 2, "0", STR_PAD_LEFT);
-    return "Temp:{$cleanUser}{$digits}";
-}
-
 /* =========================
-   Fetch for forms
+Fetch reference data for forms (branch radios, etc.)
 ========================= */
 $branches_for_create = $conn->query("SELECT * FROM branches WHERE archived = 0 ORDER BY branch_name ASC");
 $branches_for_edit   = $conn->query("SELECT * FROM branches WHERE archived = 0 ORDER BY branch_name ASC");
@@ -47,7 +57,7 @@ $branches_create     = $branches_for_create ? $branches_for_create->fetch_all(MY
 $branches_edit       = $branches_for_edit ? $branches_for_edit->fetch_all(MYSQLI_ASSOC)     : [];
 
 /* =========================
-   Actions
+Actions (POST)
 ========================= */
 
 // Archive user
@@ -63,12 +73,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['archive_user_id'])) {
         $stmt->fetch();
         $stmt->close();
     }
-
+    // Soft-archive account
     $stmt = $conn->prepare("UPDATE users SET archived = 1 WHERE id = ?");
     $stmt->bind_param("i", $archiveId);
     $stmt->execute();
     $stmt->close();
-
+    // Log + toast
     logAction($conn, "Archive Account",
         "Archived user: " . ($fname ? "{$fname} (username: {$uname}, role: {$urole})" : "user_id={$archiveId}"),
         null,
@@ -81,7 +91,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['archive_user_id'])) {
     exit;
 }
 
-// ✅ Create user
+// -------- Create user --------
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['create_user'])) {
     $full_name    = trim($_POST['name'] ?? '');
     $username     = trim($_POST['username'] ?? '');
@@ -101,7 +111,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['create_user'])) {
         exit;
     }
 
-    // Validate phone number format (Philippine numbers only)
+    // PH mobile format: 09123456789 or +639123456789
     if (!preg_match('/^(?:\+639\d{9}|09\d{9})$/', $phone_number)) {
         $_SESSION['toast_msg']  = "Invalid phone number format. Use 09123456789 or +639123456789.";
         $_SESSION['toast_type'] = 'danger';
@@ -489,14 +499,14 @@ $toolsOpen = ($self === 'backup_admin.php' || $isArchive);
 </head>
 <body class="accounts-page">
 
-<!-- Sidebar -->
+<!-- ========================= Sidebar ========================= -->
 <div class="sidebar" id="mainSidebar">
-  <!-- Toggle button always visible on the rail -->
+  <!-- rail toggle for collapsed view -->
   <button class="sidebar-toggle" id="sidebarToggle" aria-label="Toggle sidebar" aria-expanded="false">
     <i class="fas fa-bars" aria-hidden="true"></i>
   </button>
 
-  <!-- Wrap existing sidebar content so we can hide/show it cleanly -->
+  <!-- Collapsible sidebar content -->
   <div class="sidebar-content">
     <h2 class="user-heading">
       <span class="role"><?= htmlspecialchars(strtoupper($currentRole), ENT_QUOTES) ?></span>
@@ -512,15 +522,7 @@ $toolsOpen = ($self === 'backup_admin.php' || $isArchive);
         <!-- Common -->
     <a href="dashboard.php"><i class="fas fa-tv"></i> Dashboard</a>
 
-    <?php
-// put this once before the sidebar (top of file is fine)
-$self = strtolower(basename(parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH)));
-$isArchive = substr($self, 0, 7) === 'archive'; // matches archive.php, archive_view.php, etc.
-$invOpen   = in_array($self, ['inventory.php','physical_inventory.php'], true);
-$toolsOpen = ($self === 'backup_admin.php' || $isArchive);
-?>
-
-<!-- Admin Links -->
+<!-- ========================= Admin Menu ========================= -->
 <?php if ($currentRole === 'admin'): ?>
 
   <!-- Inventory group (unchanged) -->
@@ -910,15 +912,16 @@ $toolsOpen = ($self === 'backup_admin.php' || $isArchive);
         <input type="hidden" name="edit_user_id" id="editUserId">
 
         <label class="form-label mt-2">Name</label>
-       <input
-        type="text"
-        class="form-control"
-        name="branch_contact"
-        id="editBranchContact"
-        required
-        maxlength="50"
-        pattern="^[A-Za-z.\s'-]{2,50}$"
-        title="Letters, spaces, hyphens (-), apostrophes (’), and periods (.) allowed; 2–50 characters.">
+        <input
+          type="text"
+          class="form-control"
+          name="name"
+          id="editName"
+          required
+          maxlength="50"
+          pattern="^[A-Za-z.\s'-]{2,50}$"
+          title="Letters, spaces, hyphens (-), apostrophes (’), and periods (.) allowed; 2–50 characters.">
+
         
         <label class="form-label mt-2">Username</label>
         <input
@@ -1087,577 +1090,7 @@ $toolsOpen = ($self === 'backup_admin.php' || $isArchive);
     </div>
   </div>
 
-</div> <!-- /.content -->
-
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js" crossorigin="anonymous"></script>
-
-<script>
-/* =========================
-   TOAST HELPER
-========================= */
-(function () {
-  const toastEl     = document.getElementById('appToast');
-  const toastBody   = document.getElementById('appToastBody');
-  const toastHeader = document.getElementById('appToastHeader');
-
-  const TYPE_CLASS = {
-    success: 'bg-success',
-    danger:  'bg-danger',
-    info:    'bg-info',
-    warning: 'bg-warning',
-    primary: 'bg-primary',
-    secondary: 'bg-secondary',
-    dark:    'bg-dark'
-  };
-
-  function setHeaderStyle(type) {
-    if (!toastHeader) return;
-    toastHeader.classList.remove(...Object.values(TYPE_CLASS));
-    toastHeader.classList.add(TYPE_CLASS[type] || TYPE_CLASS.info);
-    const icon = toastHeader.querySelector('i');
-    if (icon) {
-      icon.className = 'me-2 ' + ({
-        success: 'fas fa-check-circle',
-        danger:  'fas fa-times-circle',
-        warning: 'fas fa-exclamation-triangle',
-        info:    'fas fa-info-circle',
-        primary: 'fas fa-bell',
-        secondary: 'fas fa-bell',
-        dark:    'fas fa-bell'
-      }[type] || 'fas fa-info-circle');
-    }
-  }
-
-  window.showToast = function (message, type = 'info', options = {}) {
-    if (!toastEl || !toastBody || !toastHeader) return;
-    toastBody.innerHTML = message;
-    setHeaderStyle(type);
-    if (options.title) {
-      const titleEl = toastHeader.querySelector('strong.me-auto');
-      if (titleEl) titleEl.textContent = options.title;
-    }
-    const delay = Number.isFinite(options.delay) ? options.delay : 3000;
-    const toast = bootstrap.Toast.getOrCreateInstance(toastEl, { delay, autohide: true });
-    toast.show();
-  };
-})();
-</script>
-
-<?php if (!empty($_SESSION['toast_msg'])): ?>
-<script>
-  window.addEventListener('DOMContentLoaded', function () {
-    showToast(
-      <?= json_encode($_SESSION['toast_msg']) ?>,
-      <?= json_encode($_SESSION['toast_type'] ?? 'info') ?>,
-      { title: 'System Notice' }
-    );
-  });
-</script>
-<?php unset($_SESSION['toast_msg'], $_SESSION['toast_type']); endif; ?>
-
-<script>
-/* =========================
-   ARCHIVE CONFIRM (single, safe)
-========================= */
-(function () {
-  const modal      = document.getElementById('archiveConfirmModal');
-  const textEl     = document.getElementById('archiveConfirmText');
-  const cancelBtn  = document.getElementById('archiveCancelBtn');
-  const confirmBtn = document.getElementById('archiveConfirmBtn');
-
-  let pendingForm = null;
-
-  function escapeHtml(s) {
-    return s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;', "'":'&#39;'}[c]));
-  }
-
-  // Open via click on any .btn-archive-unique
-  document.addEventListener('click', (e) => {
-    const btn = e.target.closest('.btn-archive-unique');
-    if (!btn) return;
-
-    e.preventDefault();
-    pendingForm = btn.closest('form');
-
-    const label = btn.getAttribute('data-archive-name') || 'this item';
-    if (textEl) textEl.innerHTML = `Are you sure you want to archive <strong>${escapeHtml(label)}</strong>?`;
-
-    if (modal) modal.style.display = 'flex';
-  });
-
-  // Confirm / Cancel
-  confirmBtn && confirmBtn.addEventListener('click', () => {
-    if (pendingForm) pendingForm.submit();
-    pendingForm = null;
-    if (modal) modal.style.display = 'none';
-  });
-
-  cancelBtn && cancelBtn.addEventListener('click', () => {
-    pendingForm = null;
-    if (modal) modal.style.display = 'none';
-  });
-
-  // Click outside closes
-  modal && modal.addEventListener('click', (evt) => {
-    if (evt.target === modal) {
-      pendingForm = null;
-      modal.style.display = 'none';
-    }
-  });
-})();
-</script>
-
-<script>
-/* =========================
-   MODAL HELPERS
-========================= */
-function openCreateUserModal(){ document.getElementById('createUserModal')?.classList.add('active'); }
-function closeCreateUserModal(){ document.getElementById('createUserModal')?.classList.remove('active'); }
-
-// function openEditUserModal(button){
-//   console.log('phone from data:', button.getAttribute('data-phoneNumber'));
-//   const modal = document.getElementById('editModal');
-//   if (!modal) return;
-//   modal.style.display = 'flex';
-
-//   document.getElementById('editUserId').value   = button.dataset.id || '';
-//   document.getElementById('editName').value     = button.dataset.full_name || '';
-//   document.getElementById('editUsername').value = button.dataset.username || '';
-//   document.getElementById('editPhone_number').value  = button.getAttribute('data-phoneNumber') || '';
-//   document.getElementById('editRole').value     = button.dataset.role || 'admin';
-
-//   const branchId = button.dataset.branch_id || '';
-//   document.querySelectorAll('#editBranchGroup input[name="branch_id"]').forEach(r => {
-//     r.checked = (r.value === branchId);
-//   });
-
-//   reflectEditBranchVisibility();
-
-//   function onBg(e){ if (e.target === modal) { closeEditUserModal(); modal.removeEventListener('click', onBg); } }
-//   modal.addEventListener('click', onBg);
-
-//   function onEsc(ev){ if (ev.key === 'Escape') { closeEditUserModal(); document.removeEventListener('keydown', onEsc); } }
-//   document.addEventListener('keydown', onEsc);
-// }
-function closeEditUserModal(){ const m = document.getElementById('editModal'); if (m) m.style.display = 'none'; }
-
-function reflectEditBranchVisibility(){
-  const role = document.getElementById('editRole')?.value;
-  const grp  = document.getElementById('editBranchGroup');
-  if (grp) grp.style.display = (role === 'staff' || role === 'stockman') ? 'block' : 'none';
-}
-
-/* Branch modals */
-function openCreateBranchModal(){ const m = document.getElementById('createModal'); if (m) m.style.display = 'flex'; }
-function closeCreateBranchModal(){ const m = document.getElementById('createModal'); if (m) m.style.display = 'none'; }
-
-function openEditBranchModal(button){
-  const modal = document.getElementById('editBranchModal');
-  if (!modal) return;
-  modal.style.display = 'flex';
-  document.getElementById('editBranchId').value            = button.dataset.id || '';
-  document.getElementById('editBranchName').value          = button.dataset.name || '';
-  document.getElementById('editBranchLocation').value      = button.dataset.location || '';
-  document.getElementById('editBranchEmail').value         = button.dataset.email || '';
-  document.getElementById('editBranchContact').value       = button.dataset.contact || '';
-  document.getElementById('editBranchContactNumber').value = button.dataset.contact_number || '';
-}
-function closeEditBranchModal(){ const m = document.getElementById('editBranchModal'); if (m) m.style.display = 'none'; }
-
-/* Multi-step wizard + close all */
-function nextStep(step){
-  document.querySelectorAll('.step').forEach(s => s.classList.remove('active'));
-  document.querySelector('.step-' + step)?.classList.add('active');
-  document.querySelectorAll('.step-dot').forEach((dot,i)=> dot.classList.toggle('active', i+1===step));
-}
-function prevStep(step){ nextStep(step); }
-function closeModal(){ closeCreateBranchModal(); closeEditUserModal(); }
-
-/* Role toggle in create modal */
-function toggleCreateBranch(){
-  const role = document.getElementById('createRoleSelect')?.value;
-  const grp  = document.getElementById('createBranchGroup');
-  if (grp) grp.style.display = (role === 'staff' || role === 'stockman') ? 'block' : 'none';
-}
-
-/* Sidebar submenu persist */
-(function(){
-  const groups = document.querySelectorAll('.menu-group.has-sub');
-  groups.forEach((g, idx) => {
-    const btn = g.querySelector('.menu-toggle');
-    const panel = g.querySelector('.submenu');
-    if (!btn || !panel) return;
-    const key = 'sidebar-sub-' + idx;
-    if (localStorage.getItem(key) === 'open') {
-      btn.setAttribute('aria-expanded','true');
-      panel.hidden = false;
-    }
-    btn.addEventListener('click', () => {
-      const expanded = btn.getAttribute('aria-expanded') === 'true';
-      btn.setAttribute('aria-expanded', String(!expanded));
-      panel.hidden = expanded;
-      localStorage.setItem(key, expanded ? 'closed' : 'open');
-    });
-  });
-})();
-</script>
-<script>
-(() => {
-  const form   = document.getElementById('editUserForm');
-  if (!form) return;
-
-  const idEl   = document.getElementById('editUserId');
-  const nameEl = document.getElementById('editName');
-  const userEl = document.getElementById('editUsername');
-  const roleEl = document.getElementById('editRole');
-  const pwEl   = document.getElementById('editPassword');
-  const pw2El  = document.getElementById('editPassword2');
-  const saveBtn= document.getElementById('editSaveBtn');
-
-  const unHelp = document.getElementById('editUsernameHelp');
-  const matchHelp = document.getElementById('editConfirmHelp');
-
-  let originalUsername = '';
-
-  const RE = {
-    name: /^[A-Za-z\s'-]{2,50}$/,
-    user: /^(?=.*[A-Za-z])[A-Za-z0-9._-]{4,20}$/,
-  };
-
-  function pwStrongOK() {
-    const v = pwEl.value || '';
-    if (!v) return true; // empty = keep existing password
-    return (/[a-z]/.test(v) && /[A-Z]/.test(v) && /\d/.test(v) && /[@$!%*?&]/.test(v) && v.length >= 8);
-  }
-  function pwMatchOK() {
-    if (!pwEl.value && !pw2El.value) { matchHelp.classList.add('d-none'); return true; }
-    const ok = pwEl.value === pw2El.value;
-    matchHelp.classList.toggle('d-none', ok);
-    return ok;
-  }
-  function nameOK() { return RE.name.test((nameEl.value || '').trim()); }
-  function userSyntaxOK() { return RE.user.test((userEl.value || '').trim()); }
-
-  function branchOK() {
-    const role = roleEl.value;
-    if (role !== 'staff' && role !== 'stockman') return true;
-    return !!form.querySelector('#editBranchGroup input[name="branch_id"]:checked');
-  }
-
-  // username availability (supports exclude_id)
-  let usernameAvailable = true;
-  let debounceT;
-  function debounce(fn, ms=350){ clearTimeout(debounceT); debounceT = setTimeout(fn, ms); }
-
-  async function checkUsername() {
-    const u = (userEl.value || '').trim();
-    if (!userSyntaxOK()) {
-      usernameAvailable = false;
-      setUnHelp('warn', '4–20 chars, at least one letter. Allowed: letters, numbers, dot, underscore, hyphen.');
-      updateSaveEnabled();
-      return;
-    }
-    if (u === originalUsername) {
-      usernameAvailable = true;
-      setUnHelp('ok', 'Username unchanged.');
-      updateSaveEnabled();
-      return;
-    }
-    setUnHelp('checking', 'Checking availability…');
-    try {
-      const res = await fetch('check_username.php', {
-        method: 'POST',
-        headers: {'Content-Type':'application/json'},
-        body: JSON.stringify({ username: u, exclude_id: Number(idEl.value || 0) })
-      });
-      const data = await res.json();
-      if (data && data.ok !== false && data.available === true) {
-        usernameAvailable = true;
-        setUnHelp('ok', 'Username is available.');
-      } else {
-        usernameAvailable = false;
-        setUnHelp('warn', 'Username is already taken.');
-      }
-    } catch {
-      // If checker fails, allow save only when username unchanged
-      usernameAvailable = (u === originalUsername);
-      setUnHelp(usernameAvailable ? 'ok' : 'error', usernameAvailable ? 'Username unchanged.' : 'Could not verify username right now.');
-    }
-    updateSaveEnabled();
-  }
-
-  function setUnHelp(state, msg) {
-    unHelp.className = 'form-text';
-    if (state === 'checking') unHelp.classList.add('text-muted');
-    if (state === 'ok')       unHelp.classList.add('text-success');
-    if (state === 'warn' || state === 'error') unHelp.classList.add('text-danger');
-    unHelp.textContent = msg || '';
-  }
-
-  function updateSaveEnabled() {
-    const ok =
-      nameOK() &&
-      userSyntaxOK() &&
-      usernameAvailable &&
-      pwStrongOK() &&
-      pwMatchOK() &&
-      branchOK();
-
-    saveBtn.disabled = !ok;
-  }
-
-  // eye toggles
-  function bindToggle(btnId, inputEl) {
-    const btn = document.getElementById(btnId);
-    if (!btn || !inputEl) return;
-    const icon = btn.querySelector('i');
-    btn.addEventListener('click', () => {
-      const show = inputEl.type === 'password';
-      inputEl.type = show ? 'text' : 'password';
-      if (icon) {
-        icon.classList.toggle('fa-eye', !show);
-        icon.classList.toggle('fa-eye-slash', show);
-      }
-      inputEl.focus({preventScroll:true});
-    });
-  }
-  bindToggle('editTogglePwBtn',  pwEl);
-  bindToggle('editTogglePw2Btn', pw2El);
-
-  // reflect branch visibility + "required" dynamically
-  window.reflectEditBranchVisibility = function () {
-    const show = roleEl.value === 'staff' || roleEl.value === 'stockman';
-    const group = document.getElementById('editBranchGroup');
-    group.style.display = show ? 'block' : 'none';
-    form.querySelectorAll('#editBranchGroup input[name="branch_id"]').forEach(r => {
-      r.required = show;
-    });
-    updateSaveEnabled();
-  };
-
-  // OPEN modal (replace your existing function with this)
-  window.openEditUserModal = function (button) {
-    const modal = document.getElementById('editModal');
-    modal.style.display = 'flex';
-
-  // Populate fields
-  document.getElementById('editUserId').value   = button.dataset.id || '';
-  document.getElementById('editName').value     = button.dataset.full_name || '';
-  document.getElementById('editUsername').value = button.dataset.username || '';
-  document.getElementById('editPhone_number').value = button.dataset.phoneNumber || '';
-  document.getElementById('editRole').value     = button.dataset.role || 'admin';
-
-    // set branch radios
-    const branchId = button.dataset.branch_id || '';
-    form.querySelectorAll('#editBranchGroup input[name="branch_id"]').forEach(r => {
-      r.checked = (r.value === branchId);
-    });
-
-    // reset password fields
-    pwEl.value = '';
-    pw2El.value = '';
-    matchHelp.classList.add('d-none');
-    setUnHelp('idle', '');
-
-    reflectEditBranchVisibility();
-    updateSaveEnabled();
-
-    // close on backdrop / ESC
-    function onBg(e){ if (e.target === modal) { closeEditUserModal(); modal.removeEventListener('click', onBg); } }
-    modal.addEventListener('click', onBg);
-    function onEsc(ev){ if (ev.key === 'Escape') { closeEditUserModal(); document.removeEventListener('keydown', onEsc); } }
-    document.addEventListener('keydown', onEsc);
-  };
-
-  // keep form reactive
-  [nameEl, roleEl, pwEl, pw2El].forEach(el => {
-    el.addEventListener('input', updateSaveEnabled);
-    el.addEventListener('change', updateSaveEnabled);
-  });
-  userEl.addEventListener('input', () => debounce(checkUsername, 350));
-})();
-</script>
-
-<script>
-/* =========================
-   USERNAME AVAILABILITY + STEP-1 GUARD
-   (prevents "Next" until all fields OK)
-========================= */
-(function() {
-  const $name        = document.querySelector('input[name="name"]');
-  const $u           = document.getElementById('username');
-  const $help        = document.getElementById('usernameHelp');
-  const $next        = document.getElementById('nextStepBtn');
-  const $pw          = document.getElementById('password');
-  const $cpw         = document.getElementById('confirm_password');
-  const $confirmHelp = document.getElementById('confirmHelp');
-
-  let usernameAvailable = false;
-  let t; const debounce = (fn, ms=350)=>{ clearTimeout(t); t=setTimeout(fn, ms); };
-
-  function mark(state, msg) {
-    if (!$help) return;
-    $help.className = 'form-text';
-    if (state === 'checking') $help.classList.add('text-muted');
-    if (state === 'ok')       $help.classList.add('text-success');
-    if (state === 'warn' || state === 'error') $help.classList.add('text-danger');
-    $help.textContent = msg || '';
-  }
-
-  function localNameOK() {
-    return /^[A-Za-z\s'-]{2,50}$/.test(($name?.value || '').trim());
-  }
-  function localUserSyntaxOK() {
-    return /^(?=.*[A-Za-z])[A-Za-z0-9._-]{4,20}$/.test($u?.value || '');
-  }
-  function pwChecksOK() {
-    const v = $pw?.value || '';
-    return (/[a-z]/.test(v) && /[A-Z]/.test(v) && /\d/.test(v) && /[@$!%*?&]/.test(v) && v.length >= 8);
-  }
-  function pwMatchOK() {
-    const ok = ($pw?.value || '') === ($cpw?.value || '');
-    if ($confirmHelp) $confirmHelp.classList.toggle('d-none', ok || !($cpw?.value));
-    return ok && ($cpw?.value || '').length > 0;
-  }
-
-  function updateNext() {
-    const ok = localNameOK() && localUserSyntaxOK() && usernameAvailable && pwChecksOK() && pwMatchOK();
-    if ($next) $next.disabled = !ok;
-  }
-
-  async function checkUsername(v) {
-    if (!$u) return;
-    if (!v) { mark('idle',''); usernameAvailable = false; updateNext(); return; }
-    if (!localUserSyntaxOK()) {
-      mark('warn','Username must be 4–20 chars, include at least one letter. Allowed: letters, numbers, dot, underscore, hyphen.');
-      usernameAvailable = false; updateNext(); return;
-    }
-    mark('checking','Checking availability…');
-    try {
-      const res = await fetch('check_username.php', {
-        method: 'POST',
-        headers: {'Content-Type':'application/json'},
-        body: JSON.stringify({username: v})
-      });
-      const data = await res.json();
-      if (!data.ok) throw 0;
-      usernameAvailable = !!data.available;
-      mark(usernameAvailable ? 'ok' : 'warn', usernameAvailable ? 'Username is available.' : 'Username is already taken.');
-    } catch {
-      usernameAvailable = false;
-      mark('error','Could not check username right now.');
-    }
-    updateNext();
-  }
-
-  // Bind inputs
-  $u     && $u.addEventListener('input', () => debounce(() => checkUsername($u.value), 350));
-  $name  && $name.addEventListener('input', updateNext);
-  $pw    && $pw.addEventListener('input', updateNext);
-  $cpw   && $cpw.addEventListener('input', updateNext);
-
-  // Step-1 guard (used by "Next" button)
-  window.nextFromStep1 = function () {
-    updateNext();
-    if ($next && !$next.disabled) nextStep(2);
-  };
-
-  // Init (autofill)
-  if ($u && $u.value) checkUsername($u.value); else updateNext();
-})();
-</script>
-
-<script>
-/* =========================
-   SHOW/HIDE PASSWORD (one listener for both fields)
-   Supports:
-   - <button class="btn-toggle-pw" data-target="#password">…</button>
-   - legacy IDs: #togglePwBtn and #togglePwBtn2
-========================= */
-document.addEventListener('click', function (e) {
-  const btn = e.target.closest('.btn-toggle-pw, #togglePwBtn, #togglePwBtn2');
-  if (!btn) return;
-
-  // Prefer data-target if present; else find input in the same .input-group
-  let input = null;
-  const sel = btn.getAttribute('data-target');
-  if (sel) {
-    input = document.querySelector(sel);
-  } else {
-    const group = btn.closest('.input-group');
-    input = group ? group.querySelector('input.form-control') : null;
-  }
-  if (!input) return;
-
-  const show = input.type === 'password';
-  input.type = show ? 'text' : 'password';
-
-  const icon = btn.querySelector('i');
-  if (icon) {
-    icon.classList.toggle('fa-eye', !show);
-    icon.classList.toggle('fa-eye-slash', show);
-  }
-  input.focus({ preventScroll: true });
-});
-</script>
-
-<script>
-/* =========================
-   PASSWORD STRENGTH METER
-========================= */
-(function () {
-  const pwd = document.getElementById('password');
-  const checklist = document.getElementById('pwChecklist');
-  if (!pwd || !checklist) return;
-
-  const items = {
-    lower:   checklist.querySelector('[data-test="lower"]'),
-    upper:   checklist.querySelector('[data-test="upper"]'),
-    number:  checklist.querySelector('[data-test="number"]'),
-    special: checklist.querySelector('[data-test="special"]'),
-    len:     checklist.querySelector('[data-test="len"]')
-  };
-  const bar   = document.getElementById('pwStrengthBar');
-  const label = document.getElementById('pwStrengthText');
-
-  function evaluate(value) {
-    const tests = {
-      lower: /[a-z]/.test(value),
-      upper: /[A-Z]/.test(value),
-      number: /\d/.test(value),
-      special: /[@$!%*?&]/.test(value),
-      len: value.length >= 8
-    };
-
-    // Checklist UI
-    Object.entries(tests).forEach(([k, ok]) => {
-      if (!items[k]) return;
-      items[k].classList.toggle('ok', ok);
-      items[k].textContent = (ok ? '✓ ' : '• ') + items[k].textContent.replace(/^✓ |^• /, '');
-    });
-
-    // Score 0–5
-    const score  = Object.values(tests).filter(Boolean).length;
-    const widths = [0, 20, 40, 60, 80, 100];
-    const texts  = ['—', 'Very Weak', 'Weak', 'Fair', 'Good', 'Strong'];
-
-    if (bar) {
-      bar.style.width = widths[score] + '%';
-      bar.classList.remove('bg-danger','bg-warning','bg-info','bg-success');
-      if (score <= 2) bar.classList.add('bg-danger');
-      else if (score === 3) bar.classList.add('bg-warning');
-      else if (score === 4) bar.classList.add('bg-info');
-      else if (score === 5) bar.classList.add('bg-success');
-    }
-    if (label) label.textContent = 'Strength: ' + texts[score];
-  }
-
-  pwd.addEventListener('input', (e) => evaluate(e.target.value));
-  evaluate(pwd.value || ''); // init
-})();
-</script>
-
-<!-- ======================= CREATE BRANCH MODAL ======================= -->
+  <!-- ======================= CREATE BRANCH MODAL ======================= -->
 <div class="modal fade" id="createBranchModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-dialog-centered modal-md">
     <div class="modal-content fp-card">
@@ -1801,21 +1234,648 @@ document.addEventListener('click', function (e) {
   </div>
 </div>
 
-<!-- Make the header title white -->
+</div> <!-- /.content -->
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js" crossorigin="anonymous"></script>
+
+<script>
+/* =========================
+   TOAST HELPER
+   Purpose: Central function to show Bootstrap toasts with consistent styles/icons.
+========================= */
+(function () {
+  // Cache toast elements once
+  const toastEl     = document.getElementById('appToast');
+  const toastBody   = document.getElementById('appToastBody');
+  const toastHeader = document.getElementById('appToastHeader');
+
+  // Map logical "type" => Bootstrap bg-* class (used on header)
+  const TYPE_CLASS = {
+    success: 'bg-success',
+    danger:  'bg-danger',
+    info:    'bg-info',
+    warning: 'bg-warning',
+    primary: 'bg-primary',
+    secondary: 'bg-secondary',
+    dark:    'bg-dark'
+  };
+
+  // Apply header color + icon by type
+  function setHeaderStyle(type) {
+    if (!toastHeader) return;
+
+    // Remove any existing bg-* class then add our choice
+    toastHeader.classList.remove(...Object.values(TYPE_CLASS));
+    toastHeader.classList.add(TYPE_CLASS[type] || TYPE_CLASS.info);
+
+    // Swap leading icon to match type
+    const icon = toastHeader.querySelector('i');
+    if (icon) {
+      icon.className = 'me-2 ' + ({
+        success: 'fas fa-check-circle',
+        danger:  'fas fa-times-circle',
+        warning: 'fas fa-exclamation-triangle',
+        info:    'fas fa-info-circle',
+        primary: 'fas fa-bell',
+        secondary: 'fas fa-bell',
+        dark:    'fas fa-bell'
+      }[type] || 'fas fa-info-circle');
+    }
+  }
+
+  // Public API: window.showToast(message, type?, { title?, delay? })
+  window.showToast = function (message, type = 'info', options = {}) {
+    if (!toastEl || !toastBody || !toastHeader) return;
+
+    // Set body HTML (allows bold etc. from server)
+    toastBody.innerHTML = message;
+
+    // Style the header and optional title
+    setHeaderStyle(type);
+    if (options.title) {
+      const titleEl = toastHeader.querySelector('strong.me-auto');
+      if (titleEl) titleEl.textContent = options.title;
+    }
+
+    // Delay default 3000ms unless explicitly set
+    const delay = Number.isFinite(options.delay) ? options.delay : 3000;
+
+    // Create or reuse Bootstrap toast instance, then show
+    const toast = bootstrap.Toast.getOrCreateInstance(toastEl, { delay, autohide: true });
+    toast.show();
+  };
+})();
+</script>
+
+<?php if (!empty($_SESSION['toast_msg'])): ?>
+<script>
+  // If the server set a toast message in session, auto-show it after DOM is ready
+  window.addEventListener('DOMContentLoaded', function () {
+    showToast(
+      <?= json_encode($_SESSION['toast_msg']) ?>,
+      <?= json_encode($_SESSION['toast_type'] ?? 'info') ?>,
+      { title: 'System Notice' }
+    );
+  });
+</script>
+<?php unset($_SESSION['toast_msg'], $_SESSION['toast_type']); endif; ?>
+
+<script>
+/* =========================
+   ARCHIVE CONFIRM (single, safe)
+   Purpose: One reusable confirm modal for all "archive" buttons.
+========================= */
+(function () {
+  const modal      = document.getElementById('archiveConfirmModal');
+  const textEl     = document.getElementById('archiveConfirmText');
+  const cancelBtn  = document.getElementById('archiveCancelBtn');
+  const confirmBtn = document.getElementById('archiveConfirmBtn');
+
+  // Will hold the <form> to submit when user confirms
+  let pendingForm = null;
+
+  // Very small HTML escaper to avoid injecting raw item names
+  function escapeHtml(s) {
+    return s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;', "'":'&#39;'}[c]));
+  }
+
+  // Open: listen at document-level for any .btn-archive-unique clicks
+  document.addEventListener('click', (e) => {
+    const btn = e.target.closest('.btn-archive-unique');
+    if (!btn) return;
+
+    e.preventDefault();
+
+    // Remember the form to submit on confirm
+    pendingForm = btn.closest('form');
+
+    // Show label inside modal message
+    const label = btn.getAttribute('data-archive-name') || 'this item';
+    if (textEl) textEl.innerHTML = `Are you sure you want to archive <strong>${escapeHtml(label)}</strong>?`;
+
+    // Reveal the modal (CSS drives visuals)
+    if (modal) modal.style.display = 'flex';
+  });
+
+  // Confirm ⇒ submit stored form, close modal
+  confirmBtn && confirmBtn.addEventListener('click', () => {
+    if (pendingForm) pendingForm.submit();
+    pendingForm = null;
+    if (modal) modal.style.display = 'none';
+  });
+
+  // Cancel ⇒ clear state, close modal
+  cancelBtn && cancelBtn.addEventListener('click', () => {
+    pendingForm = null;
+    if (modal) modal.style.display = 'none';
+  });
+
+  // Click outside the dialog area closes the modal
+  modal && modal.addEventListener('click', (evt) => {
+    if (evt.target === modal) {
+      pendingForm = null;
+      modal.style.display = 'none';
+    }
+  });
+})();
+</script>
+
+<script>
+/* =========================
+   MODAL HELPERS + UI UTILITIES
+   Purpose: Generic open/close helpers, step wizard, role-controlled branch UI,
+            and sidebar state persistence.
+========================= */
+
+// Open/close: Create User modal (custom, non-BS)
+function openCreateUserModal(){
+  document.getElementById('createUserModal')?.classList.add('active');
+}
+function closeCreateUserModal(){
+  document.getElementById('createUserModal')?.classList.remove('active');
+}
+
+// Close: Edit User modal (opened elsewhere)
+function closeEditUserModal(){
+  const m = document.getElementById('editModal');
+  if (m) m.style.display = 'none';
+}
+
+// Show/hide the Branch radio group in Edit User based on role
+function reflectEditBranchVisibility(){
+  const role = document.getElementById('editRole')?.value;
+  const grp  = document.getElementById('editBranchGroup');
+  if (grp) grp.style.display = (role === 'staff' || role === 'stockman') ? 'block' : 'none';
+}
+
+/* Branch modals (Bootstrap modal exists with id #createBranchModal) */
+function openCreateBranchModal(){
+  // FIX: Target the existing Bootstrap modal id, not a non-existent #createModal
+  const m = document.getElementById('createBranchModal');
+  if (m) m.classList.add('show'); // optional: for CSS overlays if needed
+}
+function closeCreateBranchModal(){
+  const m = document.getElementById('createBranchModal');
+  if (m) m.classList.remove('show');
+}
+
+// Lightweight (old) openEditBranchModal removed to avoid duplication.
+// The richer version is defined later and should be kept.
+
+/* Step wizard controller for Create User (Step 1 -> Step 2) */
+function nextStep(step){
+  // Hide all steps
+  document.querySelectorAll('.step').forEach(s => s.classList.remove('active'));
+  // Show requested step panel
+  document.querySelector('.step-' + step)?.classList.add('active');
+  // Update top indicator dots
+  document.querySelectorAll('.step-dot').forEach((dot,i)=> dot.classList.toggle('active', i+1===step));
+}
+function prevStep(step){ nextStep(step); }
+function closeModal(){ closeCreateBranchModal(); closeEditUserModal(); }
+
+/* Role toggle in Create User ⇒ reveal Branch radios only for staff/stockman */
+function toggleCreateBranch(){
+  const role = document.getElementById('createRoleSelect')?.value;
+  const grp  = document.getElementById('createBranchGroup');
+  if (grp) grp.style.display = (role === 'staff' || role === 'stockman') ? 'block' : 'none';
+}
+
+/* Sidebar submenu persist:
+   Stores each submenu open/closed state in localStorage so it survives reloads. */
+(function(){
+  const groups = document.querySelectorAll('.menu-group.has-sub');
+  groups.forEach((g, idx) => {
+    const btn = g.querySelector('.menu-toggle');
+    const panel = g.querySelector('.submenu');
+    if (!btn || !panel) return;
+    const key = 'sidebar-sub-' + idx;
+
+    // Restore previous state
+    if (localStorage.getItem(key) === 'open') {
+      btn.setAttribute('aria-expanded','true');
+      panel.hidden = false;
+    }
+
+    // Toggle and persist on click
+    btn.addEventListener('click', () => {
+      const expanded = btn.getAttribute('aria-expanded') === 'true';
+      btn.setAttribute('aria-expanded', String(!expanded));
+      panel.hidden = expanded;
+      localStorage.setItem(key, expanded ? 'closed' : 'open');
+    });
+  });
+})();
+</script>
+
+<script>
+/* =========================
+   EDIT USER FORM LOGIC
+   Purpose: Validation, username availability check, enabling Save button,
+            password visibility, and dynamic branch "required" handling.
+========================= */
+(() => {
+  const form   = document.getElementById('editUserForm');
+  if (!form) return;
+
+  // Field refs
+  const idEl   = document.getElementById('editUserId');
+  const nameEl = document.getElementById('editName');
+  const userEl = document.getElementById('editUsername');
+  const roleEl = document.getElementById('editRole');
+  const pwEl   = document.getElementById('editPassword');
+  const pw2El  = document.getElementById('editPassword2');
+  const saveBtn= document.getElementById('editSaveBtn');
+
+  // Helper text areas
+  const unHelp    = document.getElementById('editUsernameHelp');
+  const matchHelp = document.getElementById('editConfirmHelp');
+
+  // Keep original username to allow "unchanged" case
+  let originalUsername = '';
+
+  // Regex rules
+  const RE = {
+    name: /^[A-Za-z\s'-]{2,50}$/,
+    user: /^(?=.*[A-Za-z])[A-Za-z0-9._-]{4,20}$/,
+  };
+
+  // Password rule checks (only enforced if a new password is typed)
+  function pwStrongOK() {
+    const v = pwEl.value || '';
+    if (!v) return true; // empty = keep existing password (valid)
+    return (/[a-z]/.test(v) && /[A-Z]/.test(v) && /\d/.test(v) && /[@$!%*?&]/.test(v) && v.length >= 8);
+  }
+  function pwMatchOK() {
+    if (!pwEl.value && !pw2El.value) { matchHelp.classList.add('d-none'); return true; }
+    const ok = pwEl.value === pw2El.value;
+    matchHelp.classList.toggle('d-none', ok);
+    return ok;
+  }
+  function nameOK()       { return RE.name.test((nameEl.value || '').trim()); }
+  function userSyntaxOK() { return RE.user.test((userEl.value || '').trim()); }
+
+  // If role requires a branch, ensure one is selected
+  function branchOK() {
+    const role = roleEl.value;
+    if (role !== 'staff' && role !== 'stockman') return true;
+    return !!form.querySelector('#editBranchGroup input[name="branch_id"]:checked');
+  }
+
+  // Debounced username availability check
+  let usernameAvailable = true;
+  let debounceT;
+  function debounce(fn, ms=350){ clearTimeout(debounceT); debounceT = setTimeout(fn, ms); }
+
+  async function checkUsername() {
+    const u = (userEl.value || '').trim();
+
+    // Syntax first
+    if (!userSyntaxOK()) {
+      usernameAvailable = false;
+      setUnHelp('warn', '4–20 chars, at least one letter. Allowed: letters, numbers, dot, underscore, hyphen.');
+      updateSaveEnabled();
+      return;
+    }
+
+    // Unchanged? Consider it available
+    if (u === originalUsername) {
+      usernameAvailable = true;
+      setUnHelp('ok', 'Username unchanged.');
+      updateSaveEnabled();
+      return;
+    }
+
+    // Remote check
+    setUnHelp('checking', 'Checking availability…');
+    try {
+      const res = await fetch('check_username.php', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ username: u, exclude_id: Number(idEl.value || 0) })
+      });
+      const data = await res.json();
+      if (data && data.ok !== false && data.available === true) {
+        usernameAvailable = true;
+        setUnHelp('ok', 'Username is available.');
+      } else {
+        usernameAvailable = false;
+        setUnHelp('warn', 'Username is already taken.');
+      }
+    } catch {
+      // If the check fails, only allow when unchanged
+      usernameAvailable = (u === originalUsername);
+      setUnHelp(usernameAvailable ? 'ok' : 'error',
+                usernameAvailable ? 'Username unchanged.' : 'Could not verify username right now.');
+    }
+    updateSaveEnabled();
+  }
+
+  // Color-coded helper under username input
+  function setUnHelp(state, msg) {
+    unHelp.className = 'form-text';
+    if (state === 'checking') unHelp.classList.add('text-muted');
+    if (state === 'ok')       unHelp.classList.add('text-success');
+    if (state === 'warn' || state === 'error') unHelp.classList.add('text-danger');
+    unHelp.textContent = msg || '';
+  }
+
+  // Enable Save when all checks pass
+  function updateSaveEnabled() {
+    const ok =
+      nameOK() &&
+      userSyntaxOK() &&
+      usernameAvailable &&
+      pwStrongOK() &&
+      pwMatchOK() &&
+      branchOK();
+
+    saveBtn.disabled = !ok;
+  }
+
+  // Eye toggles to show/hide passwords
+  function bindToggle(btnId, inputEl) {
+    const btn = document.getElementById(btnId);
+    if (!btn || !inputEl) return;
+    const icon = btn.querySelector('i');
+    btn.addEventListener('click', () => {
+      const show = inputEl.type === 'password';
+      inputEl.type = show ? 'text' : 'password';
+      if (icon) {
+        icon.classList.toggle('fa-eye', !show);
+        icon.classList.toggle('fa-eye-slash', show);
+      }
+      inputEl.focus({preventScroll:true});
+    });
+  }
+  bindToggle('editTogglePwBtn',  pwEl);
+  bindToggle('editTogglePw2Btn', pw2El);
+
+  // Public: role change toggles visibility and "required" for branch radios
+  window.reflectEditBranchVisibility = function () {
+    const show = roleEl.value === 'staff' || roleEl.value === 'stockman';
+    const group = document.getElementById('editBranchGroup');
+    group.style.display = show ? 'block' : 'none';
+    form.querySelectorAll('#editBranchGroup input[name="branch_id"]').forEach(r => {
+      r.required = show;
+    });
+    updateSaveEnabled();
+  };
+
+  // Public: Open Edit User modal and hydrate fields
+  window.openEditUserModal = function (button) {
+    const modal = document.getElementById('editModal');
+    modal.style.display = 'flex';
+
+    // Fill inputs from dataset
+    document.getElementById('editUserId').value   = button.dataset.id || '';
+    document.getElementById('editName').value     = button.dataset.full_name || '';
+    document.getElementById('editUsername').value = button.dataset.username || '';
+    // NOTE: data-phone-number maps to dataset.phoneNumber
+    document.getElementById('editPhone_number').value = button.dataset.phoneNumber || button.getAttribute('data-phone-number') || '';
+    document.getElementById('editRole').value     = button.dataset.role || 'admin';
+
+    // Save original username for availability logic
+    originalUsername = document.getElementById('editUsername').value;
+
+    // Branch radio preselect
+    const branchId = button.dataset.branch_id || '';
+    form.querySelectorAll('#editBranchGroup input[name="branch_id"]').forEach(r => {
+      r.checked = (r.value === branchId);
+    });
+
+    // Reset password fields & helper states
+    pwEl.value = '';
+    pw2El.value = '';
+    matchHelp.classList.add('d-none');
+    setUnHelp('idle', '');
+
+    reflectEditBranchVisibility();
+    updateSaveEnabled();
+
+    // Close on backdrop click or ESC
+    function onBg(e){ if (e.target === modal) { closeEditUserModal(); modal.removeEventListener('click', onBg); } }
+    modal.addEventListener('click', onBg);
+    function onEsc(ev){ if (ev.key === 'Escape') { closeEditUserModal(); document.removeEventListener('keydown', onEsc); } }
+    document.addEventListener('keydown', onEsc);
+  };
+
+  // Keep Save button state reactive
+  [nameEl, roleEl, pwEl, pw2El].forEach(el => {
+    el.addEventListener('input', updateSaveEnabled);
+    el.addEventListener('change', updateSaveEnabled);
+  });
+  userEl.addEventListener('input', () => debounce(checkUsername, 350));
+})();
+</script>
+
+<script>
+/* =========================
+   CREATE USER — STEP 1 GUARD
+   Purpose: Validate (name, username, password strength/match) and enable "Next".
+========================= */
+(function() {
+  // Field refs for Step 1
+  const $name        = document.querySelector('input[name="name"]');
+  const $u           = document.getElementById('username');
+  const $help        = document.getElementById('usernameHelp');
+  const $next        = document.getElementById('nextStepBtn');
+  const $pw          = document.getElementById('password');
+  const $cpw         = document.getElementById('confirm_password');
+  const $confirmHelp = document.getElementById('confirmHelp');
+
+  let usernameAvailable = false;
+  let t; const debounce = (fn, ms=350)=>{ clearTimeout(t); t=setTimeout(fn, ms); };
+
+  // Utility: colored helper text for username availability
+  function mark(state, msg) {
+    if (!$help) return;
+    $help.className = 'form-text';
+    if (state === 'checking') $help.classList.add('text-muted');
+    if (state === 'ok')       $help.classList.add('text-success');
+    if (state === 'warn' || state === 'error') $help.classList.add('text-danger');
+    $help.textContent = msg || '';
+  }
+
+  // Local regex checks
+  function localNameOK()      { return /^[A-Za-z\s'-]{2,50}$/.test(($name?.value || '').trim()); }
+  function localUserSyntaxOK(){ return /^(?=.*[A-Za-z])[A-Za-z0-9._-]{4,20}$/.test($u?.value || ''); }
+
+  // Password strength and match (step 1 requires both)
+  function pwChecksOK() {
+    const v = $pw?.value || '';
+    return (/[a-z]/.test(v) && /[A-Z]/.test(v) && /\d/.test(v) && /[@$!%*?&]/.test(v) && v.length >= 8);
+  }
+  function pwMatchOK() {
+    const ok = ($pw?.value || '') === ($cpw?.value || '');
+    if ($confirmHelp) $confirmHelp.classList.toggle('d-none', ok || !($cpw?.value));
+    return ok && ($cpw?.value || '').length > 0;
+  }
+
+  // Enable Next when all checks pass
+  function updateNext() {
+    const ok = localNameOK() && localUserSyntaxOK() && usernameAvailable && pwChecksOK() && pwMatchOK();
+    if ($next) $next.disabled = !ok;
+  }
+
+  // Remote username check for Step 1
+  async function checkUsername(v) {
+    if (!$u) return;
+    if (!v) { mark('idle',''); usernameAvailable = false; updateNext(); return; }
+    if (!localUserSyntaxOK()) {
+      mark('warn','Username must be 4–20 chars, include at least one letter. Allowed: letters, numbers, dot, underscore, hyphen.');
+      usernameAvailable = false; updateNext(); return;
+    }
+    mark('checking','Checking availability…');
+    try {
+      const res = await fetch('check_username.php', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({username: v})
+      });
+      const data = await res.json();
+      if (!data.ok) throw 0;
+      usernameAvailable = !!data.available;
+      mark(usernameAvailable ? 'ok' : 'warn', usernameAvailable ? 'Username is available.' : 'Username is already taken.');
+    } catch {
+      usernameAvailable = false;
+      mark('error','Could not check username right now.');
+    }
+    updateNext();
+  }
+
+  // Bind reactive handlers
+  $u     && $u.addEventListener('input', () => debounce(() => checkUsername($u.value), 350));
+  $name  && $name.addEventListener('input', updateNext);
+  $pw    && $pw.addEventListener('input', updateNext);
+  $cpw   && $cpw.addEventListener('input', updateNext);
+
+  // Exported: proceed to step 2 only if valid
+  window.nextFromStep1 = function () {
+    updateNext();
+    if ($next && !$next.disabled) nextStep(2);
+  };
+
+  // Initialize state (useful if browser autofilled)
+  if ($u && $u.value) checkUsername($u.value); else updateNext();
+})();
+</script>
+
+<script>
+/* =========================
+   SHOW/HIDE PASSWORD (delegated listener)
+   Purpose: One click handler toggles visibility for any supported button.
+========================= */
+document.addEventListener('click', function (e) {
+  const btn = e.target.closest('.btn-toggle-pw, #togglePwBtn, #togglePwBtn2');
+  if (!btn) return;
+
+  // Prefer explicit target selector, else look within same .input-group
+  let input = null;
+  const sel = btn.getAttribute('data-target');
+  if (sel) {
+    input = document.querySelector(sel);
+  } else {
+    const group = btn.closest('.input-group');
+    input = group ? group.querySelector('input.form-control') : null;
+  }
+  if (!input) return;
+
+  // Toggle input type and icon
+  const show = input.type === 'password';
+  input.type = show ? 'text' : 'password';
+
+  const icon = btn.querySelector('i');
+  if (icon) {
+    icon.classList.toggle('fa-eye', !show);
+    icon.classList.toggle('fa-eye-slash', show);
+  }
+
+  // Keep focus for better UX
+  input.focus({ preventScroll: true });
+});
+</script>
+
+<script>
+/* =========================
+   PASSWORD STRENGTH METER
+   Purpose: Live checklist + progress bar + label feedback on password quality.
+========================= */
+(function () {
+  const pwd = document.getElementById('password');
+  const checklist = document.getElementById('pwChecklist');
+  if (!pwd || !checklist) return;
+
+  // Cache checklist parts
+  const items = {
+    lower:   checklist.querySelector('[data-test="lower"]'),
+    upper:   checklist.querySelector('[data-test="upper"]'),
+    number:  checklist.querySelector('[data-test="number"]'),
+    special: checklist.querySelector('[data-test="special"]'),
+    len:     checklist.querySelector('[data-test="len"]')
+  };
+  const bar   = document.getElementById('pwStrengthBar');
+  const label = document.getElementById('pwStrengthText');
+
+  // Compute rule results and update UI
+  function evaluate(value) {
+    const tests = {
+      lower: /[a-z]/.test(value),
+      upper: /[A-Z]/.test(value),
+      number: /\d/.test(value),
+      special: /[@$!%*?&]/.test(value),
+      len: value.length >= 8
+    };
+
+    // Update check items (✓ / •) with .ok class for styling
+    Object.entries(tests).forEach(([k, ok]) => {
+      if (!items[k]) return;
+      items[k].classList.toggle('ok', ok);
+      items[k].textContent = (ok ? '✓ ' : '• ') + items[k].textContent.replace(/^✓ |^• /, '');
+    });
+
+    // Compute score 0..5 and reflect on progress bar + label
+    const score  = Object.values(tests).filter(Boolean).length;
+    const widths = [0, 20, 40, 60, 80, 100];
+    const texts  = ['—', 'Very Weak', 'Weak', 'Fair', 'Good', 'Strong'];
+
+    if (bar) {
+      bar.style.width = widths[score] + '%';
+      bar.classList.remove('bg-danger','bg-warning','bg-info','bg-success');
+      if (score <= 2) bar.classList.add('bg-danger');
+      else if (score === 3) bar.classList.add('bg-warning');
+      else if (score === 4) bar.classList.add('bg-info');
+      else if (score === 5) bar.classList.add('bg-success');
+    }
+    if (label) label.textContent = 'Strength: ' + texts[score];
+  }
+
+  // Bind input and run once on load (in case of autofill)
+  pwd.addEventListener('input', (e) => evaluate(e.target.value));
+  evaluate(pwd.value || '');
+})();
+</script>
+
+<!-- Make the header title white (visual tweak for your Bootstrap modal header) -->
 <style>
   .fp-header .modal-title { color:#fff !important; }
 </style>
 
 <script>
+/* =========================
+   CREATE BRANCH FORM LOGIC
+   Purpose: Validate inputs, gate the "Create" CTA, and show an inline confirmation step.
+========================= */
 (() => {
   const form      = document.getElementById('createBranchForm');
   if (!form) return;
 
-  const btnOpen   = document.getElementById('cb_openConfirm');
-  const confirmEl = document.getElementById('cb_confirmSection');
-  const msgEl     = document.getElementById('cb_confirmMessage');
-  const cancelBtn = document.getElementById('cb_cancelConfirm');
+  const btnOpen   = document.getElementById('cb_openConfirm');   // Primary "Create" button that reveals confirm section
+  const confirmEl = document.getElementById('cb_confirmSection'); // Inline confirmation area
+  const msgEl     = document.getElementById('cb_confirmMessage'); // Summary message
+  const cancelBtn = document.getElementById('cb_cancelConfirm');  // Cancel inside confirm area
 
+  // Field refs
   const fNumber  = document.getElementById('cb_number');
   const fName    = document.getElementById('cb_name');
   const fLoc     = document.getElementById('cb_location');
@@ -1823,7 +1883,7 @@ document.addEventListener('click', function (e) {
   const fContact = document.getElementById('cb_contact');
   const fPhone   = document.getElementById('cb_contact_number');
 
-  // Name cannot be numbers-only
+  // Rule: Branch name cannot be digits-only; also collapse double spaces
   fName.addEventListener('input', () => {
     const v = fName.value.trim();
     fName.setCustomValidity(/^\d+$/.test(v) ? 'Branch name cannot be numbers only — include letters.' : '');
@@ -1831,13 +1891,13 @@ document.addEventListener('click', function (e) {
     updateCreateEnabled();
   });
 
-  // Enable/disable Create based on validity
+  // Enable/disable main "Create" button based on form validity
   function updateCreateEnabled() {
     btnOpen.disabled = !form.checkValidity();
-    confirmEl.classList.add('d-none');
+    confirmEl.classList.add('d-none'); // Hide confirm when editing fields again
   }
 
-  // Trim on blur; watch inputs for validity changes
+  // Normalize values on blur; keep validity reactive
   [fNumber, fName, fLoc, fEmail, fContact, fPhone].forEach(el => {
     el.addEventListener('blur',  () => { el.value = el.value.trim(); });
     el.addEventListener('input', updateCreateEnabled);
@@ -1845,7 +1905,7 @@ document.addEventListener('click', function (e) {
   });
   updateCreateEnabled();
 
-  // Show confirm summary
+  // Clicking "Create" shows the confirmation section (if valid)
   btnOpen.addEventListener('click', () => {
     if (!form.checkValidity()) { form.classList.add('was-validated'); updateCreateEnabled(); return; }
     const num  = fNumber.value.trim();
@@ -1858,9 +1918,10 @@ document.addEventListener('click', function (e) {
     confirmEl.classList.remove('d-none');
   });
 
+  // Cancel inside confirm area hides it
   cancelBtn.addEventListener('click', () => confirmEl.classList.add('d-none'));
 
-  // Final guard
+  // Final form guard on submit (prevents accidental submit if invalid)
   form.addEventListener('submit', (e) => {
     if (!form.checkValidity()) {
       e.preventDefault();
@@ -1869,7 +1930,7 @@ document.addEventListener('click', function (e) {
     }
   });
 
-  // Focus when opens; reset on close
+  // UX: focus first field on open; clear state on close
   const modal = document.getElementById('createBranchModal');
   modal.addEventListener('shown.bs.modal', () => fNumber.focus());
   modal.addEventListener('hidden.bs.modal', () => {
@@ -1882,19 +1943,25 @@ document.addEventListener('click', function (e) {
 </script>
 
 <script>
+/* =========================
+   EDIT BRANCH FORM LOGIC
+   Purpose: Validate inputs, keep Save disabled until valid, and provide a
+            robust openEditBranchModal that pre-fills and re-validates.
+========================= */
 (() => {
   const form   = document.getElementById('editBranchForm');
   if (!form) return;
 
   const saveBtn = document.getElementById('editBranchSaveBtn');
 
+  // Field refs
   const fName   = document.getElementById('editBranchName');
   const fLoc    = document.getElementById('editBranchLocation');
   const fEmail  = document.getElementById('editBranchEmail');
   const fPerson = document.getElementById('editBranchContact');
   const fPhone  = document.getElementById('editBranchContactNumber');
 
-  // Disallow numbers-only name, give a clear message
+  // Rule: Branch name cannot be digits-only (clear, specific message)
   function validateName() {
     const v = (fName.value || '').trim();
     if (/^\d+$/.test(v)) {
@@ -1904,16 +1971,18 @@ document.addEventListener('click', function (e) {
     }
   }
 
+  // Collapse extra spaces and trim edges
   function normalizeSpaces(el) {
     el.value = el.value.replace(/\s{2,}/g, ' ').trim();
   }
 
+  // Single place to refresh validity and Save button
   function updateState() {
     validateName();
     saveBtn.disabled = !form.checkValidity();
   }
 
-  // Bind inputs: trim on blur, re-check on input/change
+  // Keep reactive, normalize on blur
   [fName, fLoc, fEmail, fPerson, fPhone].forEach(el => {
     el.addEventListener('input', updateState);
     el.addEventListener('change', updateState);
@@ -1923,12 +1992,12 @@ document.addEventListener('click', function (e) {
   // Initial pass
   updateState();
 
-  // Replace your existing openEditBranchModal with this (keeps your dataset fills, adds validation refresh)
+  // PUBLIC: Open edit modal, hydrate values, revalidate, wire close handlers
   window.openEditBranchModal = function(button){
     const modal = document.getElementById('editBranchModal');
     modal.style.display = 'flex';
 
-    // Fill values
+    // Fill inputs from data-* attributes
     document.getElementById('editBranchId').value        = button.dataset.id || '';
     fName.value   = button.dataset.name || '';
     fLoc.value    = button.dataset.location || '';
@@ -1946,12 +2015,11 @@ document.addEventListener('click', function (e) {
     document.addEventListener('keydown', onEsc);
   };
 
-  // Final guard on submit
+  // Guard on submit (prevents invalid POST)
   form.addEventListener('submit', (e) => {
     validateName();
     if (!form.checkValidity()) {
       e.preventDefault();
-      // optional: add Bootstrap .was-validated visuals if you want
       form.classList.add('was-validated');
     }
   });
