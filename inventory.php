@@ -2252,39 +2252,51 @@ document.addEventListener('DOMContentLoaded', function () {
 })();
 
   // Submit via AJAX
-  form.addEventListener('submit', (e) => {
-    e.preventDefault();
-    msg.innerHTML = '';
-    spin.classList.remove('d-none');
-    btn.disabled = true; label.textContent = 'Submitting...';
+form.addEventListener('submit', (e) => {
+  e.preventDefault();
+  msg.innerHTML = '';
+  spin.classList.remove('d-none');
+  btn.disabled = true; 
+  label.textContent = 'Submitting...';
 
-    fetch('transfer_request_create.php', {
-      method: 'POST',
-      body: new FormData(form)
-    })
-    .then(r => r.json())
-    .then(d => {
-      const success = d.status === 'success';
-      showToast(d.message, success ? 'success' : 'danger');
+  fetch('transfer_request_create.php', {
+    method: 'POST',
+    body: new FormData(form)
+  })
+  .then(r => r.json())
+  .then(d => {
+    const success = d.status === 'success';
+    showToast(d.message, success ? 'success' : 'danger');
 
-      if (success) {
-        form.reset();
-        prodSel.disabled = true;
-        prodSel.innerHTML = '<option value="">Select a branch first</option>';
-        setTimeout(() => {
-          const m = bootstrap.Modal.getInstance(modalEl);
-          m?.hide();
-        }, 900);
-      }
-    })
-    .catch(() => {
-      showToast('Something went wrong. Please try again.', 'danger');
-    })
-    .finally(() => {
-      spin.classList.add('d-none');
-      btn.disabled = false; label.textContent = 'Submit Request';
-    });
+    if (success) {
+      form.reset();
+      prodSel.disabled = true;
+      prodSel.innerHTML = '<option value="">Select a branch first</option>';
+
+      setTimeout(() => {
+        let modalInstance = bootstrap.Modal.getInstance(modalEl);
+        if (!modalInstance) {
+          modalInstance = new bootstrap.Modal(modalEl);
+        }
+
+        modalInstance.hide();
+
+        // ✅ Clean just for this flow
+        document.querySelectorAll('.modal-backdrop').forEach(el => el.remove());
+        document.body.classList.remove('modal-open');
+        document.body.style.overflow = '';
+      }, 900);
+    }
+  })
+  .catch(() => {
+    showToast('Something went wrong. Please try again.', 'danger');
+  })
+  .finally(() => {
+    spin.classList.add('d-none');
+    btn.disabled = false; 
+    label.textContent = 'Submit Request';
   });
+});
 
   // Hard reset on close
   modalEl.addEventListener('hidden.bs.modal', () => {
@@ -3025,12 +3037,21 @@ document.addEventListener('DOMContentLoaded', function () {
   }
 });
 </script>
+<script>
+document.addEventListener('hidden.bs.modal', function () {
+  // ✅ If there is still any open modal, do nothing
+  if (document.querySelector('.modal.show')) return;
+
+  // ✅ Only when the *last* modal is closed:
+  document.querySelectorAll('.modal-backdrop').forEach(el => el.remove());
+  document.body.classList.remove('modal-open');
+  document.body.style.overflow = '';
+});
+</script>
+
 
 <!-- Bootstrap 5.3.2 JS -->
 <!-- REQUIRED Bootstrap JS -->
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
-
-
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
 
 <script src="sidebar.js"></script>

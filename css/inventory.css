@@ -723,3 +723,32 @@ select.form-select:focus {
         display: none !important;
     }
 }
+
+/* ======================================
+   Services Table - Align Header & Body
+====================================== */
+
+.services-table th:nth-child(1),
+.services-table td:nth-child(1) {
+    width: 10%;
+}
+
+.services-table th:nth-child(2),
+.services-table td:nth-child(2) {
+    width: 25%;
+}
+
+.services-table th:nth-child(3),
+.services-table td:nth-child(3) {
+    width: 15%;
+}
+
+.services-table th:nth-child(4),
+.services-table td:nth-child(4) {
+    width: 35%;
+}
+
+.services-table th:nth-child(5),
+.services-table td:nth-child(5) {
+    width: 15%;
+}

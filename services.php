@@ -293,7 +293,7 @@ $toolsOpen = ($self === 'backup_admin.php' || $isArchive);
       <?php if ($services_result && $services_result->num_rows > 0): ?>
         <div class="table-container">
           <!-- Header Table -->
-          <table class="table table-header">
+          <table class="table table-header services-table">
             <thead>
               <tr>
                 <th>SERVICE ID</th>
@@ -307,7 +307,7 @@ $toolsOpen = ($self === 'backup_admin.php' || $isArchive);
 
           <!-- Scrollable Body -->
           <div class="table-body scrollable-list">
-            <table class="table table-body-table">
+            <table class="table table-body-table services-table">
               <tbody>
               <?php while ($service = $services_result->fetch_assoc()): ?>
                 <tr>

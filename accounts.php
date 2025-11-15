@@ -2025,6 +2025,14 @@ document.addEventListener('click', function (e) {
   });
 })();
 </script>
+<script>
+function closeEditBranchModal() {
+    const modal = document.getElementById('editBranchModal');
+    if (modal) {
+        modal.style.display = 'none';
+    }
+}
+</script>
 
 
 <script src="sidebar.js"></script>
