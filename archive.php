@@ -40,6 +40,8 @@ if (isset($_POST['restore_product'])) {
         JOIN products p ON i.product_id = p.product_id
         JOIN branches b ON i.branch_id  = b.branch_id
         WHERE i.inventory_id = $id
+        SELECT brand_id, brand_name FROM brands WHERE active=1 ORDER BY brand_name;
+SELECT category_id, category_name FROM categories WHERE active=1 ORDER BY category_name;
     ");
     $conn->query("UPDATE inventory SET archived = 0 WHERE inventory_id = $id");
     $name = $prod['product_name'] ?? "inventory_id $id";
@@ -432,192 +434,331 @@ $toolsOpen = ($self === 'backup_admin.php' || $isArchive);
 </div>
   </div>
 </div>
-
 <div class="content">
   <h1>Archived Records</h1>
 
-  <!-- Products -->
+  <!-- ============================
+       ARCHIVED PRODUCTS
+  ============================ -->
   <div class="card">
-    <h2>Archived Products</h2>
-    <?php if ($archived_products->num_rows > 0): ?>
-       <div class="table-container">
-    <table>
-      <thead>
-        <tr>
-             <th>Name</th>
-        <th>Category</th>
-        <th>Price</th>
-        <th>Branch</th>
-        <th>Action</th>
-        </tr>
-      </thead>
-      <tbody>
-      <?php while ($p = $archived_products->fetch_assoc()): ?>
-      <tr>
-        <td><?= htmlspecialchars($p['product_name']) ?></td>
-        <td><?= htmlspecialchars($p['category']) ?></td>
-        <td><?= number_format($p['price'], 2) ?></td>
-         <td><?= htmlspecialchars($p['branch_name']) ?></td>
-          <td>
-            <button type="button"
-                    class="btn btn-restore confirm-action"
-                    data-action="restore_product"
-                    data-id="<?= $p['inventory_id'] ?>"
-                    data-entity="product"
-                    data-name="<?= htmlspecialchars($p['product_name']) ?>">
-              <i class="fas fa-trash-restore"></i> Restore
-            </button>
+    <h2><i class="fa-solid fa-box"></i> Archived Products</h2>
 
-            <button type="button"
-                    class="btn btn-delete confirm-action"
-                    data-action="delete_product"
-                    data-id="<?= $p['inventory_id'] ?>"
-                    data-entity="product"
-                    data-name="<?= htmlspecialchars($p['product_name']) ?>">
-              <i class="fa fa-trash"></i> Delete
-            </button>
-          </td>
-      </tr>
-      <?php endwhile; ?>
-      </tbody>
-    </table>
-    <?php else: ?><p class="empty-msg">No archived products.</p><?php endif; ?>
+    <?php if ($archived_products->num_rows > 0): ?>
+    <div class="table-container">
+      <table>
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Category</th>
+            <th>Price</th>
+            <th>Branch</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody>
+        <?php while ($p = $archived_products->fetch_assoc()): ?>
+          <tr>
+            <td><?= htmlspecialchars($p['product_name']) ?></td>
+            <td><?= htmlspecialchars($p['category']) ?></td>
+            <td><?= number_format($p['price'], 2) ?></td>
+            <td><?= htmlspecialchars($p['branch_name']) ?></td>
+            <td>
+              <button type="button"
+                      class="btn-restore confirm-action"
+                      data-action="restore_product"
+                      data-id="<?= $p['inventory_id'] ?>"
+                      data-entity="product"
+                      data-name="<?= htmlspecialchars($p['product_name']) ?>">
+                <i class="fas fa-trash-restore"></i> Restore
+              </button>
+
+              <button type="button"
+                      class="btn-delete confirm-action"
+                      data-action="delete_product"
+                      data-id="<?= $p['inventory_id'] ?>"
+                      data-entity="product"
+                      data-name="<?= htmlspecialchars($p['product_name']) ?>">
+                <i class="fa fa-trash"></i> Delete
+              </button>
+            </td>
+          </tr>
+        <?php endwhile; ?>
+        </tbody>
+      </table>
+    </div>
+    <?php else: ?>
+      <p class="empty-msg">No archived products.</p>
+    <?php endif; ?>
   </div>
 
 
- <!-- Services -->
-<div class="card">
-  <h2>Archived Services</h2>
-  <?php if ($archive_services->num_rows > 0): ?>
-     <div class="table-container">
-    <table>
-      <thead>
-        <tr>
-          <th>Service Name</th>
-          <th>Price</th>
-          <th>Description</th>
-          <th>Action</th>
-        </tr>
-      </thead>
-      <tbody>
+
+  <!-- ============================
+       ARCHIVED BRANDS
+  ============================ -->
+  <div class="card">
+    <h2><i class="fa-solid fa-tags"></i> Archived Brands</h2>
+
+    <?php
+      $archBrands = $conn->query("
+        SELECT brand_id, brand_name
+        FROM brands
+        WHERE active = 0
+        ORDER BY brand_name ASC
+      ");
+    ?>
+
+    <?php if ($archBrands && $archBrands->num_rows > 0): ?>
+    <div class="table-container">
+      <table>
+        <thead>
+          <tr>
+            <th>Brand</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody>
+        <?php while ($b = $archBrands->fetch_assoc()): ?>
+          <tr>
+            <td><?= htmlspecialchars($b['brand_name']) ?></td>
+            <td>
+              <form method="post" action="restore_brand.php" class="d-inline">
+                <input type="hidden" name="brand_id" value="<?= (int)$b['brand_id'] ?>">
+                <button class="btn-restore">
+                  <i class="fa-solid fa-rotate-left"></i> Restore
+                </button>
+                 <form method="post" action="delete_brand.php" class="d-inline"
+        onsubmit="return confirm('Delete this brand permanently?');">
+    <input type="hidden" name="brand_id" value="<?= (int)$b['brand_id'] ?>">
+    <button class="btn-delete">
+      <i class="fa-solid fa-trash"></i> Delete
+    </button>
+  </form>
+</td>
+              </form>
+            </td>
+          </tr>
+        <?php endwhile; ?>
+        </tbody>
+      </table>
+    </div>
+    <?php else: ?>
+      <p class="empty-msg">No archived brands.</p>
+    <?php endif; ?>
+  </div>
+
+
+
+  <!-- ============================
+       ARCHIVED CATEGORIES
+  ============================ -->
+  <div class="card">
+    <h2><i class="fa-solid fa-folder-tree"></i> Archived Categories</h2>
+
+    <?php
+      $archCats = $conn->query("
+        SELECT category_id, category_name
+        FROM categories
+        WHERE active = 0
+        ORDER BY category_name ASC
+      ");
+    ?>
+
+    <?php if ($archCats && $archCats->num_rows > 0): ?>
+    <div class="table-container">
+      <table>
+        <thead>
+          <tr>
+            <th>Category</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody>
+        <?php while ($c = $archCats->fetch_assoc()): ?>
+          <tr>
+            <td><?= htmlspecialchars($c['category_name']) ?></td>
+            <td>
+              <form method="post" action="restore_category.php" class="d-inline">
+                <input type="hidden" name="category_id" value="<?= (int)$c['category_id'] ?>">
+                <button class="btn-restore">
+                  <i class="fa-solid fa-rotate-left"></i> Restore
+                </button>
+                 <form method="post" action="delete_category.php" class="d-inline"
+        onsubmit="return confirm('Delete this category permanently?');">
+    <input type="hidden" name="category_id" value="<?= (int)$c['category_id'] ?>">
+    <button class="btn-delete">
+      <i class="fa-solid fa-trash"></i> Delete
+    </button>
+  </form>
+</td>
+              </form>
+            </td>
+          </tr>
+        <?php endwhile; ?>
+        </tbody>
+      </table>
+    </div>
+    <?php else: ?>
+      <p class="empty-msg">No archived categories.</p>
+    <?php endif; ?>
+  </div>
+
+
+
+  <!-- ============================
+       ARCHIVED SERVICES
+  ============================ -->
+  <div class="card">
+    <h2><i class="fa-solid fa-wrench"></i> Archived Services</h2>
+
+    <?php if ($archive_services->num_rows > 0): ?>
+    <div class="table-container">
+      <table>
+        <thead>
+          <tr>
+            <th>Service Name</th>
+            <th>Price</th>
+            <th>Description</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody>
         <?php while ($s = $archive_services->fetch_assoc()): ?>
           <tr>
             <td><?= htmlspecialchars($s['service_name']) ?></td>
             <td>₱<?= number_format($s['price'], 2) ?></td>
             <td><?= htmlspecialchars($s['description']) ?: '<em>No description</em>' ?></td>
-              <td>
-                <button type="button"
-                        class="btn btn-restore confirm-action"
-                        data-action="restore_service"
-                        data-id="<?= $s['service_id'] ?>"
-                        data-entity="service"
-                        data-name="<?= htmlspecialchars($s['service_name']) ?>">
-                  <i class="fas fa-trash-restore"></i> Restore
-                </button>
+            <td>
+              <button class="btn-restore confirm-action"
+                      data-action="restore_service"
+                      data-id="<?= $s['service_id'] ?>"
+                      data-entity="service"
+                      data-name="<?= htmlspecialchars($s['service_name']) ?>">
+                <i class="fas fa-trash-restore"></i> Restore
+              </button>
 
-                <button type="button"
-                        class="btn btn-delete confirm-action"
-                        data-action="delete_service"
-                        data-id="<?= $s['service_id'] ?>"
-                        data-entity="service"
-                        data-name="<?= htmlspecialchars($s['service_name']) ?>">
-                  <i class="fa fa-trash"></i> Delete
-                </button>
-              </td>
+              <button class="btn-delete confirm-action"
+                      data-action="delete_service"
+                      data-id="<?= $s['service_id'] ?>"
+                      data-entity="service"
+                      data-name="<?= htmlspecialchars($s['service_name']) ?>">
+                <i class="fa fa-trash"></i> Delete
+              </button>
+            </td>
           </tr>
         <?php endwhile; ?>
-      </tbody>
-    </table>
-  <?php else: ?>
-    <p class="empty-msg">No archived services.</p>
-  <?php endif; ?>
+        </tbody>
+      </table>
+    </div>
+    <?php else: ?>
+      <p class="empty-msg">No archived services.</p>
+    <?php endif; ?>
+  </div>
+
+
+
+  <!-- ============================
+       ARCHIVED BRANCHES
+  ============================ -->
+  <div class="card">
+    <h2><i class="fa-solid fa-store"></i> Archived Branches</h2>
+
+    <?php if ($archived_branches->num_rows > 0): ?>
+    <div class="table-container">
+      <table>
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Location</th>
+            <th>Email</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody>
+        <?php while ($b = $archived_branches->fetch_assoc()): ?>
+          <tr>
+            <td><?= htmlspecialchars($b['branch_name']) ?></td>
+            <td><?= htmlspecialchars($b['branch_location']) ?></td>
+            <td><?= htmlspecialchars($b['branch_email']) ?></td>
+            <td>
+              <button class="btn-restore confirm-action"
+                      data-action="restore_branch"
+                      data-id="<?= $b['branch_id'] ?>"
+                      data-entity="branch"
+                      data-name="<?= htmlspecialchars($b['branch_name']) ?>">
+                <i class="fas fa-trash-restore"></i> Restore
+              </button>
+
+              <button class="btn-delete confirm-action"
+                      data-action="delete_branch"
+                      data-id="<?= $b['branch_id'] ?>"
+                      data-entity="branch"
+                      data-name="<?= htmlspecialchars($b['branch_name']) ?>">
+                <i class="fa fa-trash"></i> Delete
+              </button>
+            </td>
+          </tr>
+        <?php endwhile; ?>
+        </tbody>
+      </table>
+    </div>
+    <?php else: ?>
+      <p class="empty-msg">No archived branches.</p>
+    <?php endif; ?>
+  </div>
+
+
+
+  <!-- ============================
+       ARCHIVED USERS
+  ============================ -->
+  <div class="card">
+    <h2><i class="fa-solid fa-user-slash"></i> Archived Users</h2>
+
+    <?php if ($archived_users->num_rows > 0): ?>
+    <div class="table-container">
+      <table>
+        <thead>
+          <tr>
+            <th>Username</th>
+            <th>Role</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody>
+        <?php while ($u = $archived_users->fetch_assoc()): ?>
+          <tr>
+            <td><?= htmlspecialchars($u['username']) ?></td>
+            <td><?= htmlspecialchars($u['role']) ?></td>
+            <td>
+              <button class="btn-restore confirm-action"
+                      data-action="restore_user"
+                      data-id="<?= $u['id'] ?>"
+                      data-entity="user"
+                      data-name="<?= htmlspecialchars($u['username']) ?>">
+                <i class="fas fa-trash-restore"></i> Restore
+              </button>
+
+              <button class="btn-delete confirm-action"
+                      data-action="delete_user"
+                      data-id="<?= $u['id'] ?>"
+                      data-entity="user"
+                      data-name="<?= htmlspecialchars($u['username']) ?>">
+                <i class="fa fa-trash"></i> Delete
+              </button>
+            </td>
+          </tr>
+        <?php endwhile; ?>
+        </tbody>
+      </table>
+    </div>
+    <?php else: ?>
+      <p class="empty-msg">No archived users.</p>
+    <?php endif; ?>
+  </div>
+
 </div>
 
-
-  <!-- Branches -->
-  <div class="card">
-    <h2>Archived Branches</h2>
-    <?php if ($archived_branches->num_rows >0): ?>
-       <div class="table-container">
-    <table>
-      <thead>
-        <tr>
-          <th>Name</th><th>Location</th><th>Email</th><th>Action</th>
-        </tr>
-      </thead>
-      <tbody>
-      <?php while ($b = $archived_branches->fetch_assoc()): ?>
-      <tr>
-        <td><?= htmlspecialchars($b['branch_name']) ?></td>
-        <td><?= htmlspecialchars($b['branch_location']) ?></td>
-        <td><?= htmlspecialchars($b['branch_email']) ?></td>
-          <td>
-            <button type="button"
-                    class="btn btn-restore confirm-action"
-                    data-action="restore_branch"
-                    data-id="<?= $b['branch_id'] ?>"
-                    data-entity="branch"
-                    data-name="<?= htmlspecialchars($b['branch_name']) ?>">
-              <i class="fas fa-trash-restore"></i> Restore
-            </button>
-
-            <button type="button"
-                    class="btn btn-delete confirm-action"
-                    data-action="delete_branch"
-                    data-id="<?= $b['branch_id'] ?>"
-                    data-entity="branch"
-                    data-name="<?= htmlspecialchars($b['branch_name']) ?>">
-              <i class="fa fa-trash"></i> Delete
-            </button>
-          </td>
-      </tr>
-      <?php endwhile; ?>
-      </tbody>
-    </table>
-    <?php else: ?><p class="empty-msg">No archived branches.</p><?php endif; ?>
-  </div>
-
-  <!-- Users -->
-  <div class="card">
-    <h2>Archived Users</h2>
-    <?php if ($archived_users->num_rows > 0): ?>
-       <div class="table-container">
-    <table>
-      <thead>
-        <tr>
-          <th>Username</th><th>Role</th><th>Action</th>
-        </tr>
-      </thead>
-      <tbody>
-      <?php while ($u = $archived_users->fetch_assoc()): ?>
-      <tr>
-        <td><?= htmlspecialchars($u['username']) ?></td>
-        <td><?= htmlspecialchars($u['role']) ?></td>
-          <td>
-            <button type="button"
-                    class="btn btn-restore confirm-action"
-                    data-action="restore_user"
-                    data-id="<?= $u['id'] ?>"
-                    data-entity="user"
-                    data-name="<?= htmlspecialchars($u['username']) ?>">
-              <i class="fas fa-trash-restore"></i> Restore
-            </button>
-
-            <button type="button"
-                    class="btn btn-delete confirm-action"
-                    data-action="delete_user"
-                    data-id="<?= $u['id'] ?>"
-                    data-entity="user"
-                    data-name="<?= htmlspecialchars($u['username']) ?>">
-              <i class="fa fa-trash"></i> Delete
-            </button>
-          </td>
-      </tr>
-      <?php endwhile; ?>
-      </tbody>
-    </table>
-    <?php else: ?><p class="empty-msg">No archived users.</p><?php endif; ?>
-  </div>
   
 <!-- Confirm Action Modal (Delete / Restore) -->
 <div class="modal fade" id="confirmActionModal" tabindex="-1" aria-hidden="true">

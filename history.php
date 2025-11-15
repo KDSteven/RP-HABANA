@@ -47,10 +47,6 @@ if ($role === 'staff') {
     $types .= "i";
 }
 
-// --- PAGINATION (fixed page size) ---
-$perPage = 10; // set what you like
-$page    = max(1, (int)($_GET['page'] ?? 1));
-$offset  = ($page - 1) * $perPage;
 
 // Count rows (respect filters)
 $countSql = "
@@ -66,6 +62,46 @@ if ($params) $stmt->bind_param($types, ...$params);
 $stmt->execute();
 $totalRows = (int)($stmt->get_result()->fetch_assoc()['cnt'] ?? 0);
 $stmt->close();
+/* =====================================================
+   COUNT ROWS (respect filters)
+===================================================== */
+$countSql = "
+  SELECT COUNT(DISTINCT s.sale_id) AS cnt
+  FROM sales s
+  JOIN branches b ON s.branch_id = b.branch_id
+  LEFT JOIN sales_refunds r ON s.sale_id = r.sale_id
+";
+if ($where) $countSql .= " WHERE " . implode(" AND ", $where);
+
+$stmt = $conn->prepare($countSql);
+if ($params) $stmt->bind_param($types, ...$params);
+$stmt->execute();
+$totalRows = (int)($stmt->get_result()->fetch_assoc()['cnt'] ?? 0);
+$stmt->close();
+
+/* =====================================================
+   FIXED PAGINATION SETUP ⭐ (No more warnings)
+===================================================== */
+$perPage = 10;
+$totalPages = max(1, (int)ceil($totalRows / $perPage));
+
+$page = isset($_GET['page']) ? (int)$_GET['page'] : 1;
+if ($page < 1) $page = 1;
+if ($page > $totalPages) $page = $totalPages;
+
+$offset = ($page - 1) * $perPage;
+
+/* =====================================================
+   PAGE BUTTON WINDOW
+===================================================== */
+$window = 3;
+$start = max(1, $page - $window);
+$end   = min($totalPages, $page + $window);
+
+if ($start > $end) {
+    $start = 1;
+    $end = $totalPages;
+}
 
 $totalPages = max(1, (int)ceil($totalRows / $perPage));
 if ($page > $totalPages) { $page = $totalPages; $offset = ($page - 1) * $perPage; }
@@ -319,166 +355,151 @@ $toolsOpen = ($self === 'backup_admin.php' || $isArchive);
     <a href="logout.php"><i class="fas fa-sign-out-alt"></i> Logout</a>
     </div>
   </div>                                  
+<div class="container-fluid page-content py-5">
 
-
-  <div class="container-fluid page-content py-5">
-    <div class="page-header">
+    <!-- Header -->
+    <div class="page-header mb-4">
       <h2><i class="fas fa-history"></i> Sales History</h2>
     </div>
 
     <!-- Filter Card -->
     <form method="GET" class="d-flex flex-wrap align-items-end gap-3 mb-4">
 
-    <div class="d-flex flex-column">
-      <label class="form-label">From</label>
-      <input type="date" name="from_date" class="form-control"
-            value="<?= htmlspecialchars($_GET['from_date'] ?? '') ?>">
-    </div>
-
-    <div class="d-flex flex-column">
-      <label class="form-label">To</label>
-      <input type="date" name="to_date" class="form-control"
-            value="<?= htmlspecialchars($_GET['to_date'] ?? '') ?>">
-    </div>
-
-<div class="d-flex flex-column">
-  <label class="form-label">Sale ID</label>
-  <div class="input-group">
-    <input type="text" name="sale_id" id="saleIdInput" class="form-control"
-           placeholder="Sale ID" value="<?= htmlspecialchars($_GET['sale_id'] ?? '') ?>">
-    <button type="button" class="btn btn-outline-secondary" id="clearSaleId" title="Clear Sale ID">
-      <i class="fa-solid fa-times"></i>
-    </button>
-  </div>
-</div>
-
-
-    <button type="submit" class="btn btn-modern btn-gradient-blue">
-      <i class="fas fa-search"></i> Search
-    </button>
-
-    <button type="submit" class="btn btn-neutral">
-      <i class="fas fa-filter"></i> Filter
-    </button>
-</form>
-
-  <!-- Sales Table -->
-  <div class="card-custom p-4">
-    <?php if ($sales_result->num_rows === 0): ?>
-      <div class="text-center text-muted py-4">
-        <i class="fas fa-info-circle fs-4 d-block mb-2"></i>
-        No sales history found.
-      </div>
-    <?php else: ?>
-    <div class="table-responsive">
-      <table class="table table-modern table-bordered align-middle">
-        <thead>
-          <tr>
-            <th class="col-id">Sale ID</th>
-            <th class="col-branch">Branch</th>
-            <th class="col-date">Date</th>
-            <th class="col-total text-end">Total (₱)</th>
-            <th class="col-remarks">Remarks</th>
-            <th class="col-refitems">Refunded Items</th>
-            <th class="col-status">Status</th>
-            <th class="col-actions text-center">Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-         <?php while ($sale = $sales_result->fetch_assoc()): 
-    $refunded = (float)$sale['refund_amount'];
-    $total = (float)$sale['total'];
-    $vat = (float)$sale['stored_vat'];
-
-    // Total including VAT
-    $totalWithVat = $total + $vat;
-
-   if ($refunded <= 0) {
-    $status = "Not Refund";
-    $badge = "secondary";
-} elseif ($refunded >= $totalWithVat - 0.01) { 
-    $status = "Full Refund";
-    $badge = "success";
-} else {
-    $status = "Partial Refund";
-    $badge = "warning text-dark";
-}
-
-?>
-<tr>
-    <td><?= (int)$sale['sale_id'] ?></td>
-    <td><?= htmlspecialchars($sale['branch_name']) ?></td>
-    <td><?= htmlspecialchars($sale['sale_date']) ?></td>
-    <td><span class="fw-bold text-success">₱<?= number_format($totalWithVat, 2) ?></span></td>
-    <?php
-$remarks = trim($sale['refund_remarks'] ?? '');
-$remarks = $remarks !== '' ? $remarks : '—';
-?>
-<td>
-  <span class="text-muted" title="<?= htmlspecialchars($remarks) ?>">
-    <?= htmlspecialchars(mb_strimwidth($remarks, 0, 80, '…')) ?>
-  </span>
-</td>
-
-<?php $refItems = trim($sale['refunded_products'] ?? ''); ?>
-<td>
-  <span title="<?= htmlspecialchars($refItems !== '' ? $refItems : '—') ?>">
-    <?= htmlspecialchars($refItems !== '' ? mb_strimwidth($refItems, 0, 60, '…') : '—') ?>
-  </span>
-</td>
-
-    <td><span class="badge bg-<?= $badge ?>"><?= $status ?></span></td>
-      <td class="col-actions">
-        <div class="actions-wrap">
-          <button type="button"
-            onclick="openReceiptModal(<?= (int)$sale['sale_id'] ?>)"
-            class="btn btn-info btn-modern btn-sm">
-            <i class="fas fa-receipt"></i> Receipt
-          </button>
-
-          <?php if ($status !== "Fully Refunded"): ?>
-            <button onclick="openReturnModal(<?= (int)$sale['sale_id'] ?>)"
-              class="btn-action btn-gradient-green btn-sm">
-              <i class="fas fa-undo"></i> Refund
-            </button>
-          <?php endif; ?>
+        <div class="d-flex flex-column">
+          <label class="form-label">From</label>
+          <input type="date" name="from_date" class="form-control"
+                 value="<?= htmlspecialchars($_GET['from_date'] ?? '') ?>">
         </div>
-      </td>
-</tr>
-<?php endwhile; ?>
 
-        </tbody>
-      </table>
+        <div class="d-flex flex-column">
+          <label class="form-label">To</label>
+          <input type="date" name="to_date" class="form-control"
+                 value="<?= htmlspecialchars($_GET['to_date'] ?? '') ?>">
+        </div>
+
+        <div class="d-flex flex-column">
+          <label class="form-label">Sale ID</label>
+          <div class="input-group">
+            <input type="text" name="sale_id" id="saleIdInput" class="form-control"
+                   placeholder="Sale ID"
+                   value="<?= htmlspecialchars($_GET['sale_id'] ?? '') ?>">
+
+            <button type="button" class="btn btn-outline-secondary" id="clearSaleId">
+              <i class="fa-solid fa-times"></i>
+            </button>
+          </div>
+        </div>
+
+        <button type="submit" class="btn btn-modern btn-gradient-blue">
+          <i class="fas fa-search"></i> Search
+        </button>
+
+        <button type="submit" class="btn btn-neutral">
+          <i class="fas fa-filter"></i> Filter
+        </button>
+    </form>
+
+    <!-- Sales Table -->
+    <div class="card-custom p-4">
+
+        <?php if ($sales_result->num_rows === 0): ?>
+            <div class="text-center text-muted py-4">
+              <i class="fas fa-info-circle fs-4 d-block mb-2"></i>
+              No sales history found.
+            </div>
+
+        <?php else: ?>
+
+            <div class="table-responsive">
+                <table class="table table-modern table-bordered align-middle w-100">
+                    <thead>
+                        <tr>
+                            <th class="col-id">Sale ID</th>
+                            <th class="col-branch">Branch</th>
+                            <th class="col-date">Date</th>
+                            <th class="col-total text-end">Total (₱)</th>
+                            <th class="col-remarks">Remarks</th>
+                            <th class="col-refitems">Refunded Items</th>
+                            <th class="col-status">Status</th>
+                            <th class="col-actions text-center">Actions</th>
+                        </tr>
+                    </thead>
+
+                    <tbody>
+                        <?php while ($sale = $sales_result->fetch_assoc()): ?>
+                        <tr>
+                            <td><?= (int)$sale['sale_id'] ?></td>
+                            <td><?= htmlspecialchars($sale['branch_name']) ?></td>
+                            <td><?= htmlspecialchars($sale['sale_date']) ?></td>
+
+                            <td>
+                              <span class="fw-bold text-success">
+                                ₱<?= number_format((float)$sale['total'] + (float)$sale['stored_vat'], 2) ?>
+                              </span>
+                            </td>
+
+                            <?php $remarks = trim($sale['refund_remarks'] ?? '—'); ?>
+                            <td><?= htmlspecialchars(mb_strimwidth($remarks, 0, 80, '…')) ?></td>
+
+                            <?php $refItems = trim($sale['refunded_products'] ?? '—'); ?>
+                            <td><?= htmlspecialchars(mb_strimwidth($refItems, 0, 60, '…')) ?></td>
+
+                            <?php
+                                $refunded = (float)$sale['refund_amount'];
+                                $totalWvat = (float)$sale['total'] + (float)$sale['stored_vat'];
+
+                                if ($refunded <= 0) { $status="Not Refund"; $badge="secondary"; }
+                                elseif ($refunded >= $totalWvat-0.01) { $status="Full Refund"; $badge="success"; }
+                                else { $status="Partial Refund"; $badge="warning text-dark"; }
+                            ?>
+                            <td><span class="badge bg-<?= $badge ?>"><?= $status ?></span></td>
+
+                            <td class="col-actions">
+                                <div class="actions-wrap">
+                                    <button type="button"
+                                            onclick="openReceiptModal(<?= (int)$sale['sale_id'] ?>)"
+                                            class="btn btn-info btn-modern btn-sm">
+                                        <i class="fas fa-receipt"></i> Receipt
+                                    </button>
+
+                                    <?php if ($status !== "Full Refund"): ?>
+                                    <button class="btn-action btn-gradient-green btn-sm"
+                                            onclick="openReturnModal(<?= (int)$sale['sale_id'] ?>)">
+                                        <i class="fas fa-undo"></i> Refund
+                                    </button>
+                                    <?php endif; ?>
+                                </div>
+                            </td>
+                        </tr>
+                        <?php endwhile; ?>
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Pagination -->
+            <nav class="mt-3">
+              <ul class="pagination pagination-sm mb-0">
+                <li class="page-item <?= $page <= 1 ? 'disabled' : '' ?>">
+                  <a class="page-link" href="?<?= keep_qs(['page' => max(1, $page - 1)]) ?>">Prev</a>
+                </li>
+
+                <?php for ($p = $start; $p <= $end; $p++): ?>
+                <li class="page-item <?= $p === $page ? 'active' : '' ?>">
+                  <a class="page-link" href="?<?= keep_qs(['page' => $p]) ?>"><?= $p ?></a>
+                </li>
+                <?php endfor; ?>
+
+                <li class="page-item <?= $page >= $totalPages ? 'disabled' : '' ?>">
+                  <a class="page-link" href="?<?= keep_qs(['page' => min($totalPages, $page + 1)]) ?>">Next</a>
+                </li>
+              </ul>
+            </nav>
+
+        <?php endif; ?>
     </div>
-    <?php
-      // show up to 3 page numbers: (current-1, current, current+1)
-      $start = max(1, $page - 1);
-      $end   = min($totalPages, $page + 1);
-      // If we're at page 1, try to show 1..min(3,totalPages)
-      if ($page === 1) { $start = 1; $end = min(3, $totalPages); }
-      // If we're at last page, try to show last-2..last
-      if ($page === $totalPages) { $start = max(1, $totalPages - 2); $end = $totalPages; }
-      ?>
-      <nav class="mt-3">
-        <ul class="pagination pagination-sm mb-0">
-          <li class="page-item <?= $page <= 1 ? 'disabled' : '' ?>">
-            <a class="page-link" href="?<?= keep_qs(['page' => max(1, $page - 1)]) ?>">Prev</a>
-          </li>
 
-          <?php for ($p = $start; $p <= $end; $p++): ?>
-            <li class="page-item <?= $p === $page ? 'active' : '' ?>">
-              <a class="page-link" href="?<?= keep_qs(['page' => $p]) ?>"><?= $p ?></a>
-            </li>
-          <?php endfor; ?>
-
-          <li class="page-item <?= $page >= $totalPages ? 'disabled' : '' ?>">
-            <a class="page-link" href="?<?= keep_qs(['page' => min($totalPages, $page + 1)]) ?>">Next</a>
-          </li>
-        </ul>
-      </nav>
-    <?php endif; ?>
-  </div>
 </div>
+
 <!-- Return Modal -->
 <div class="modal fade" id="returnModal" tabindex="-1">
   <div class="modal-dialog">

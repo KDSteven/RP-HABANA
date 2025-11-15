@@ -1,75 +1,209 @@
-/* Table Container */
-.table-responsive {
-    max-height: 70vh;
-    overflow-y: auto;
+/* ==========================================================
+   PHYSICAL INVENTORY PAGE — RESPONSIVE, CLEAN, BALANCED
+========================================================== */
+
+/* ------------------------------
+   MAIN CONTAINER
+------------------------------ */
+.inventory-page .container {
+  width: calc(100% - 220px);
+  padding: 24px 25px;
+  min-height: 100vh;
+  background: #f8f9fa;
+  transition: margin-left .2s ease, width .2s ease;
 }
 
-/* Table Styling */
-#inventoryTable {
+@media (max-width: 992px) {
+  .inventory-page .container {
+    margin-left: 0 !important;
+    width: 100% !important;
+    padding: 18px 14px;
+  }
+}
+
+/* ------------------------------
+   STAT CARDS LAYOUT
+------------------------------ */
+.stat-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.card {
+  border: none;
+  border-radius: 10px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+  background: #fff;
+  padding: 16px 18px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  text-align: center;
+  min-height: 110px;
+}
+
+.card h6 {
+  font-weight: 600;
+  color: #555;
+  margin-bottom: 4px;
+}
+
+.card h4 {
+  font-weight: 700;
+  font-size: 1.4rem;
+  margin: 0;
+}
+
+@media (max-width: 768px) {
+  .card h4 { font-size: 1.2rem; }
+  .card h6 { font-size: 0.9rem; }
+}
+
+/* ------------------------------
+   FILTER / SEARCH BAR
+------------------------------ */
+.filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  align-items: center;
+  justify-content: space-between;
+  background: #fff;
+  border: 1px solid #eee;
+  border-radius: 10px;
+  padding: 10px 12px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.05);
+  margin-bottom: 1rem;
+}
+
+.filter-bar input {
+  flex: 1;
+  min-width: 180px;
+  max-width: 400px;
+}
+
+@media (max-width: 768px) {
+  .filter-bar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .filter-bar input,
+  .filter-bar button {
     width: 100%;
-    border-collapse: collapse;
-    border-radius: 8px;
+  }
+}
+
+/* ------------------------------
+   TABLE STYLING
+------------------------------ */
+.table-responsive {
+  width: 100%;
+  max-height: 70vh;
+  overflow-y: auto;
+  border-radius: 10px;
+  background-color: #fff;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+}
+
+#inventoryTable {
+  width: 100%;
+  border-collapse: collapse;
 }
 
 #inventoryTable th,
 #inventoryTable td {
-    vertical-align: middle;
-    text-align: center;
+  text-align: center;
+  vertical-align: middle;
+  padding: 10px 12px;
+  font-size: 15px;
+  white-space: nowrap;
 }
 
-/* Sticky Header */
+/* Sticky header */
 #inventoryTable thead.sticky-top {
-    position: sticky;
-    top: 0;
-    z-index: 5;
-    background-color: #343a40 !important;
-    color: #fff !important;
+  position: sticky;
+  top: 0;
+  background: linear-gradient(90deg, #f7931e, #ffb347);
+  color: #fff;
+  z-index: 5;
 }
 
-#inventoryTable th {
-    background: linear-gradient(90deg, #f7931e, #ffb347) !important;
-}
-
-/* Hover Effect (rows not changed) */
-/* Hover Effect (only for rows NOT marked as changed) */
-/* Hover for normal rows */
+/* Row effects */
 #inventoryTable tbody tr:not(.changed):hover td {
-    background-color: #a0d2ff !important; /* bright blue for testing */
-    cursor: pointer;
-    transition: background-color 0.2s;
+  background-color: #e9f5ff !important;
+  cursor: pointer;
+  transition: background-color 0.2s;
 }
 
-/* Changed rows */
 #inventoryTable tbody tr.changed td {
-    background-color: #fff3cd !important; /* light yellow highlight */
-    transition: background-color 0.2s;
+  background-color: #fff3cd !important;
+  transition: background-color 0.2s;
 }
-
-/* Hover for changed rows */
 #inventoryTable tbody tr.changed:hover td {
-    background-color: #ffe8a1 !important; /* slightly darker yellow */
-    cursor: pointer;
+  background-color: #ffe8a1 !important;
 }
 
-/* Inputs inside rows */
+/* Table input fields */
 #inventoryTable tbody tr input {
-    background-color: transparent;
-    border: none;
-    text-align: center;
-    width: 70px;
-    margin: 0 auto;
+  background: transparent;
+  border: none;
+  text-align: center;
+  width: 70px;
+  margin: 0 auto;
 }
 
-/* Status Badges */
-#inventoryTable .badge {
+/* ------------------------------
+   STATUS BADGES
+------------------------------ */
+.badge.status-badge {
+  padding: 5px 9px;
+  border-radius: 6px;
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.status-over    { background-color: #d9534f; color: #fff; }
+.status-under   { background-color: #f0ad4e; color: #fff; }
+.status-complete{ background-color: #5cb85c; color: #fff; }
+.status-pending { background-color: #6c757d; color: #fff; }
+
+/* ------------------------------
+   BUTTONS
+------------------------------ */
+.btn-success {
+  background-color: #28a745;
+  border: none;
+}
+.btn-primary {
+  background-color: #007bff;
+  border: none;
+}
+.btn:hover {
+  opacity: 0.9;
+  transform: translateY(-1px);
+}
+
+/* ------------------------------
+   RESPONSIVENESS
+------------------------------ */
+@media (max-width: 992px) {
+  #inventoryTable th,
+  #inventoryTable td {
     font-size: 0.9rem;
-    padding: 0.4em 0.6em;
-    transition: all 0.2s;
+    padding: 6px;
+  }
 }
-
-.badge.status-badge { padding: 4px 8px; border-radius: 6px; font-weight: 600; }
-.status-over    { background-color: #d9534f; color: #fff; }  /* Overstock */
-.status-under   { background-color: #f0ad4e; color: #fff; }  /* Understock */
-.status-complete{ background-color: #5cb85c; color: #fff; }  /* Complete */
-.status-pending { background-color: #6c757d; color: #fff; }  /* Pending */
-tr.changed { background: #fff9e6; } /* soft highlight for edited rows */
+@media (max-width: 768px) {
+  #inventoryTable th,
+  #inventoryTable td {
+    font-size: 0.85rem;
+    padding: 5px;
+  }
+  .table-responsive { max-height: 60vh; }
+}
+@media (max-width: 576px) {
+  #inventoryTable { font-size: 0.8rem; }
+  .btn, .form-control { font-size: 0.8rem; }
+}

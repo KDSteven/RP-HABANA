@@ -1,54 +1,79 @@
-/* archive.css */
+/* ============================
+   Archive Page Styling
+============================ */
 
-/* Container & content */
+/* Page container */
 .content {
     flex: 1;
     padding: 30px;
-    background: #f9fafb;
+    background: #f8f9fc;
     font-family: 'Segoe UI', Tahoma, sans-serif;
     color: #333;
 }
 
-/* Card styling */
+/* ============================
+   Cards
+============================ */
 .card {
-    background: #fff;
-    border-radius: 12px;
-    padding: 20px;
-    margin-bottom: 25px;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+    background: #ffffff;
+    border-radius: 14px;
+    padding: 22px;
+    margin-bottom: 30px;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.08);
+    border: none;
 }
 
 .card h2 {
-    margin-bottom: 15px;
-    font-size: 18px;
-    font-weight: 600;
+    font-size: 20px;
+    font-weight: 700;
     color: #333;
+    margin-bottom: 18px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
 }
 
-/* Scrollable table container */
+/* ============================
+   Table Containers
+============================ */
 .table-container {
     max-height: 400px;
     overflow-y: auto;
     overflow-x: auto;
-    border-radius: 12px;
-    border: 1px solid #eee;
+    border-radius: 14px;
+    border: 1px solid #e5e7eb;
     background: #fff;
 }
 
+/* Make Bootstrap tables match your custom tables */
+.table,
+.table-striped,
+.table-dark {
+    border-radius: 14px !important;
+    overflow: hidden;
+}
+
+.table th,
+.table td {
+    font-size: 14px;
+    vertical-align: middle !important;
+}
+
+/* Custom table styling */
 .table-container table {
     width: 100%;
     border-collapse: separate;
     border-spacing: 0;
-    font-size: 14px;
 }
 
-.table-container th, .table-container td {
+.table-container th,
+.table-container td {
     padding: 12px 15px;
     border-bottom: 1px solid #eee;
     text-align: left;
 }
 
-/* Sticky header */
+/* Sticky header for scrollable tables */
 .table-container th {
     background: linear-gradient(135deg, #f7931e, #ffb84d);
     color: white;
@@ -58,51 +83,59 @@
     z-index: 10;
 }
 
-/* Buttons */
-.btn-restore {
-    background: #28a745;
-    color: #fff;
-    border: none;
-    padding: 6px 12px;
-    border-radius: 8px;
-    cursor: pointer;
-    font-weight: 500;
-    transition: transform 0.2s, box-shadow 0.2s;
+/* Match Bootstrap dark table headers with the same color theme */
+.table-dark th {
+    background: linear-gradient(135deg, #f7931e, #ffb84d) !important;
+    color: #fff !important;
+    border-color: transparent !important;
 }
 
-.btn-restore:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+/* ============================
+   Buttons
+============================ */
+.btn-restore,
+.btn-delete {
+    padding: 6px 12px;
+    border-radius: 8px;
+    font-weight: 500;
+    border: none;
+    cursor: pointer;
+    transition: 0.2s ease;
+}
+
+.btn-restore {
+    background: #28a745;
+    color: white;
 }
 
 .btn-delete {
     background: #dc3545;
-    color: #fff;
-    border: none;
-    padding: 6px 12px;
-    border-radius: 8px;
-    cursor: pointer;
-    font-weight: 500;
-    transition: transform 0.2s, box-shadow 0.2s;
-    margin-left: 5px;
+    color: white;
+    margin-left: 6px;
 }
 
+.btn-restore:hover,
 .btn-delete:hover {
     transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    box-shadow: 0 3px 10px rgba(0,0,0,0.18);
 }
 
-/* Empty message */
+/* ============================
+   Empty Message
+============================ */
 .empty-msg {
     font-style: italic;
-    color: #888;
-    padding: 15px 0;
+    color: #777;
+    padding: 18px 0;
     text-align: center;
 }
 
-/* Scrollbar styling */
+/* ============================
+   Scrollbar
+============================ */
 .table-container::-webkit-scrollbar {
     width: 8px;
+    height: 8px;
 }
 
 .table-container::-webkit-scrollbar-track {
@@ -111,18 +144,21 @@
 }
 
 .table-container::-webkit-scrollbar-thumb {
-    background: #ccc;
+    background: #cfcfcf;
     border-radius: 8px;
 }
 
 .table-container::-webkit-scrollbar-thumb:hover {
-    background: #999;
+    background: #a9a9a9;
 }
 
+/* ============================
+   Modal Buttons (Fix Hover Bug)
+============================ */
 .modal-footer button:hover,
 .modal-footer button:focus,
 .modal-footer button:active {
-  color: white !important;   /* keep text white */
-  transform: translateY(-2px);
-  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+    color: white !important;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
 }

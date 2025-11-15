@@ -9,7 +9,8 @@ if (!isset($_SESSION['user_id'])) {
     header('Location: index.html');
     exit;
 }
-
+error_reporting(E_ALL);
+ini_set('display_errors', 1);
 
 $user_id = $_SESSION['user_id'];
 $role = $_SESSION['role'];
@@ -21,7 +22,6 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && ($_POST['op']??'')==='add_stock') {
   require __DIR__.'/add_stock.php';
   exit;
 }
-
 
 $pendingTransfers = 0;
 if ($role === 'admin') {
@@ -43,7 +43,6 @@ if ($role === 'admin') {
 
 $pendingTotalInventory = $pendingTransfers + $pendingStockIns;
 
-
 // Handle current branch selection (from query string or session)
 if (isset($_GET['branch'])) {
     $current_branch_id = intval($_GET['branch']);
@@ -52,7 +51,12 @@ if (isset($_GET['branch'])) {
     $current_branch_id = $_SESSION['current_branch_id'] ?? $branch_id;
 }
 // Get filters
-$branchId = $_GET['branch_id'] ?? null;
+$current_branch_id = isset($_GET['branch'])
+    ? (int)$_GET['branch']
+    : ($_SESSION['current_branch_id'] ?? ($branch_id ?? 0));
+
+$_SESSION['current_branch_id'] = $current_branch_id;
+
 $search   = $_GET['search'] ?? '';
 $category = $_GET['category'] ?? '';
 
@@ -63,43 +67,36 @@ $sql = "
          IFNULL(i.stock, 0) AS stock, i.branch_id
   FROM products p
   LEFT JOIN inventory i 
-    ON p.product_id = i.product_id 
+    ON p.product_id = i.product_id
 ";
 
 $params = [];
-$types  = [];
+$types  = '';
 $conditions = ["i.archived = 0"];
 
-// Role-based branch filtering
-if ($role === 'staff') {
-    // Staff always locked to their branch
+// ✅ Branch filtering — the key fix
+if ($role === 'staff' && $branch_id) {
     $conditions[] = "i.branch_id = ?";
-    $params[] = $branch_id; // staff’s session branch_id
-    $types[] = "i";
-} elseif (!empty($branchId)) {
-    // Admin clicked a branch in dropdown/filter
-    $conditions[] = "i.branch_id = ?";
-    $params[] = $branchId;
-    $types[] = "i";
-} elseif (!empty($current_branch_id)) {
-    // fallback to current branch (like when admin dashboard sets one)
+    $params[] = $branch_id;
+    $types .= "i";
+} elseif ($current_branch_id) {
     $conditions[] = "i.branch_id = ?";
     $params[] = $current_branch_id;
-    $types[] = "i";
+    $types .= "i";
 }
 
 // Category filter
 if (!empty($category)) {
     $conditions[] = "p.category = ?";
     $params[] = $category;
-    $types[] = "s";
+    $types .= "s";
 }
 
 // Search filter
 if (!empty($search)) {
     $conditions[] = "p.product_name LIKE ?";
     $params[] = "%$search%";
-    $types[] = "s";
+    $types .= "s";
 }
 
 // Finalize query
@@ -109,13 +106,13 @@ if ($conditions) {
 
 $stmt = $conn->prepare($sql);
 
-// Bind params only if not empty
 if (!empty($params)) {
-    $stmt->bind_param(implode("", $types), ...$params);
+    $stmt->bind_param($types, ...$params);
 }
 
 $stmt->execute();
 $result = $stmt->get_result();
+
 
 // Fetch branches
 if ($role === 'staff') {
@@ -582,22 +579,26 @@ if ($flag || $flash) {
 
 <!DOCTYPE html>
 <html lang="en">
-<head>
+<head> 
+  <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <?php $pageTitle = 'Inventory'; ?>
 <title><?= htmlspecialchars("RP Habana — $pageTitle") ?></title>
 <link rel="icon" href="img/R.P.png">
+
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" >
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
  <link rel="stylesheet" href="css/sidebar.css">
   <link rel="stylesheet" href="css/notifications.css">
-  <link rel="stylesheet" href="css/inventory.css?>=v2">
-<audio id="notifSound" src="notif.mp3" preload="auto"></audio>
+  <link rel="stylesheet" href="css/inventory.css?v=2">
+
 
 
 </head>
 <body class="inventory-page">
+  <audio id="notifSound" src="notif.mp3" preload="auto"></audio>
+  <script> console.log("🔥 TEST SCRIPT RUNNING"); </script>
 <!-- Sidebar -->
 <div class="sidebar" id="mainSidebar">
   <!-- Toggle button always visible on the rail -->
@@ -816,86 +817,100 @@ $toolsOpen = ($self === 'backup_admin.php' || $isArchive);
     <?php if ($result->num_rows > 0): ?>
       <div class="table-container">
 
-        <!-- Header Table -->
-        <table class="table table-header">
-          <thead>
-            <tr>
-              <th>PRODUCT ID</th>
-              <th>PRODUCT</th>
-              <th>CATEGORY</th>
-              <th>PRICE</th>
-              <th>MARKUP (%)</th>
-              <th>RETAIL PRICE</th>
-              <th>CEILING POINT</th>
-              <th>CRITICAL POINT</th>
-              <th>STOCKS</th>
-              <th>ACTION</th>
-            </tr>
-          </thead>
-        </table>
+        <div class="table-wrap">
+  <table class="inventory-table">
+    <!-- Optional: control widths per column -->
+    <colgroup>
+      <col style="width: 160px">      <!-- PRODUCT ID -->
+      <col style="min-width: 220px">  <!-- PRODUCT -->
+      <col style="min-width: 160px">  <!-- CATEGORY -->
+      <col style="min-width: 120px">  <!-- PRICE -->
+      <col style="min-width: 120px">  <!-- MARKUP (%) -->
+      <col style="min-width: 140px">  <!-- RETAIL PRICE -->
+      <col style="min-width: 140px">  <!-- CEILING POINT -->
+      <col style="min-width: 140px">  <!-- CRITICAL POINT -->
+      <col style="min-width: 120px">  <!-- STOCKS -->
+      <col style="min-width: 180px">  <!-- ACTION -->
+    </colgroup>
 
-        <!-- Scrollable Body -->
-        <div class="table-body scrollable-list">
-          <table class="table table-body-table">
-            <tbody>
-              <?php while ($row = $result->fetch_assoc()): ?>
-                <?php
-                  $inventory_id = $row['inventory_id'] ?? 0;
-                  $isCritical = ($row['stock'] <= $row['critical_point']);
-                  $rowClass = $isCritical ? 'table-danger' : 'table-success';
-                  $retailPrice = $row['price'] + ($row['price'] * ($row['markup_price'] / 100));
-                ?>
-                <tr class="<?= $rowClass ?>">
-                  <td><?= $row['product_id'] ?></td>
-                  <td><?= htmlspecialchars($row['product_name']) ?></td>
-                  <td><?= htmlspecialchars($row['category']) ?></td>
-                  <td><?= number_format($row['price'], 2) ?></td>
-                  <td><?= number_format($row['markup_price'], 2) ?>%</td>
-                  <td><?= number_format($retailPrice, 2) ?></td>
-                  <td><?= $row['ceiling_point'] ?></td>
-                  <td><?= $row['critical_point'] ?></td>
-                  <td><?= $row['stock'] ?></td>
-                  <td class="text-center">
-                    <div class="action-buttons">
-                      <button onclick='openEditModal(
-                        <?= json_encode($row["product_id"]) ?>,
-                        <?= json_encode($row["product_name"]) ?>,
-                        <?= json_encode($row["category"]) ?>,
-                        <?= json_encode($row["price"]) ?>,
-                        <?= json_encode($row["stock"]) ?>,
-                        <?= json_encode($row["markup_price"]) ?>,
-                        <?= json_encode($row["ceiling_point"]) ?>,
-                        <?= json_encode($row["critical_point"]) ?>,
-                        <?= json_encode($row["branch_id"] ?? null) ?>
-                      )' class="btn-edit">
-                        <i class="fas fa-edit"></i>
-                      </button>
-                      <!-- Archive Products -->
-                      <?php if ($inventory_id): ?>
-                        <form id="archiveForm-<?= $inventory_id ?>" method="POST" style="display:inline-block;">
-                          <input type="hidden" name="inventory_id" value="<?= $inventory_id ?>">
-                            <input type="hidden" name="archive_product" value="1">
-                          <button
-                            type="button"
-                            name="archive_product"
-                            class="btn-archive-unique"
-                            data-archive-type="product"
-                            data-archive-name="<?= htmlspecialchars($row['product_name']) ?>"
-                          >
-                            <i class="fas fa-archive"></i>
-                          </button>
-                        </form>
+    <thead>
+      <tr>
+        <th>PRODUCT ID</th>
+        <th>PRODUCT</th>
+        <th>CATEGORY</th>
+        <th>PRICE</th>
+        <th>MARKUP (%)</th>
+        <th>RETAIL PRICE</th>
+        <th>CEILING POINT</th>
+        <th>CRITICAL POINT</th>
+        <th>STOCKS</th>
+        <th class="actions-col">ACTION</th>
+      </tr>
+    </thead>
 
-                      <?php else: ?>
-                        <span class="text-muted">No Inventory</span>
-                      <?php endif; ?>
-                    </div>
-                  </td>
-                </tr>
-              <?php endwhile; ?>
-            </tbody>
-          </table>
-        </div>
+    <tbody>
+      <?php while ($row = $result->fetch_assoc()): ?>
+        <?php
+          $inventory_id = $row['inventory_id'] ?? 0;
+          $isCritical   = ($row['stock'] <= $row['critical_point']);
+          $rowClass     = $isCritical ? 'table-danger' : 'table-success';
+          $retailPrice  = $row['price'] + ($row['price'] * ($row['markup_price'] / 100));
+        ?>
+        <tr class="<?= $rowClass ?>">
+          <td><?= $row['product_id'] ?></td>
+          <td><?= htmlspecialchars($row['product_name']) ?></td>
+          <td><?= htmlspecialchars($row['category']) ?></td>
+          <td><?= number_format($row['price'], 2) ?></td>
+          <td><?= number_format($row['markup_price'], 2) ?>%</td>
+          <td><?= number_format($retailPrice, 2) ?></td>
+          <td><?= (int)$row['ceiling_point'] ?></td>
+          <td><?= (int)$row['critical_point'] ?></td>
+          <td><?= (int)$row['stock'] ?></td>
+          <td class="text-center">
+            <div class="action-buttons">
+              <button
+                type="button"
+                class="btn-edit"
+                onclick='openEditModal(
+                  <?= json_encode($row["product_id"]) ?>,
+                  <?= json_encode($row["product_name"]) ?>,
+                  <?= json_encode($row["category"]) ?>,
+                  <?= json_encode($row["price"]) ?>,
+                  <?= json_encode($row["stock"]) ?>,
+                  <?= json_encode($row["markup_price"]) ?>,
+                  <?= json_encode($row["ceiling_point"]) ?>,
+                  <?= json_encode($row["critical_point"]) ?>,
+                  <?= json_encode($row["branch_id"] ?? null) ?>
+                )'>
+                <i class="fas fa-edit" aria-hidden="true"></i>
+                <span class="txt">Edit</span>
+              </button>
+
+              <?php if ($inventory_id): ?>
+                <form id="archiveForm-<?= $inventory_id ?>" method="POST" style="display:inline-block;">
+                  <input type="hidden" name="inventory_id" value="<?= $inventory_id ?>">
+                  <input type="hidden" name="archive_product" value="1">
+                  <button
+                    type="button"
+                    class="btn-archive-unique"
+                    data-archive-type="product"
+                    data-archive-name="<?= htmlspecialchars($row['product_name']) ?>"
+                  >
+                    <i class="fas fa-archive" aria-hidden="true"></i>
+                    <span class="txt">Archive</span>
+                  </button>
+                </form>
+              <?php else: ?>
+                <span class="text-muted">No Inventory</span>
+              <?php endif; ?>
+            </div>
+          </td>
+        </tr>
+      <?php endwhile; ?>
+    </tbody>
+  </table>
+</div>
+
 
       </div>
     <?php else: ?>
@@ -1066,21 +1081,29 @@ $toolsOpen = ($self === 'backup_admin.php' || $isArchive);
 
         <div class="modal-body">
           <div class="row g-3">
-            <!-- Brand -->
-            <div class="col-md-6">
-              <label for="brand" class="form-label">Brand</label>
-              <select class="form-select" id="brand" name="brand_name" required>
-                <option value="">-- Select Brand --</option>
-                <?php while($brand = $brand_result->fetch_assoc()): ?>
-                  <option value="<?= htmlspecialchars($brand['brand_name']) ?>">
-                    <?= htmlspecialchars($brand['brand_name']) ?>
-                  </option>
-                <?php endwhile; ?>
-              </select>
-              <button type="button" class="btn btn-link p-0 mt-1" data-bs-toggle="modal" data-bs-target="#addBrandModal">
-                + Add New Brand
-              </button>
-            </div>
+          <!-- Brand -->
+<div class="row g-3">
+  <!-- BRAND -->
+  <div class="col-md-6">
+    <label for="brand" class="form-label">Brand</label>
+    <div class="field-inline d-flex gap-2">
+      <select class="form-select" id="brand" name="brand_id" required>
+        <?php
+          $brands = $conn->query("SELECT brand_id, brand_name FROM brands WHERE active=1 ORDER BY brand_name");
+          echo '<option value="">-- Select Brand --</option>';
+          while ($b = $brands->fetch_assoc()) {
+            echo "<option value='{$b['brand_id']}'>".htmlspecialchars($b['brand_name'])."</option>";
+          }
+        ?>
+      </select>
+      <?php if ($role === 'admin'): ?>
+        <button type="button" class="btn btn-outline-danger btn-manage"
+                data-bs-toggle="modal" data-bs-target="#manageBrandModal">
+          Manage
+        </button>
+      <?php endif; ?>
+    </div>
+  </div>
 
             <!-- Barcode -->
             <div class="col-md-6">
@@ -1096,24 +1119,28 @@ $toolsOpen = ($self === 'backup_admin.php' || $isArchive);
               <input type="text" class="form-control" id="productName" name="product_name" required>
             </div>
 
-            <!-- Category -->
-            <div class="col-md-6">
-              <label for="category" class="form-label">Category</label>
-              <select class="form-select" id="category" name="category_id" required>
-                <option value="">-- Select Category --</option>
-                <?php 
-                  $category_result = $conn->query("SELECT category_id, category_name FROM categories ORDER BY category_name ASC");
-                  while($category = $category_result->fetch_assoc()): 
-                ?>
-                  <option value="<?= $category['category_id'] ?>">
-                    <?= htmlspecialchars($category['category_name']) ?>
-                  </option>
-                <?php endwhile; ?>
-              </select>
-              <button type="button" class="btn btn-link p-0 mt-1" data-bs-toggle="modal" data-bs-target="#addCategoryModal">
-                + Add New Category
-              </button>
-            </div>
+        <!-- CATEGORY -->
+  <div class="col-md-6">
+    <label for="category" class="form-label">Category</label>
+    <div class="field-inline d-flex gap-2">
+      <select class="form-select" id="category" name="category_id" required>
+        <?php
+          $categories = $conn->query("SELECT category_id, category_name FROM categories WHERE active=1 ORDER BY category_name");
+          echo '<option value="">-- Select Category --</option>';
+          while ($c = $categories->fetch_assoc()) {
+            echo "<option value='{$c['category_id']}'>".htmlspecialchars($c['category_name'])."</option>";
+          }
+        ?>
+      </select>
+      <?php if ($role === 'admin'): ?>
+        <button type="button" class="btn btn-outline-danger btn-manage"
+                data-bs-toggle="modal" data-bs-target="#manageCategoryModal">
+          Manage
+        </button>
+      <?php endif; ?>
+    </div>
+  </div>
+</div>
 
             <!-- Price & Markup -->
             <div class="col-md-6">
@@ -1311,8 +1338,6 @@ $toolsOpen = ($self === 'backup_admin.php' || $isArchive);
     </div>
   </div>
 </div>
-
-
 
 <!-- Modal for Deleting Branches -->
 <div class="modal" id="deleteSelectionModal" style="display: none;">
@@ -1681,6 +1706,132 @@ $toolsOpen = ($self === 'backup_admin.php' || $isArchive);
       </div>
     </div>
   </div>
+</div><div class="modal fade" id="manageBrandModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header bg-danger text-white">
+        <h5 class="modal-title"><i class="fa-solid fa-tags me-2"></i>Manage Brands</h5>
+        <button class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+
+      <div class="modal-body">
+        <!-- Create new brand -->
+        <div class="card mb-3">
+          <div class="card-body">
+            <form id="brandCreateForm" class="d-flex gap-2">
+              <input type="text" name="brand_name" class="form-control" placeholder="New brand name" required>
+              <button class="btn btn-success" type="submit">Add</button>
+            </form>
+          </div>
+        </div>
+
+        <!-- pick brand -->
+        <div class="mb-3">
+          <label class="form-label">Existing Brand</label>
+          <select id="mb_brand" class="form-select">
+            <?php
+              $b1 = $conn->query("SELECT brand_id, brand_name FROM brands WHERE active=1 ORDER BY brand_name");
+              while ($b = $b1->fetch_assoc()):
+            ?>
+              <option value="<?= $b['brand_id'] ?>"><?= htmlspecialchars($b['brand_name']) ?></option>
+            <?php endwhile; ?>
+          </select>
+        </div>
+
+        <!-- action -->
+        <div class="mb-3">
+          <label class="form-label">Action</label>
+          <select id="mb_mode" class="form-select">
+            <option value="deactivate">Deactivate (archive)</option>
+            <option value="restrict">Hard delete (only if unused)</option>
+            <option value="reassign">Reassign all products then delete</option>
+          </select>
+          <div class="form-text">Tip: Deactivate hides it from new entries but keeps history.</div>
+        </div>
+
+        <!-- reassign target -->
+        <div id="mb_reassign_wrap" class="mb-3 d-none">
+          <label class="form-label">Reassign to</label>
+          <select id="mb_reassign_to" class="form-select">
+            <?php
+              $b2 = $conn->query("SELECT brand_id, brand_name FROM brands WHERE active=1 ORDER BY brand_name");
+              while ($b = $b2->fetch_assoc()):
+            ?>
+              <option value="<?= $b['brand_id'] ?>"><?= htmlspecialchars($b['brand_name']) ?></option>
+            <?php endwhile; ?>
+          </select>
+          <div class="form-text">All products under the selected brand will be moved here before deletion.</div>
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button id="mb_submit" class="btn btn-danger">Proceed</button>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="modal fade" id="manageCategoryModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header bg-danger text-white">
+        <h5 class="modal-title"><i class="fa-solid fa-folder-tree me-2"></i>Manage Categories</h5>
+        <button class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+
+      <div class="modal-body">
+        <!-- Create new category -->
+        <div class="card mb-3">
+          <div class="card-body">
+            <form id="categoryCreateForm" class="d-flex gap-2">
+              <input type="text" name="category_name" class="form-control" placeholder="New category name" required>
+              <button class="btn btn-success" type="submit">Add</button>
+            </form>
+          </div>
+        </div>
+
+        <!-- pick category -->
+        <div class="mb-3">
+          <label class="form-label">Existing Category</label>
+          <select id="mc_category" class="form-select">
+            <?php
+              $c1 = $conn->query("SELECT category_id, category_name FROM categories WHERE active=1 ORDER BY category_name");
+              while ($c = $c1->fetch_assoc()):
+            ?>
+              <option value="<?= $c['category_id'] ?>"><?= htmlspecialchars($c['category_name']) ?></option>
+            <?php endwhile; ?>
+          </select>
+        </div>
+
+        <!-- action -->
+        <div class="mb-3">
+          <label class="form-label">Action</label>
+          <select id="mc_mode" class="form-select">
+            <option value="deactivate">Deactivate (archive)</option>
+            <option value="restrict">Hard delete (only if unused)</option>
+            <option value="reassign">Reassign all products then delete</option>
+          </select>
+        </div>
+
+        <!-- reassign target -->
+        <div id="mc_reassign_wrap" class="mb-3 d-none">
+          <label class="form-label">Reassign to</label>
+          <select id="mc_reassign_to" class="form-select">
+            <?php
+              $c2 = $conn->query("SELECT category_id, category_name FROM categories WHERE active=1 ORDER BY category_name");
+              while ($c = $c2->fetch_assoc()):
+            ?>
+              <option value="<?= $c['category_id'] ?>"><?= htmlspecialchars($c['category_name']) ?></option>
+            <?php endwhile; ?>
+          </select>
+          <div class="form-text">All products under the selected category will be moved here before deletion.</div>
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button id="mc_submit" class="btn btn-danger">Proceed</button>
+      </div>
+    </div>
+  </div>
 </div>
 
 <!-- Toast container -->
@@ -1750,7 +1901,7 @@ $toolsOpen = ($self === 'backup_admin.php' || $isArchive);
   </div>
 </div>
 
-
+<script> console.log("🔥 TEST SCRIPT RUNNING 1"); </script>
 <script>
 document.addEventListener("DOMContentLoaded", function () {
   function setupConfirm(openBtnId, formId, sectionId, messageId, cancelBtnId, label) {
@@ -1785,8 +1936,8 @@ document.addEventListener("DOMContentLoaded", function () {
 });
 
 </script>
-
-<script>
+<script> console.log("🔥 TEST SCRIPT RUNNING2"); </script>
+<!-- <script>
 function openAddProductModal() {
   document.getElementById('addProductModal').style.display = 'flex';
 }
@@ -1795,13 +1946,12 @@ function closeAddProductModal() {
   document.getElementById('addProductModal').style.display = 'none';
 }
 
-// Optional: Click outside to close
 window.onclick = function(event) {
   const modal = document.getElementById('addProductModal');
   if (event.target === modal) modal.style.display = "none";
 }
 
-</script>
+</script> -->
 
 <script>
 document.addEventListener('DOMContentLoaded', function () {
@@ -2321,7 +2471,6 @@ document.addEventListener("DOMContentLoaded", function() {
   });
 });
 
-
 </script>
 <!-- dropdown script -->
 <script>
@@ -2548,7 +2697,7 @@ document.addEventListener("DOMContentLoaded", () => {
       history.replaceState({}, '', url.pathname + (url.searchParams.toString() ? '?' + url.searchParams.toString() : ''));
     }
   });
-</script>v
+</script>
 
 <!-- Toast Message for Add Stocks -->
 <script>
@@ -2662,10 +2811,227 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 });
 </script>
+<script>
+(function(){
+
+  /* =============================================================
+     SHOW / HIDE REASSIGN AREA
+  ============================================================= */
+  function wireReassignToggle(modeSelId, wrapId){
+    const sel  = document.getElementById(modeSelId);
+    const wrap = document.getElementById(wrapId);
+    if (!sel || !wrap) return;
+    const sync = () => wrap.classList.toggle('d-none', sel.value !== 'reassign');
+    sel.addEventListener('change', sync);
+    sync();
+  }
+
+  wireReassignToggle('mb_mode', 'mb_reassign_wrap');
+  wireReassignToggle('mc_mode', 'mc_reassign_wrap');
+
+
+  /* =============================================================
+     UNIVERSAL POST JSON (with full error debugging)
+  ============================================================= */
+  async function postJSON(url, data){
+    try {
+      const r = await fetch(url, {
+        method:'POST',
+        headers:{ 'Content-Type':'application/json' },
+        body: JSON.stringify(data)
+      });
+
+      // Get raw text first (can contain warnings/notices)
+      const txt = await r.text();
+
+      try {
+        return JSON.parse(txt);
+      } catch (jsonError) {
+        console.error("⚠ Backend returned invalid JSON:", txt);
+        return { ok:false, error: txt };
+      }
+
+    } catch(e) {
+      console.error("⚠ Fetch error:", e);
+      return { ok:false, error: e.message };
+    }
+  }
+
+
+
+  /* =============================================================
+      BRAND CREATE
+  ============================================================= */
+  const brandCreateForm = document.getElementById('brandCreateForm');
+  if (brandCreateForm){
+    brandCreateForm.addEventListener('submit', async (e)=>{
+      e.preventDefault();
+
+      const name = brandCreateForm.brand_name.value.trim();
+      if (!name) return;
+
+      const res = await postJSON('brand_action.php', {
+        action:'create',
+        brand_name:name
+      });
+
+      if (res.ok){
+        location.reload();
+      } else {
+        alert(res.error || 'Failed to add brand.');
+      }
+    });
+  }
+
+
+
+  /* =============================================================
+      BRAND PROCEED (archive, delete, reassign)
+  ============================================================= */
+  const mb_submit = document.getElementById('mb_submit');
+  if (mb_submit){
+    mb_submit.addEventListener('click', async ()=>{
+
+      const brand_id = document.getElementById('mb_brand').value;
+      const mode     = document.getElementById('mb_mode').value;
+      const reassTo  = (mode === 'reassign')
+                        ? document.getElementById('mb_reassign_to').value
+                        : null;
+
+      /* Prevent archiving when brand is used */
+      if (mode === 'deactivate') {
+          const resU = await fetch(`check_usage.php?mode=brand&id=${brand_id}`);
+          const d    = await resU.json();
+
+          if (d.ok && d.count > 0){
+            alert(`⚠️ Cannot deactivate this brand.\n${d.count} product(s) use it.`);
+            return;
+          }
+      }
+
+      const res = await postJSON('brand_action.php', {
+        action:mode,
+        brand_id,
+        reassign_to:reassTo
+      });
+
+      if (res.ok){
+        location.reload();
+      } else {
+        alert(res.error || 'Operation failed.');
+      }
+    });
+  }
+
+
+
+  /* =============================================================
+      CATEGORY CREATE
+  ============================================================= */
+  const categoryCreateForm = document.getElementById('categoryCreateForm');
+  if (categoryCreateForm){
+    categoryCreateForm.addEventListener('submit', async (e)=>{
+      e.preventDefault();
+
+      const name = categoryCreateForm.category_name.value.trim();
+      if (!name) return;
+
+      const res = await postJSON('category_action.php', {
+        action:'create',
+        category_name:name
+      });
+
+      if (res.ok){
+        location.reload();
+      } else {
+        alert(res.error || 'Failed to add category.');
+      }
+    });
+  }
+
+
+
+  /* =============================================================
+      CATEGORY PROCEED (archive, delete, reassign)
+  ============================================================= */
+  const mc_submit = document.getElementById('mc_submit');
+  if (mc_submit){
+    mc_submit.addEventListener('click', async ()=>{
+
+      const category_id = document.getElementById('mc_category').value;
+      const mode        = document.getElementById('mc_mode').value;
+      const reassTo     = (mode === 'reassign')
+                          ? document.getElementById('mc_reassign_to').value
+                          : null;
+
+      /* Prevent archiving category when used */
+      if (mode === 'deactivate') {
+          const resU = await fetch(`check_usage.php?mode=category&id=${category_id}`);
+          const d    = await resU.json();
+
+          if (d.ok && d.count > 0){
+            alert(`⚠️ Cannot deactivate this category.\n${d.count} product(s) use it.`);
+            return;
+          }
+      }
+
+      const res = await postJSON('category_action.php', {
+        action:mode,
+        category_id,
+        reassign_to:reassTo
+      });
+
+      if (res.ok){
+        location.reload();
+      } else {
+        alert(res.error || 'Operation failed.');
+      }
+    });
+  }
+
+})();  
+</script>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+  // Detect and restore proper scroll layout after page reload or branch click
+  const content = document.querySelector('.inventory-page .content');
+  if (content) {
+    // Force reset scroll behavior
+    document.documentElement.style.overflowY = 'auto';
+    document.body.style.overflowY = 'auto';
+    content.style.overflowY = 'auto';
+    content.style.minHeight = '100vh';
+    content.style.position = 'relative';
+  }
+
+  // Re-apply layout adjustment when clicking a branch (client side)
+  document.querySelectorAll('.branches.modern-tabs a').forEach(a => {
+    a.addEventListener('click', e => {
+      e.preventDefault();
+      const url = a.getAttribute('href');
+      // Force scroll layout after reload
+      sessionStorage.setItem('forceScrollFix', 'true');
+      window.location.href = url;
+    });
+  });
+
+  // After reload, ensure scroll fix is re-applied
+  if (sessionStorage.getItem('forceScrollFix') === 'true') {
+    sessionStorage.removeItem('forceScrollFix');
+    document.documentElement.style.overflowY = 'auto';
+    document.body.style.overflowY = 'auto';
+    if (content) content.style.overflowY = 'auto';
+  }
+});
+</script>
 
 <!-- Bootstrap 5.3.2 JS -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.2/js/bootstrap.bundle.min.js"
-        referrerpolicy="no-referrer"></script>
+<!-- REQUIRED Bootstrap JS -->
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
 
 <script src="sidebar.js"></script>
 <script src="notifications.js"></script>

@@ -356,3 +356,115 @@ html, body{ overflow-x:hidden; } /* belt & suspenders */
 
 /* Keep the table inside the card if it still overflows on smaller screens */
 .table-responsive{ overflow-x:auto; -webkit-overflow-scrolling:touch; }
+/* =========================
+    SALES HISTORY — RESPONSIVE FIX
+   ========================= */
+
+/* Make the table behave properly on all screens */
+.table-modern {
+  width: 100%;
+  table-layout: auto !important;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+/* Table header: prevent wrapping */
+.table-modern thead th {
+  white-space: nowrap !important;
+  padding: 12px 10px;
+}
+
+/* Default cell behavior: no wrap */
+.table-modern tbody td {
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+/* LONG TEXT columns — allow wrapping */
+.col-remarks,
+.col-refitems {
+  white-space: normal !important;
+  word-break: break-word;
+  min-width: 220px;
+}
+
+/* Ensure action buttons NEVER collapse */
+.col-actions {
+  min-width: 240px;
+  white-space: nowrap !important;
+}
+
+.actions-wrap {
+  display: inline-flex;
+  gap: 6px;
+  flex-wrap: nowrap;
+}
+
+/* Smooth horizontal scroll */
+.table-responsive {
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Prevent the card from clipping the table */
+.card-custom {
+  overflow: visible !important;
+}
+
+/* Fix right-side clipping inside container-fluid */
+.page-content {
+  padding-right: 16px;
+  overflow-x: hidden;
+}
+
+/* =========================
+   TABLET FIX (768px–1024px)
+   ========================= */
+@media (max-width: 1024px) {
+
+  /* Make action buttons wrap nicely */
+  .actions-wrap {
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+
+  .col-actions {
+    min-width: 200px;
+  }
+
+  /* Remarks / refunded text uses more width */
+  .col-remarks,
+  .col-refitems {
+    min-width: 250px;
+  }
+}
+
+/* =========================
+   MOBILE FIX (<768px)
+   ========================= */
+@media (max-width: 768px) {
+
+  .page-header h2 {
+    font-size: 1.3rem;
+  }
+
+  /* Table gets horizontal scroll */
+  .table-responsive {
+    border-radius: 12px;
+    margin-bottom: 12px;
+    padding-bottom: 6px;
+    scrollbar-width: thin;
+  }
+
+  /* Ensure the table fits in mobile viewport */
+  .table-modern {
+    min-width: 900px;
+  }
+
+  /* Allow columns to expand slightly */
+  .col-remarks,
+  .col-refitems {
+    min-width: 260px;
+  }
+}

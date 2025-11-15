@@ -394,7 +394,7 @@ $toolsOpen = ($self === 'backup_admin.php' || $isArchive);
         <?php endif; ?>
     </div>
 
-    <!-- Last Saved Card -->
+    <!-- Last Saved Card -->about-container
     <div class="card shadow-sm p-3 text-center flex-grow-1" style="min-width:180px; background: linear-gradient(135deg, #6c757d, #343a40); color:white;">
         <i class="fas fa-clock me-2"></i>
         <strong>Last Saved:</strong> <?= $lastSaved ?>
@@ -698,5 +698,6 @@ document.addEventListener('DOMContentLoaded', () => {
 </script>
 <script src="sidebar.js"></script>
 <script src="notifications.js"></script>
+
 </body>
 </html>
