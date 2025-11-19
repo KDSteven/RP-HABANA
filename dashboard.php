@@ -195,36 +195,12 @@ $lowStocks     = (int)$row['lowStocks'];
 
 
 
-// Total Sales (sum only within selected period and (optionally) branch) — half-open range
-if ($role === 'staff') {
-    $stmt = $conn->prepare("
-        SELECT IFNULL(SUM(total), 0) AS total_sales
-        FROM sales
-        WHERE branch_id = ? AND sale_date >= ? AND sale_date < ?
-    ");
-    $stmt->bind_param("iss", $branch_id, $salesFrom, $salesTo);
-} else {
-    if (!empty($filterBranch)) {
-        $stmt = $conn->prepare("
-            SELECT IFNULL(SUM(total), 0) AS total_sales
-            FROM sales
-            WHERE branch_id = ? AND sale_date >= ? AND sale_date < ?
-        ");
-        $stmt->bind_param("iss", $filterBranch, $salesFrom, $salesTo);
-    } else {
-        $stmt = $conn->prepare("
-            SELECT IFNULL(SUM(total), 0) AS total_sales
-            FROM sales
-            WHERE sale_date >= ? AND sale_date < ?
-        ");
-        $stmt->bind_param("ss", $salesFrom, $salesTo);
-    }
-}
-
-$stmt->execute();
-$result = $stmt->get_result();
-$totalSales = $result->fetch_assoc()['total_sales'] ?? 0;
-
+$totalSales = getTotalSales(
+    $conn,
+    $salesFrom,
+    $salesTo,
+    (!empty($filterBranch) ? $filterBranch : ($role === 'staff' ? $branch_id : null))
+);
 
 // Fetch fast moving products
 $WINDOW_DAYS = (new DateTime($resolvedStart))->diff(new DateTime($resolvedEnd))->days + 1;
@@ -239,23 +215,37 @@ SELECT p.product_name, SUM(si.quantity) AS total_qty, si.product_id
 FROM sales_items si
 JOIN products p ON si.product_id = p.product_id
 JOIN sales s    ON si.sale_id = s.sale_id
-WHERE s.sale_date >= ? AND s.sale_date < ?
-" . (!empty($filterBranch) ? " AND s.branch_id = ?" : ($role === 'staff' ? " AND s.branch_id = ?" : "")) . "
+WHERE s.sale_date >= ? 
+  AND s.sale_date < ?
+  AND $visibilityWhere
+";
+
+$fastTypes = "ss" . $bindTypes;
+$fastVals  = [$salesFrom, $salesTo, ...$bindVals];
+
+// branch filter
+if ($role === 'staff') {
+    $fastSql .= " AND s.branch_id = ? ";
+    $fastTypes .= "i";
+    $fastVals[] = (int)$branch_id;
+} elseif (!empty($filterBranch)) {
+    $fastSql .= " AND s.branch_id = ? ";
+    $fastTypes .= "i";
+    $fastVals[] = (int)$filterBranch;
+}
+
+$fastSql .= "
 GROUP BY si.product_id
 HAVING SUM(si.quantity) >= ?
 ORDER BY total_qty DESC
 LIMIT 5
 ";
 
-if ($role === 'staff' || !empty($filterBranch)) {
-    $stmt = $conn->prepare($fastSql);
-    $b = ($role === 'staff') ? (int)$branch_id : (int)$filterBranch;
-    $stmt->bind_param("ssii", $salesFrom, $salesTo, $b, $FAST_MIN_QTY);
-} else {
-    $stmt = $conn->prepare($fastSql);
-    $stmt->bind_param("ssi", $salesFrom, $salesTo, $FAST_MIN_QTY);
-}
+$fastTypes .= "i";
+$fastVals[] = $FAST_MIN_QTY;
 
+$stmt = $conn->prepare($fastSql);
+$stmt->bind_param($fastTypes, ...$fastVals);
 $stmt->execute();
 $fastMovingResult = $stmt->get_result();
 
@@ -293,30 +283,32 @@ $slowSql = "
   FROM sales s
   JOIN sales_items si ON si.sale_id = s.sale_id
   JOIN products p     ON p.product_id = si.product_id
-  WHERE s.sale_date >= ? AND s.sale_date < ?
+  WHERE s.sale_date >= ? 
+    AND s.sale_date < ?
+    AND $visibilityWhere
 ";
 
-$slowTypes  = 'ss';
-$slowParams = [$salesFrom, $salesTo];
+$slowTypes  = "ss" . $bindTypes;
+$slowParams = [$salesFrom, $salesTo, ...$bindVals];
 
 if ($role === 'staff') {
   $slowSql .= " AND s.branch_id = ? ";
-  $slowTypes .= 'i';
+  $slowTypes .= "i";
   $slowParams[] = (int)$branch_id;
 } elseif (!empty($filterBranch)) {
   $slowSql .= " AND s.branch_id = ? ";
-  $slowTypes .= 'i';
+  $slowTypes .= "i";
   $slowParams[] = (int)$filterBranch;
 }
 
 $slowSql .= "
-  GROUP BY p.product_id, p.product_name
+  GROUP BY p.product_id
   HAVING SUM(si.quantity) BETWEEN 1 AND ?
   ORDER BY total_qty ASC, p.product_name
   LIMIT 5
 ";
 
-$slowTypes .= 'i';
+$slowTypes .= "i";
 $slowParams[] = $SLOW_MAX_QTY;
 
 $stmt = $conn->prepare($slowSql);
@@ -339,14 +331,22 @@ LEFT JOIN (
     SELECT si.product_id
     FROM sales_items si
     JOIN sales s ON s.sale_id = si.sale_id
-    WHERE s.sale_date >= ? AND s.sale_date < ?
+    WHERE s.sale_date >= ? 
+      AND s.sale_date < ?
 ";
 
-// --- sales branch filter ---
+$nonTypes = "ss";
+$nonVals  = [$salesFrom, $salesTo];
+
+// sales branch
 if ($role === 'staff') {
     $nonSql .= " AND s.branch_id = ? ";
+    $nonTypes .= "i";
+    $nonVals[] = (int)$branch_id;
 } elseif (!empty($filterBranch)) {
     $nonSql .= " AND s.branch_id = ? ";
+    $nonTypes .= "i";
+    $nonVals[] = (int)$filterBranch;
 }
 
 $nonSql .= "
@@ -355,48 +355,27 @@ WHERE $visibilityWhere
   AND sold.product_id IS NULL
 ";
 
-// --- inventory branch filter ---
-if ($role === 'staff') {
-    $nonSql .= " AND i.branch_id = ? ";
-} elseif (!empty($filterBranch)) {
-    $nonSql .= " AND i.branch_id = ? ";
-}
-
-$nonSql .= " ORDER BY p.product_name";
-
-// --------------------
-// Build bindings
-// --------------------
-$nonTypes = "";
-$nonVals  = [];
-
-// always 2 for from/to
-$nonTypes .= "ss";
-$nonVals[] = $salesFrom;
-$nonVals[] = $salesTo;
-
-// optional sales branch
-if ($role === 'staff') {
-    $nonTypes .= "i"; $nonVals[] = (int)$branch_id;
-} elseif (!empty($filterBranch)) {
-    $nonTypes .= "i"; $nonVals[] = (int)$filterBranch;
-}
-
-// visibility binds (created_at / archived_at)
 $nonTypes .= $bindTypes;
 $nonVals   = array_merge($nonVals, $bindVals);
 
-// optional inventory branch
+// inventory branch
 if ($role === 'staff') {
-    $nonTypes .= "i"; $nonVals[] = (int)$branch_id;
+    $nonSql .= " AND i.branch_id = ? ";
+    $nonTypes .= "i";
+    $nonVals[] = (int)$branch_id;
 } elseif (!empty($filterBranch)) {
-    $nonTypes .= "i"; $nonVals[] = (int)$filterBranch;
+    $nonSql .= " AND i.branch_id = ? ";
+    $nonTypes .= "i";
+    $nonVals[] = (int)$filterBranch;
 }
+
+$nonSql .= " ORDER BY p.product_name";
 
 $stmt = $conn->prepare($nonSql);
 $stmt->bind_param($nonTypes, ...$nonVals);
 $stmt->execute();
 $res = $stmt->get_result();
+
 
 $notMovingItems = [];
 if ($res) {
@@ -517,21 +496,37 @@ function getInventoryCount($conn, $asOfDate, $branchId = null, $mode = 'total') 
 }
 
 function getTotalSales($conn, $startDate, $endDate, $branchId = null) {
-    // Normalize inside as well to accept raw Y-m-d inputs
+    // here $startDate and $endDate are just dates: 'YYYY-mm-dd'
     $from = (new DateTime($startDate))->format('Y-m-d 00:00:00');
     $to   = (new DateTime($endDate))->modify('+1 day')->format('Y-m-d 00:00:00');
 
-    $sql = "SELECT IFNULL(SUM(total),0) AS total_sales FROM sales
+    // total column = subtotal; add VAT column to get grand total
+    $sql = "SELECT IFNULL(SUM(total + COALESCE(vat,0)), 0) AS total_sales
+            FROM sales
             WHERE sale_date >= ? AND sale_date < ?";
-    if ($branchId) $sql .= branchCondition($branchId);
+
+    if ($branchId) {
+        $sql .= " AND branch_id = ?";
+    }
 
     $stmt = $conn->prepare($sql);
-    $stmt->bind_param("ss", $from, $to);
+
+    if ($branchId) {
+        $stmt->bind_param("ssi", $from, $to, $branchId);
+    } else {
+        $stmt->bind_param("ss", $from, $to);
+    }
+
     $stmt->execute();
-    $total = $stmt->get_result()->fetch_assoc()['total_sales'] ?? 0;
+    $res   = $stmt->get_result();
+    $row   = $res->fetch_assoc();
+    $total = $row['total_sales'] ?? 0;
     $stmt->close();
+
     return $total;
 }
+
+
 function getFastItemIds($conn, $start, $end, $branchId = null) {
     $sql = "
         SELECT p.product_id
@@ -555,78 +550,125 @@ function getFastItemIds($conn, $start, $end, $branchId = null) {
     return $ids;
 }
 
-function getMovingItems($conn, $start, $end, $branchId = null, $type = 'fast', $limit = 5) {
-    $excludeFastIds = '0';
+function getMovingItems(
+    mysqli $conn, 
+    string $salesFrom, 
+    string $salesTo, 
+    $branchId = null, 
+    string $type = 'fast', 
+    int $limit = 5
+) {
+    global $resolvedStart, $resolvedEnd;
 
-    if ($type === 'slow' || $type === 'notmoving') {
-        $fastIds = getFastItemIds($conn, $start, $end, $branchId);
-        $excludeFastIds = !empty($fastIds) ? implode(',', array_map('intval', $fastIds)) : '0';
+    // --- BASE VISIBILITY ---
+    $visibility = "
+        p.created_at <= ?
+        AND (p.archived_at IS NULL OR p.archived_at > ?)
+    ";
+    $visTypes = "ss";
+    $visVals  = [$resolvedEnd, $resolvedStart];
+
+    // --- OPTIONAL BRANCH FILTER ---
+    $branchClause = "";
+    $branchTypes = "";
+    $branchVals  = [];
+
+    if (!empty($branchId)) {
+        $branchClause = " AND s.branch_id = ? ";
+        $branchTypes  = "i";
+        $branchVals[] = (int)$branchId;
     }
 
-    switch ($type) {
-        case 'fast': 
-            $order = "DESC"; 
-            $having = "HAVING SUM(si.quantity) >= 3"; 
-            break;
-        case 'slow': 
-            $order = "ASC"; 
-            $having = "HAVING SUM(si.quantity) > 0"; 
-            break;
-        case 'notmoving': 
-            $order = "ASC"; 
-            $having = ""; 
-            break;
+    // --- THRESHOLDS ---
+    $FAST_MIN = 6;
+    $SLOW_MAX = 5;
+
+    // --- BASE QUERY ---
+    $sql = "
+        SELECT 
+            p.product_id,
+            p.product_name,
+            COALESCE(SUM(si.quantity), 0) AS total_qty
+        FROM products p
+        LEFT JOIN sales_items si ON si.product_id = p.product_id
+        LEFT JOIN sales s 
+            ON s.sale_id = si.sale_id
+            AND s.sale_date >= ?
+            AND s.sale_date < ?
+            $branchClause
+        WHERE $visibility
+        GROUP BY p.product_id
+    ";
+
+    $types = "ss" . $branchTypes . $visTypes;
+    $vals  = [$salesFrom, $salesTo, ...$branchVals, ...$visVals];
+
+    // --- CATEGORY SPECIFIC CONDITIONS ---
+    if ($type === 'fast') {
+        $sql .= " HAVING total_qty >= $FAST_MIN ";
+    }
+    elseif ($type === 'slow') {
+        $sql .= " HAVING total_qty BETWEEN 1 AND $SLOW_MAX ";
+    }
+    elseif ($type === 'notmoving') {
+        $sql .= " HAVING total_qty = 0 ";
     }
 
-    $notInClause = ($type === 'slow' || $type === 'notmoving')
-        ? " AND p.product_id NOT IN ($excludeFastIds)" : "";
+    $sql .= " ORDER BY total_qty ASC LIMIT $limit";
 
-    if ($type === 'notmoving') {
-        $sql = "
-            SELECT p.product_id, p.product_name, COALESCE(SUM(si.quantity),0) AS total_qty
-            FROM products p
-            LEFT JOIN sales_items si ON si.product_id = p.product_id
-            LEFT JOIN sales s 
-                ON s.sale_id = si.sale_id 
-                AND s.sale_date >= ? AND s.sale_date < ?
-                " . ($branchId ? "AND s.branch_id = ?" : "") . "
-            WHERE 1 $notInClause
-            GROUP BY p.product_id
-            ORDER BY total_qty ASC
-            LIMIT $limit
-        ";
-    } else {
-        $sql = "
-            SELECT p.product_id, p.product_name, COALESCE(SUM(si.quantity),0) AS total_qty
-            FROM products p
-            LEFT JOIN sales_items si ON si.product_id = p.product_id
-            LEFT JOIN sales s ON s.sale_id = si.sale_id
-            WHERE s.sale_date >= ? AND s.sale_date < ? $notInClause
-            " . ($branchId ? "AND s.branch_id = ?" : "") . "
-            GROUP BY p.product_id
-            $having
-            ORDER BY total_qty $order
-            LIMIT $limit
-        ";
-    }
-
+    // --- EXECUTE ---
     $stmt = $conn->prepare($sql);
-    if ($branchId) {
-        $stmt->bind_param("ssi", $start, $end, $branchId);
-    } else {
-        $stmt->bind_param("ss", $start, $end);
-    }
+    $stmt->bind_param($types, ...$vals);
     $stmt->execute();
-    $items = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+    $result = $stmt->get_result();
     $stmt->close();
 
-    return $items;
+    return $result->fetch_all(MYSQLI_ASSOC);
 }
 
+
 // -------------------- DASHBOARD DATA --------------------
-$totalProducts  = getInventoryCount($conn, $asOfDateEnd, $filters['branch_id'], 'total');
-$lowStocks      = getInventoryCount($conn, $asOfDateEnd, $filters['branch_id'], 'low');
-$outOfStocks    = getInventoryCount($conn, $asOfDateEnd, $filters['branch_id'], 'out');
+/* ============================
+   INVENTORY COUNTS (DATE-AWARE)
+   ============================ */
+
+$invSql = "
+  SELECT
+    COUNT(*) AS totalProducts,
+    SUM(CASE WHEN i.stock = 0 THEN 1 ELSE 0 END) AS outOfStocks,
+    SUM(CASE 
+          WHEN i.stock > 0 
+           AND i.stock <= GREATEST(COALESCE(p.critical_point, 0), 0)
+           AND GREATEST(COALESCE(p.critical_point, 0), 0) > 0
+        THEN 1 ELSE 0 END) AS lowStocks
+  FROM inventory i
+  JOIN products p ON p.product_id = i.product_id
+  WHERE $visibilityWhere
+";
+
+$invTypes = $bindTypes;
+$invVals  = $bindVals;
+
+/* Branch filtering */
+if ($role === 'staff' || $role === 'stockman') {
+    $invSql .= " AND i.branch_id = ?";
+    $invTypes .= "i";
+    $invVals[] = (int)$branch_id;
+} elseif (!empty($filterBranch)) {
+    $invSql .= " AND i.branch_id = ?";
+    $invTypes .= "i";
+    $invVals[] = (int)$filterBranch;
+}
+
+$stmt = $conn->prepare($invSql);
+if ($invTypes !== "") { $stmt->bind_param($invTypes, ...$invVals); }
+$stmt->execute();
+$invRow = $stmt->get_result()->fetch_assoc();
+$stmt->close();
+
+$totalProducts = (int)$invRow['totalProducts'];
+$lowStocks     = (int)$invRow['lowStocks'];
+$outOfStocks   = (int)$invRow['outOfStocks'];
 
 $totalSales     = getTotalSales($conn, $resolvedStart, $resolvedEnd, $filters['branch_id']);
 $fastItems      = getMovingItems($conn, $salesFrom, $salesTo, $filters['branch_id'], 'fast', 5);
@@ -838,7 +880,7 @@ $toolsOpen = ($self === 'backup_admin.php' || $isArchive);
 
     <a href="logout.php"><i class="fas fa-sign-out-alt"></i> Logout</a>
 </div>
-  </div>
+ 
 </div>
 
 <div class="content">
@@ -925,10 +967,14 @@ $toolsOpen = ($self === 'backup_admin.php' || $isArchive);
 
 <div class="dashboard-page bottom flex-sections">
     <!-- Fast Moving Items -->
-    <section class="fast-moving">
-        <h2>Fast Moving Items</h2>
-        <div class="scrollable-list">
-            <ul>
+<section class="fast-moving">
+<h2>Fast Moving Items</h2>
+<p class="indicator-sub"> Sold 6 or more units</p>
+    <div class="scrollable-list">
+        <ul>
+            <?php if (empty($fastItems)): ?>
+                <li>No items found.</li>
+            <?php else: ?>
                 <?php 
                 $maxQty = max(array_column($fastItems, 'total_qty') ?: [0]);
                 foreach ($fastItems as $item):
@@ -936,23 +982,28 @@ $toolsOpen = ($self === 'backup_admin.php' || $isArchive);
                 ?>
                 <li class="item-card">
                     <div class="item-row">
-                        <span class="item-name"><?= htmlspecialchars($item['product_name']) ?></span>
-                        <span class="item-qty"><?= $item['total_qty'] ?> sold</span>
+                        <span class="item-name"><?= htmlspecialchars($item['product_name']); ?></span>
+                        <span class="item-qty"><?= $item['total_qty']; ?> sold</span>
                     </div>
                     <div class="progress-bar">
-                        <div class="progress" style="width:<?= round($percentage) ?>%; background: #28a745;"></div>
+                        <div class="progress" style="width:<?= round($percentage); ?>%; background: #FF7A30;"></div>
                     </div>
                 </li>
                 <?php endforeach; ?>
-            </ul>
-        </div>
-    </section>
+            <?php endif; ?>
+        </ul>
+    </div>
+</section>
 
     <!-- Slow Moving Items -->
-    <section class="slow-moving">
-        <h2>Slow Moving Items</h2>
-        <div class="scrollable-list">
-            <ul>
+<section class="slow-moving">
+<h2>Slow Moving Items</h2>
+<p class="indicator-sub">Sold between 1–5 units</p>
+    <div class="scrollable-list">
+        <ul>
+            <?php if (empty($slowItems)): ?>
+                <li>No items found.</li>
+            <?php else: ?>
                 <?php 
                 $slowMax = max(array_column($slowItems, 'total_qty') ?: [0]);
                 foreach ($slowItems as $item):
@@ -960,21 +1011,23 @@ $toolsOpen = ($self === 'backup_admin.php' || $isArchive);
                 ?>
                 <li class="item-card">
                     <div class="item-row">
-                        <span class="item-name"><?= htmlspecialchars($item['product_name']) ?></span>
-                        <span class="item-qty"><?= $item['total_qty'] ?> sold</span>
+                        <span class="item-name"><?= htmlspecialchars($item['product_name']); ?></span>
+                        <span class="item-qty"><?= $item['total_qty']; ?> sold</span>
                     </div>
                     <div class="progress-bar">
-                        <div class="progress" style="width:<?= round($percentage) ?>%; background: #ffc107;"></div>
+                        <div class="progress" style="width:<?= round($percentage); ?>%; background: #FF7A30;"></div>
                     </div>
                 </li>
                 <?php endforeach; ?>
-            </ul>
-        </div>
-    </section>
+            <?php endif; ?>
+        </ul>
+    </div>
+</section>
 
   <!-- Not Moving Items -->
 <section class="not-moving">
-    <h2>Not Moving Items</h2>
+<h2>Not Moving Items</h2>
+<p class="indicator-sub">No units sold</p>
     <div class="scrollable-list">
         <ul>
             <?php if (!empty($notMovingItems)): ?>
@@ -985,7 +1038,7 @@ $toolsOpen = ($self === 'backup_admin.php' || $isArchive);
                             <span class="item-qty"><?= htmlspecialchars($item['total_qty']) ?> sold</span>
                         </div>
                         <div class="progress-bar">
-                            <div class="progress" style="width:<?= intval($item['total_qty']) ?>%; background: #dc3545;"></div>
+                            <div class="progress" style="width:<?= intval($item['total_qty']) ?>%;background: #FF7A30;"></div>
                         </div>
                     </li>
                 <?php endforeach; ?>
@@ -1041,7 +1094,7 @@ fetch(`monthly_sale.php?${qs.toString()}`)
         datasets: [{
           label: 'Sales (₱)',
           data: data.sales,
-          backgroundColor: '#f7931e'
+          backgroundColor: '#FF7A30'
         }]
       },
       options: {
@@ -1068,12 +1121,22 @@ const serviceJobData = <?= json_encode($serviceJobData) ?> || [];
 
 if (serviceJobData.length > 0) {
     const ctx = document.getElementById('serviceJobChart').getContext('2d');
-    ctx.canvas.height = serviceJobData.length * 50; // adjust height
+    ctx.canvas.height = serviceJobData.length * 50;
 
     const labels = serviceJobData.map(item => item.service_name);
     const data = serviceJobData.map(item => item.count || 0);
 
-    const colors = labels.map(() => `hsl(${Math.floor(Math.random()*360)}, 70%, 60%)`);
+    // Professional consistent color palette
+    const fixedColors = [
+        "#FF7A30",
+        "#ff9f6bff",
+        "#9e6e54ff",
+        "#914117ff",
+        "#702700ff",
+        "#e65000ff"
+    ];
+
+    const colors = labels.map((_, i) => fixedColors[i % fixedColors.length]);
 
     new Chart(ctx, {
         type: 'bar',
@@ -1088,15 +1151,25 @@ if (serviceJobData.length > 0) {
         options: {
             indexAxis: 'y',
             responsive: true,
-            plugins: { legend: { display: false } },
+            plugins: { 
+                legend: { display: false } 
+            },
             scales: {
-                x: { beginAtZero: true },
+                x: { 
+                    beginAtZero: true,
+                    ticks: {
+                        stepSize: 1,
+                        callback: value => Math.floor(value)
+                    }
+                },
                 y: { ticks: { autoSkip: false } }
             }
         }
     });
 }
 </script>
+
+
 
 <script>
 // Show/hide period-specific inputs

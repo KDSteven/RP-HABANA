@@ -246,7 +246,10 @@ if (isset($_SESSION['user_id'])) {
      #mainSidebar, .page-head, .branch-pills { display: none !important; }
     .content-wrap { margin: 0; padding: 0; }
     .main-card { border: 0; box-shadow: none; padding: 0; }
-
+    svg[id^="bc"] {
+      width: 35mm !important;   /* Standard retail width */
+      height: 25mm !important;  /* Standard retail height */
+    }
     /* 5 columns per page, fixed size */
     .labels-grid{
       grid-template-columns: repeat(5, var(--label-w)); /* exactly 5 columns */
@@ -254,15 +257,15 @@ if (isset($_SESSION['user_id'])) {
       justify-content: start;
     }
     .label-card{
-      width: var(--label-w);
-      height: var(--label-h);
-      padding: 5mm;
-      border-radius: 6px;
+      width: 50(--label-w);
+      height: 35(--label-h);
+      padding: 2mm;
+      border-radius: 4px;
       box-shadow: none;
     }
     .label-card svg{ height: 50px; max-width: none; }
     .label-name{ font-size: 10pt; }
-    .label-code{ font-size: 8pt; }
+    .label-code{ font-size: 9pt; }
 
     /* Category pagination — NO blank first page */
     .print-categories .category-print { 
@@ -495,7 +498,7 @@ $toolsOpen = ($self === 'backup_admin.php' || $isArchive);
 document.querySelectorAll('svg[id^="bc"]').forEach(svg => {
   const code = svg.closest('.label-card')?.querySelector('.label-code')?.textContent?.trim() || '';
   const fmt  = /^\d{13}$/.test(code) ? 'ean13' : 'code128';
-  JsBarcode(svg, code, { format: fmt, width: 2, height: 50, displayValue: false });
+  JsBarcode(svg, code, { format: fmt, width: 3, height: 50, displayValue: false });
 });
 </script>
 

@@ -34,15 +34,14 @@ function go_back_with_toast(string $msg, string $type='success') {
 /* ---------- PRODUCTS ---------- */
 if (isset($_POST['restore_product'])) {
     $id = (int)($_POST['inventory_id'] ?? 0);
-    $prod = fetch_one_assoc($conn, "
-        SELECT p.product_name, b.branch_id
-        FROM inventory i
-        JOIN products p ON i.product_id = p.product_id
-        JOIN branches b ON i.branch_id  = b.branch_id
-        WHERE i.inventory_id = $id
-        SELECT brand_id, brand_name FROM brands WHERE active=1 ORDER BY brand_name;
-SELECT category_id, category_name FROM categories WHERE active=1 ORDER BY category_name;
-    ");
+$prod = fetch_one_assoc($conn, "
+    SELECT p.product_name, b.branch_id
+    FROM inventory i
+    JOIN products p ON i.product_id = p.product_id
+    JOIN branches b ON i.branch_id  = b.branch_id
+    WHERE i.inventory_id = $id
+");
+
     $conn->query("UPDATE inventory SET archived = 0 WHERE inventory_id = $id");
     $name = $prod['product_name'] ?? "inventory_id $id";
     $bid  = $prod['branch_id']    ?? ($_SESSION['branch_id'] ?? null);
@@ -199,6 +198,46 @@ if (isset($_POST['delete_product'])) {
 
     logAction($conn, "Delete Product", "Deleted product: {$prod['product_name']} (ID: $id)", null, $prod['branch_id']);
 }
+// Restore / Delete Category
+if (isset($_POST['restore_category'])) {
+    $id = (int)$_POST['category_id'];
+    $cat = fetch_one_assoc($conn, "SELECT category_name FROM categories WHERE category_id = $id");
+
+    $conn->query("UPDATE categories SET active = 1 WHERE category_id = $id");
+
+    logAction($conn, "Restore Category", "Restored category: {$cat['category_name']} (ID: $id)");
+    go_back_with_toast("Category Restored: {$cat['category_name']}", "success");
+}
+if (isset($_POST['delete_category'])) {
+    $id = (int)$_POST['category_id'];
+    $cat = fetch_one_assoc($conn, "SELECT category_name FROM categories WHERE category_id = $id");
+
+    $conn->query("DELETE FROM categories WHERE category_id = $id");
+
+    logAction($conn, "Delete Category", "Deleted category: {$cat['category_name']} (ID: $id)");
+    go_back_with_toast("Category Deleted: {$cat['category_name']}", "danger");
+}
+
+// Restore / Delete Brand
+if (isset($_POST['restore_brand'])) {
+    $id = (int)$_POST['brand_id'];
+    $brand = fetch_one_assoc($conn, "SELECT brand_name FROM brands WHERE brand_id = $id");
+
+    $conn->query("UPDATE brands SET active = 1 WHERE brand_id = $id");
+
+    logAction($conn, "Restore Brand", "Restored brand: {$brand['brand_name']} (ID: $id)");
+    go_back_with_toast("Brand Restored: {$brand['brand_name']}", "success");
+}
+if (isset($_POST['delete_brand'])) {
+    $id = (int)$_POST['brand_id'];
+    $brand = fetch_one_assoc($conn, "SELECT brand_name FROM brands WHERE brand_id = $id");
+
+    $conn->query("DELETE FROM brands WHERE brand_id = $id");
+
+    logAction($conn, "Delete Brand", "Deleted brand: {$brand['brand_name']} (ID: $id)");
+    go_back_with_toast("Brand Deleted: {$brand['brand_name']}", "danger");
+}
+
 
 // Restore / Delete Branch
 if (isset($_POST['restore_branch'])) {
@@ -522,19 +561,25 @@ $toolsOpen = ($self === 'backup_admin.php' || $isArchive);
           <tr>
             <td><?= htmlspecialchars($b['brand_name']) ?></td>
             <td>
-              <form method="post" action="restore_brand.php" class="d-inline">
-                <input type="hidden" name="brand_id" value="<?= (int)$b['brand_id'] ?>">
-                <button class="btn-restore">
-                  <i class="fa-solid fa-rotate-left"></i> Restore
-                </button>
-                 <form method="post" action="delete_brand.php" class="d-inline"
-        onsubmit="return confirm('Delete this brand permanently?');">
-    <input type="hidden" name="brand_id" value="<?= (int)$b['brand_id'] ?>">
-    <button class="btn-delete">
+  <button type="button"
+          class="btn-restore confirm-action"
+          data-action="restore_brand"
+          data-id="<?= $b['brand_id'] ?>"
+          data-entity="brand"
+          data-name="<?= htmlspecialchars($b['brand_name']) ?>">
+      <i class="fa-solid fa-rotate-left"></i> Restore
+  </button>
+
+  <button type="button"
+          class="btn-delete confirm-action"
+          data-action="delete_brand"
+          data-id="<?= $b['brand_id'] ?>"
+          data-entity="brand"
+          data-name="<?= htmlspecialchars($b['brand_name']) ?>">
       <i class="fa-solid fa-trash"></i> Delete
-    </button>
-  </form>
+  </button>
 </td>
+
               </form>
             </td>
           </tr>
@@ -577,20 +622,26 @@ $toolsOpen = ($self === 'backup_admin.php' || $isArchive);
         <?php while ($c = $archCats->fetch_assoc()): ?>
           <tr>
             <td><?= htmlspecialchars($c['category_name']) ?></td>
-            <td>
-              <form method="post" action="restore_category.php" class="d-inline">
-                <input type="hidden" name="category_id" value="<?= (int)$c['category_id'] ?>">
-                <button class="btn-restore">
-                  <i class="fa-solid fa-rotate-left"></i> Restore
-                </button>
-                 <form method="post" action="delete_category.php" class="d-inline"
-        onsubmit="return confirm('Delete this category permanently?');">
-    <input type="hidden" name="category_id" value="<?= (int)$c['category_id'] ?>">
-    <button class="btn-delete">
+           <td>
+  <button type="button"
+          class="btn-restore confirm-action"
+          data-action="restore_category"
+          data-id="<?= $c['category_id'] ?>"
+          data-entity="category"
+          data-name="<?= htmlspecialchars($c['category_name']) ?>">
+      <i class="fa-solid fa-rotate-left"></i> Restore
+  </button>
+
+  <button type="button"
+          class="btn-delete confirm-action"
+          data-action="delete_category"
+          data-id="<?= $c['category_id'] ?>"
+          data-entity="category"
+          data-name="<?= htmlspecialchars($c['category_name']) ?>">
       <i class="fa-solid fa-trash"></i> Delete
-    </button>
-  </form>
+  </button>
 </td>
+
               </form>
             </td>
           </tr>
@@ -874,6 +925,9 @@ function idField(action) {
   if (action.includes('service')) return 'service_id';
   if (action.includes('branch'))  return 'branch_id';
   if (action.includes('user'))    return 'user_id';
+  if (action.includes('brand')) return 'brand_id';
+  if(action.includes('category')) return 'category_id';
+
   return 'id';
 }
 

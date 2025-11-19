@@ -115,43 +115,34 @@ SELECT
   s.vat AS stored_vat,
   b.branch_name,
 
-  /* total refunded peso (already stored in sales_refunds.refund_total) */
-  COALESCE(SUM(r.refund_total), 0) AS refund_amount,
+  -- Total refund amount
+  COALESCE(SUM(sr.refund_total), 0) AS refund_amount,
 
-  /* simpler, safer aggregate for remarks */
+  -- Refund reasons
   IFNULL(
-    GROUP_CONCAT(DISTINCT r.refund_reason ORDER BY r.refund_date SEPARATOR '; '),
+    GROUP_CONCAT(DISTINCT sr.refund_reason ORDER BY sr.refund_date SEPARATOR '; '),
     ''
   ) AS refund_remarks,
 
-  /* NEW: refunded items list like “Oil 3 in 1 ×2; M040 ×1” */
-  rp.refunded_products
+  -- Total refunded product quantity (summary)
+  (
+    SELECT SUM(sri.qty)
+    FROM sales_refund_items sri
+    WHERE sri.sale_id = s.sale_id
+  ) AS refunded_products,
+
+  -- Total product value (only products, not services)
+  (
+    SELECT SUM(si.price * si.quantity)
+    FROM sales_items si
+    WHERE si.sale_id = s.sale_id
+  ) AS products_total
 
 FROM sales s
-JOIN branches b ON b.branch_id = s.branch_id
-LEFT JOIN sales_refunds r ON r.sale_id = s.sale_id
+LEFT JOIN branches b ON b.branch_id = s.branch_id
+LEFT JOIN sales_refunds sr ON sr.sale_id = s.sale_id
+";
 
-/* ---------- NEW derived table for refunded_products ---------- */
-LEFT JOIN (
-  SELECT
-    t.sale_id,
-    GROUP_CONCAT(
-      CONCAT(t.product_name, ' ×', t.qty)
-      ORDER BY t.product_name SEPARATOR '; '
-    ) AS refunded_products
-  FROM (
-    SELECT
-      sri.sale_id,
-      sri.product_id,
-      p.product_name,
-      SUM(sri.qty) AS qty
-    FROM sales_refund_items AS sri
-    JOIN products p ON p.product_id = sri.product_id
-    GROUP BY sri.sale_id, sri.product_id, p.product_name
-  ) AS t
-  GROUP BY t.sale_id
-) AS rp ON rp.sale_id = s.sale_id
-/* ---------- end new block ---------- */";
 if ($where) {
     $sql .= " WHERE " . implode(" AND ", $where);
 }
@@ -444,15 +435,32 @@ $toolsOpen = ($self === 'backup_admin.php' || $isArchive);
                             <?php $refItems = trim($sale['refunded_products'] ?? '—'); ?>
                             <td><?= htmlspecialchars(mb_strimwidth($refItems, 0, 60, '…')) ?></td>
 
-                            <?php
-                                $refunded = (float)$sale['refund_amount'];
-                                $totalWvat = (float)$sale['total'] + (float)$sale['stored_vat'];
+                              <?php
+                                  $refunded = (float)$sale['refund_amount'];
+                                  $productTotal = (float)$sale['products_total'];
 
-                                if ($refunded <= 0) { $status="Not Refund"; $badge="secondary"; }
-                                elseif ($refunded >= $totalWvat-0.01) { $status="Full Refund"; $badge="success"; }
-                                else { $status="Partial Refund"; $badge="warning text-dark"; }
-                            ?>
-                            <td><span class="badge bg-<?= $badge ?>"><?= $status ?></span></td>
+                                  // If no products in sale
+                                  if ($productTotal < 0.01) {
+                                      $status = "Not Refundable";
+                                      $badge = "secondary";
+                                  }
+                                  // No refund
+                                  elseif ($refunded <= 0) {
+                                      $status = "Not Refund";
+                                      $badge = "secondary";
+                                  }
+                                  // Full refund of all products
+                                  elseif ($refunded >= $productTotal - 0.01) {
+                                      $status = "Full Refund";
+                                      $badge = "success";
+                                  }
+                                  // Some products refunded
+                                  else {
+                                      $status = "Partial Refund";
+                                      $badge = "warning text-dark";
+                                  }
+                              ?>
+                              <td><span class="badge bg-<?= $badge ?>"><?= $status ?></span></td>
 
                             <td class="col-actions">
                                 <div class="actions-wrap">
@@ -522,7 +530,7 @@ $toolsOpen = ($self === 'backup_admin.php' || $isArchive);
           <tbody id="returnProductsBody"></tbody>
         </table>
 
-        <!-- Services -->
+        <!-- Services
         <h6>Services</h6>
         <table class="table table-sm table-bordered">
           <thead>
@@ -533,7 +541,7 @@ $toolsOpen = ($self === 'backup_admin.php' || $isArchive);
             </tr>
           </thead>
           <tbody id="returnServicesBody"></tbody>
-        </table>
+        </table> -->
 
         <input type="hidden" name="sale_id" id="returnSaleId">
 
@@ -605,42 +613,29 @@ $toolsOpen = ($self === 'backup_admin.php' || $isArchive);
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
 <script>
-// --- Corrected VAT Refund Calculation ---
 function openReturnModal(saleId) {
   const productsTbody = document.getElementById('returnProductsBody');
-  const servicesTbody = document.getElementById('returnServicesBody');
   const refundAmountInput = document.getElementById('refundAmount');
   const refundVATInput = document.getElementById('refundVAT');
   const refundTotalInput = document.getElementById('refundTotal');
 
   document.getElementById('returnSaleId').value = saleId;
   productsTbody.innerHTML = '';
-  servicesTbody.innerHTML = '';
   refundAmountInput.value = '0.00';
   refundVATInput.value = '0.00';
   refundTotalInput.value = '0.00';
-  
-const url = 'get_sales_products.php?sale_id=' + encodeURIComponent(saleId);
 
-fetch(url, {
-  credentials: 'same-origin'
-})
-    .then(async res => {
-      const txt = await res.text();
-      if (!res.ok) throw new Error(`HTTP ${res.status}: ${txt.slice(0,200)}`);
-      try { return JSON.parse(txt); } catch (e) {
-        console.error('Non-JSON response:', txt.slice(0,500));
-        throw e;
-      }
-    })
+  const url = 'get_sales_products.php?sale_id=' + encodeURIComponent(saleId);
+
+  fetch(url, { credentials: 'same-origin' })
+    .then(res => res.json())
     .then(data => {
       const products = data.products || [];
-      const services = data.services || [];
       const saleNetTotal = +data.total || 0;
       const saleVat = +data.vat || 0;
       const vatRate = saleNetTotal > 0 ? (saleVat / saleNetTotal) : 0;
 
-      // PRODUCTS
+      // PRODUCTS ONLY
       if (products.length === 0) {
         productsTbody.innerHTML = `<tr><td colspan="3" class="text-center">No products found</td></tr>`;
       } else {
@@ -660,52 +655,30 @@ fetch(url, {
         });
       }
 
-      // SERVICES (if you keep them)
-      if (services.length === 0) {
-        servicesTbody.innerHTML = `<tr><td colspan="3" class="text-center">No services found</td></tr>`;
-      } else {
-        services.forEach(item => {
-          const maxQty = (item.remaining_qty ?? 0);
-          const tr = document.createElement('tr');
-          tr.innerHTML = `
-            <td>${item.service_name}</td>
-            <td><input type="number" name="refund_services[${item.service_id}]"
-                       min="0" max="${maxQty}" value="${maxQty}"
-                       class="form-control form-control-sm" ${maxQty === 0 ? 'disabled' : ''}></td>
-            <td>₱${(+item.price).toFixed(2)}</td>`;
-          servicesTbody.appendChild(tr);
-        });
-      }
-
       function recalcRefund() {
         let refundSubtotal = 0;
         products.forEach(item => {
           const qty = parseFloat(document.querySelector(`input[name="refund_items[${item.product_id}]"]`)?.value || 0);
           refundSubtotal += qty * (+item.price);
         });
-        services.forEach(item => {
-          const qty = parseFloat(document.querySelector(`input[name="refund_services[${item.service_id}]"]`)?.value || 0);
-          refundSubtotal += qty * (+item.price);
-        });
+
         const refundVat = refundSubtotal * vatRate;
         const refundTotal = refundSubtotal + refundVat;
+
         refundAmountInput.value = refundSubtotal.toFixed(2);
-        refundVATInput.value    = refundVat.toFixed(2);
-        refundTotalInput.value  = refundTotal.toFixed(2);
+        refundVATInput.value = refundVat.toFixed(2);
+        refundTotalInput.value = refundTotal.toFixed(2);
       }
 
       recalcRefund();
-      [...productsTbody.querySelectorAll('input'), ...servicesTbody.querySelectorAll('input')]
+
+      productsTbody.querySelectorAll('input')
         .forEach(i => i.addEventListener('input', recalcRefund));
-    })
-    .catch(err => {
-      console.error('Error fetching sale products:', err);
-      productsTbody.innerHTML = `<tr><td colspan="3" class="text-center text-danger">Error loading products</td></tr>`;
-      servicesTbody.innerHTML = `<tr><td colspan="3" class="text-center text-danger">Error loading services</td></tr>`;
     });
 
   new bootstrap.Modal(document.getElementById('returnModal')).show();
 }
+
 </script>
 <script>
 function openReceiptModal(saleId) {

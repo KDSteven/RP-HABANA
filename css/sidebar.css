@@ -1,268 +1,237 @@
-/* =========================
-   BASE LAYOUT & SIDEBAR
-========================= */
+/* =====================================================
+   BRAND COLOR PALETTE (from logo)
+===================================================== */
+:root {
+    --brand-maroon: #6B0F0F;         /* deep red */
+    --brand-maroon-light: #8A1C1C;  /* hover red */
+    --brand-orange: #FF7A30;        /* accent */
+    --brand-orange-dark: #E26B2A;
 
+    --sidebar-bg: var(--brand-maroon);
+    --sidebar-hover: var(--brand-maroon-light);
+    --sidebar-text: #FFFFFF;
+    --notif-red: #D64545;
+
+    --sidebar-width: 260px;
+    --sidebar-collapsed: 56px;
+}
+
+/* =====================================================
+   GLOBAL RESET
+===================================================== */
 * {
     margin: 0;
     padding: 0;
     box-sizing: border-box;
-    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    font-family: 'Segoe UI', Tahoma, sans-serif;
 }
 
 body {
     display: flex;
     min-height: 100vh;
-    background: #f5f5f5;
+    background: #F0F3F5;
     color: #333;
 }
 
-/* Sidebar */
-.sidebar {
-    width: 220px;
-    background: #f7931e;
+/* =====================================================
+   SIDEBAR BASE (works globally)
+===================================================== */
+#mainSidebar {
+    position: fixed;
+    top: 0; left: 0; bottom: 0;
+    width: var(--sidebar-width);
+    background: var(--sidebar-bg);
+    color: var(--sidebar-text);
     padding: 30px 15px;
+    overflow-y: auto;
+    transition: width 0.25s ease, opacity 0.25s ease;
+    z-index: 1000;
+}
+
+/* Collapsed (ALL DEVICES) */
+#mainSidebar:not(.expanded) {
+    width: var(--sidebar-collapsed);
+}
+
+#mainSidebar:not(.expanded) .sidebar-content {
+    opacity: 0;
+    pointer-events: none;
+}
+
+/* Always fade content when collapsed */
+.sidebar-content {
+    transition: opacity 0.25s ease;
+}
+
+/* =====================================================
+   TOGGLE BUTTON (visible on tablet/desktop)
+===================================================== */
+.sidebar-toggle {
+    position: fixed;
+    top: 14px;
+    left: 14px;
+    font-size: 22px;
     color: white;
-    flex-shrink: 0;
-    
+    background: none;
+    border: none;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    z-index: 2000;
 }
+
+/* Hidden on mobile (mobile has slide-out UI) */
+@media (max-width: 767.98px) {
+    .sidebar-toggle { display: none; }
+}
+
+/* =====================================================
+   SIDEBAR ELEMENTS
+===================================================== */
 .sidebar h2 {
-    position: relative; /* Make this the positioning reference */
+    font-weight: 700;
+    font-size: 22px;
+    margin-bottom: 25px;
     text-align: center;
+    text-transform: uppercase;
 }
+
 .notif-wrapper {
     position: relative;
-    display: inline-block;
-    margin-left: 10px; /* Small gap after ADMIN text */
+    display: inline-flex;
+    gap: 5px;
 }
 
 #notifBell {
-    font-size: 24px;
+    font-size: 22px;
     cursor: pointer;
 }
 
 #notifCount {
     position: absolute;
     top: -5px;
-    right: -8px;
-    background: red;
-    color: white;
+    right: -10px;
+    background: var(--notif-red);
+    color: #fff;
+    padding: 2px 6px;
     border-radius: 50%;
-    padding: 3px 6px;
-    font-size: 12px;
+    font-size: 10px;
 }
 
-
-.menu-group a {
-  text-decoration: none !important;
-}
-.sidebar a {
+/* Links */
+.sidebar a,
+.menu-toggle {
     display: flex;
     align-items: center;
-    text-decoration: none;
-    color: white;
+    color: var(--sidebar-text);
     padding: 12px;
     margin: 6px 0;
     border-radius: 8px;
-    transition: 0.3s;
     font-size: 16px;
-}
-
-.sidebar a:hover,
-.sidebar a.active {
-    background: #e67e00;
+    text-decoration: none;
+    transition: background 0.25s ease;
 }
 
 .sidebar a i {
     margin-right: 10px;
-    font-size: 16px;
 }
 
+.sidebar a:hover,
+.sidebar a.active {
+    background: var(--sidebar-hover);
+}
 
-/* Content Area */
+/* Submenu */
+.menu-toggle {
+    width: 100%;
+    background: none;
+    border: none;
+    justify-content: space-between;
+    cursor: pointer;
+}
+
+.menu-toggle .caret {
+    transition: transform 0.25s ease;
+}
+
+.menu-toggle[aria-expanded="true"] .caret {
+    transform: rotate(90deg);
+}
+
+.submenu {
+    margin-left: 18px;
+    padding-left: 10px;
+    border-left: 2px solid rgba(255,255,255,0.25);
+}
+
+.submenu a {
+    padding: 8px 0;
+    opacity: 0.9;
+}
+
+.submenu a:hover {
+    opacity: 1;
+}
+
+/* =====================================================
+   CONTENT AREA
+===================================================== */
 .content {
     flex: 1;
     padding: 20px;
-    overflow-y: auto;
+    margin-left: var(--sidebar-width);
+    transition: margin-left 0.25s ease;
 }
 
-/* Common Buttons */
-button {
-    padding: 10px 20px;
-    background-color: #f7931e;
-    color: white;
-    font-weight: bold;
-    border: none;
-    border-radius: 5px;
-    cursor: pointer;
-    transition: background 0.3s;
+/* When collapsed */
+#mainSidebar:not(.expanded) ~ .content {
+    margin-left: var(--sidebar-collapsed);
 }
 
-button:hover {
-    background-color: #e67e00;
-}
-.sidebar h2 {
-      all: unset; /* resets Bootstrap styles */
-    font-weight: 700 !important; /* Force bold */
-    font-size: 22px !important;
-    margin: 0 0 20px !important;
-    text-transform: uppercase;
-    color: white;
-}
-
-.menu-toggle{
-  width:100%;
-  background:transparent;
-  border:0;
-  color:#fff;
-  display:flex; align-items:center; justify-content:space-between;
-  padding:10px 10px; cursor:pointer; text-align:left;
-  font-weight: normal;
-}
-.menu-toggle .caret{ transition: transform .2s ease; font-size:12px; opacity:.8; }
-.menu-toggle[aria-expanded="true"] .caret{ transform: rotate(90deg); }
-
-.submenu{
-  margin-left:16px;
-  padding-left:10px;
-  border-left:2px solid rgba(255,255,255,.25);
-}
-.submenu a{
-  display:block; color:#fff; text-decoration:none; padding:8px 0; opacity:.95;
-}
-.submenu a:hover{ opacity:1; text-decoration:underline; }
-
-.badge-pending{
-  background:red;color:#fff;border-radius:50%;
-  padding:3px 7px;font-size:12px;margin-left:6px;
-}
-
- .user-heading { display:flex; align-items:center; gap:.5rem; flex-wrap:wrap; }
-  .user-heading .role { font-weight:700; letter-spacing:.5px; }
-  .user-heading .name { font-weight:400; opacity:.9; }
-  .user-heading .notif-wrapper { margin-left:auto; display:inline-flex; align-items:center; gap:.4rem; }
-
-  /* Ensure the toggle is positioned, without changing its color */
-.sidebar-toggle {
-  position: absolute;
-  top: 14px;
-  left: 14px;
-  border: 0;
-  background: none;
-  padding: 6px;
-  font-size: 20px;
-  line-height: 1;
-  cursor: pointer;
-  z-index: 2; /* above content */
-}
-
-/* Smooth width/content transitions */
-#mainSidebar {
-  transition: width 0.25s ease;
-}
-#mainSidebar .sidebar-content {
-  transition: opacity 0.2s ease;
-}
-
-/* Desktop: keep your normal width (whatever you set today) */
-@media (min-width: 992px) {
-  /* no changes to your existing desktop styles */
-}
-
-/* Tablet rail: 768–991.98px */
+/* =====================================================
+   TABLET VIEW
+===================================================== */
 @media (min-width: 768px) and (max-width: 991.98px) {
-  /* Collapse sidebar into a thin rail */
-  #mainSidebar {
-    width: 56px !important;        /* the slim orange bar look */
-    overflow: hidden;               /* hide inner content when collapsed */
-    position: fixed;                /* typical sidebar behavior */
-    left: 0; top: 0; bottom: 0;
-    z-index: 1000;
-  }
 
-  /* Hide the inner content; keep only the toggle visible */
-  #mainSidebar .sidebar-content {
-    opacity: 0;
-    pointer-events: none;
-  }
-
-  /* Expanded state: show full width and content */
-  #mainSidebar.expanded {
-    width: 260px !important;        /* match your normal sidebar width */
-  }
-  #mainSidebar.expanded .sidebar-content {
-    opacity: 1;
-    pointer-events: auto;
-  }
-
-  /* If your layout offsets content on desktop, use a small rail offset on tablet */
-  .content {
-    margin-left: 56px !important;   /* content aligns beside the rail */
-  }
-
-  /* Optional backdrop when expanded (overlay effect) */
-  .sidebar-backdrop {
-    display: none;
-    position: fixed; inset: 0;
-    background: rgba(0,0,0,0.35);
-    z-index: 999;
-    opacity: 0; transition: opacity 0.2s ease;
-  }
-  .sidebar-backdrop.is-open { display: block; opacity: 1; }
-}
-
-/* (Optional) Mobile: use same rail behavior or hide completely
-   If you want identical behavior on mobile, duplicate the tablet rules with max-width:767.98px */
-
-   /* Hide toggle everywhere by default */
-.sidebar-toggle {
-  display: none;
-}
-
-/* Show ONLY on tablet screens (768 – 991.98 px) */
-@media (min-width: 768px) and (max-width: 991.98px) {
-  .sidebar-toggle {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    position: absolute;
-    top: 14px;
-    left: 14px;      /* or right:14px; if you want it on the right side */
-    border: none;
-    background: none; /* keeps your current color scheme */
-    font-size: 22px;
-    cursor: pointer;
-    z-index: 5;
-  }
-}
-
-@media (min-width: 768px) and (max-width: 991.98px) {
-  .sidebar-toggle {
-    position: absolute;
-    top: 10px;
-    right: 12px;   /* moved to the right */
-    left: auto;
-    background: none;
-    border: 0;
-    padding: 6px;
-    font-size: 20px;
-    z-index: 5;
-  }
-}
-
-
-/* Responsive */
-@media (max-width: 768px) {
-    body {
-        flex-direction: column;
+    /* Better spacing on mid screens */
+    #mainSidebar {
+        width: var(--sidebar-collapsed);
     }
 
-    .sidebar {
+    #mainSidebar.expanded {
+        width: var(--sidebar-width);
+    }
+
+    .content {
+        margin-left: var(--sidebar-collapsed);
+    }
+
+    #mainSidebar.expanded ~ .content {
+        margin-left: var(--sidebar-width);
+    }
+}
+
+/* =====================================================
+   MOBILE: Sidebar becomes slide-down (full width)
+===================================================== */
+@media (max-width: 767.98px) {
+
+    #mainSidebar {
+        position: relative;
         width: 100%;
-        text-align: center;
-        padding: 15px;
+        height: auto;
     }
 
-    .sidebar a {
-        justify-content: center;
+    #mainSidebar:not(.expanded) {
+        height: auto;
+    }
+
+    .content {
+        margin-left: 0;
+    }
+
+    .sidebar-content {
+        opacity: 1;
+        pointer-events: auto;
     }
 }

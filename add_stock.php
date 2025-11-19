@@ -200,7 +200,7 @@ if ($role !== 'admin' || $AUTO_APPROVE_ADMIN === false) {
   }
 
   $_SESSION['stock_message'] = "📝 Stock-in request submitted for approval.";
-  header("Location: inventory.php?stock=requested"); exit;
+  header("Location: inventory.php?stock=success"); exit;
 }
 
 /* Admin auto-approve path: apply stock now, then mark approved for audit trail */

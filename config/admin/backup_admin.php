@@ -35,7 +35,7 @@ date_default_timezone_set('Asia/Manila');
 // --- Backups directory OUTSIDE web root ---
 // On XAMPP:   C:\xampp\db_backups
 // On Hosting: /home/username/db_backups
-$BACKUP_DIR = rtrim(dirname($_SERVER['DOCUMENT_ROOT']), '\\/') . DIRECTORY_SEPARATOR . 'db_backups';
+$BACKUP_DIR = __DIR__ . '/../../db_backups';
 if (!is_dir($BACKUP_DIR)) {
     mkdir($BACKUP_DIR, 0775, true);
 }

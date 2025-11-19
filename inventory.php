@@ -3,7 +3,6 @@ if (session_status() !== PHP_SESSION_ACTIVE) session_start();
 require_once __DIR__ . '/config/db.php';
 require_once __DIR__ . '/functions.php';
 
-
 // Redirect to login if user not logged in
 if (!isset($_SESSION['user_id'])) {
     header('Location: index.html');
@@ -330,6 +329,8 @@ if ($role === 'admin' && isset($_POST['sir_action'], $_POST['sir_id'])) {
     if (in_array($sir_action, ['approved', 'rejected'], true)) {
 
         if ($sir_action === 'approved') {
+      
+
             $stmt = $conn->prepare("
                 SELECT product_id, branch_id, quantity
                 FROM stock_in_requests
@@ -344,7 +345,14 @@ if ($role === 'admin' && isset($_POST['sir_action'], $_POST['sir_id'])) {
                 $product_id = (int)$req['product_id'];
                 $branch_id  = (int)$req['branch_id'];
                 $qty        = (int)$req['quantity'];
-
+ $product = $conn->query("SELECT product_name FROM products WHERE product_id = $product_id")->fetch_assoc();
+logAction(
+    $conn,
+    "Stock-In Approved",
+    "Approved stock-in of {$qty} {$product['product_name']} for Branch {$branch_id}",
+    null,
+    $branch_id
+);
                 $conn->begin_transaction();
                 try {
                     $stmt = $conn->prepare("SELECT stock FROM inventory WHERE product_id = ? AND branch_id = ? FOR UPDATE");
@@ -400,150 +408,132 @@ if ($role === 'admin' && isset($_POST['sir_action'], $_POST['sir_id'])) {
     }
 }
 
-
-
-// request transfer log
-// if (isset($_POST['transfer_request'])) {
-//     $product_id  = (int) $_POST['product_id'];
-//     $from_branch = (int) $_POST['from_branch'];
-//     $to_branch   = (int) $_POST['to_branch'];
-//     $quantity    = (int) $_POST['quantity'];
-
-//     $stmt = $conn->prepare("
-//         INSERT INTO transfer_requests (product_id, from_branch, to_branch, quantity, status, requested_by, requested_at)
-//         VALUES (?, ?, ?, ?, 'Pending', ?, NOW())
-//     ");
-//     $stmt->bind_param("iiiis", $product_id, $from_branch, $to_branch, $quantity, $_SESSION['user_id']);
-//     $stmt->execute();
-//     $stmt->close();
-
-//     $product = $conn->query("SELECT product_name FROM products WHERE product_id = $product_id")->fetch_assoc();
-
-//     logAction(
-//         $conn,
-//         "Stock Transfer Request",
-//         "Requested transfer of $quantity {$product['product_name']} from Branch $from_branch to Branch $to_branch"
-//     );
-
-//     $_SESSION['stock_message'] = "Transfer request sent successfully!";
-//     header("Location: inventory.php?transfer=requested");
-//     exit;
-// }
-
-
-
-//Transfer Request
-//request transfer log
-if (isset($_POST['transfer_request'])) {
-    $product_id       = (int) $_POST['product_id'];
-    $source_branch    = (int) $_POST['from_branch'];        // keep incoming field name if your form posts from_branch
-    $destination_branch = (int) $_POST['to_branch'];        // keep incoming field name if your form posts to_branch
-    $quantity         = (int) $_POST['quantity'];
-
-    // If your front-end already posts source_branch/destination_branch, swap these two lines:
-    // $source_branch       = (int) $_POST['source_branch'];
-    // $destination_branch  = (int) $_POST['destination_branch'];
-
-    $stmt = $conn->prepare("
-        INSERT INTO transfer_requests
-            (product_id, source_branch, destination_branch, quantity, status, requested_by, request_date)
-        VALUES (?, ?, ?, ?, 'pending', ?, NOW())
-    ");
-    $stmt->bind_param("iiiis", $product_id, $source_branch, $destination_branch, $quantity, $_SESSION['user_id']);
-    $stmt->execute();
-    $stmt->close();
-
-    $product = $conn->query("SELECT product_name FROM products WHERE product_id = $product_id")->fetch_assoc();
-
-    logAction(
-        $conn,
-        "Stock Transfer Request",
-        "Requested transfer of $quantity {$product['product_name']} from Branch $source_branch to Branch $destination_branch"
-    );
-
-    $_SESSION['stock_message'] = "Transfer request sent successfully!";
-    header("Location: inventory.php?transfer=requested");
-    exit;
-}
-
-// ===== Admin: approve/reject transfer requests (moved from approvals.php) =====
+// ==============================
+// APPROVE / REJECT TRANSFER REQUESTS
+// ==============================
 if ($role === 'admin' && isset($_POST['action'], $_POST['request_id'])) {
     $action     = $_POST['action'];
     $request_id = (int) $_POST['request_id'];
 
-    if (in_array($action, ['approved', 'rejected'], true)) {
+    if (!in_array($action, ['approved', 'rejected'])) {
+        exit;
+    }
 
-        if ($action === 'approved') {
-            // Get transfer details
-            $stmt = $conn->prepare("
-                SELECT product_id, source_branch, destination_branch, quantity
-                FROM transfer_requests
-                WHERE request_id = ?
-            ");
-            $stmt->bind_param("i", $request_id);
-            $stmt->execute();
-            $transfer = $stmt->get_result()->fetch_assoc();
-            $stmt->close();
+    // Reject first (simple)
+    if ($action === 'rejected') {
+        $stmt = $conn->prepare("
+            UPDATE transfer_requests
+            SET status = 'rejected', decision_date = NOW(), decided_by = ?
+            WHERE request_id = ?
+        ");
+        $stmt->bind_param("ii", $_SESSION['user_id'], $request_id);
+        $stmt->execute();
+        $stmt->close();
 
-            if ($transfer) {
-                $product_id         = (int)$transfer['product_id'];
-                $source_branch      = (int)$transfer['source_branch'];
-                $destination_branch = (int)$transfer['destination_branch'];
-                $quantity           = (int)$transfer['quantity'];
+        header("Location: inventory.php?tr=rejected");
+        exit;
+    }
 
-                // Decrease from source
-                $stmt = $conn->prepare("UPDATE inventory SET stock = stock - ? WHERE product_id = ? AND branch_id = ?");
-                $stmt->bind_param("iii", $quantity, $product_id, $source_branch);
-                $stmt->execute();
-                $stmt->close();
+    // APPROVE TRANSFER
+    $stmt = $conn->prepare("
+        SELECT product_id, source_branch, destination_branch, quantity
+        FROM transfer_requests
+        WHERE request_id = ?
+        LIMIT 1
+    ");
+    $stmt->bind_param("i", $request_id);
+    $stmt->execute();
+    $transfer = $stmt->get_result()->fetch_assoc();
+    $stmt->close();
 
-                // Add to destination (upsert)
-                $stmt = $conn->prepare("SELECT stock FROM inventory WHERE product_id = ? AND branch_id = ?");
-                $stmt->bind_param("ii", $product_id, $destination_branch);
-                $stmt->execute();
-                $res = $stmt->get_result();
-                $stmt->close();
+    if (!$transfer) {
+        $_SESSION['stock_message'] = "Transfer request not found.";
+        header("Location: inventory.php");
+        exit;
+    }
 
-                if ($res && $res->num_rows > 0) {
-                    $stmt = $conn->prepare("UPDATE inventory SET stock = stock + ? WHERE product_id = ? AND branch_id = ?");
-                    $stmt->bind_param("iii", $quantity, $product_id, $destination_branch);
-                } else {
-                    $stmt = $conn->prepare("INSERT INTO inventory (product_id, branch_id, stock) VALUES (?, ?, ?)");
-                    $stmt->bind_param("iii", $product_id, $destination_branch, $quantity);
-                }
-                $stmt->execute();
-                $stmt->close();
+    $product_id  = (int)$transfer['product_id'];
+    $source_branch = (int)$transfer['source_branch'];
+    $destination_branch = (int)$transfer['destination_branch'];
+    $quantity = (int)$transfer['quantity'];
 
-                // Set request approved
-                $stmt = $conn->prepare("
-                  UPDATE transfer_requests
-                  SET status = 'approved', decision_date = NOW(), decided_by = ?
-                  WHERE request_id = ?
-                ");
-                $stmt->bind_param("ii", $_SESSION['user_id'], $request_id);
-                $stmt->execute();
-                $stmt->close();
+    // TRANSACTION START
+    $conn->begin_transaction();
 
-                header("Location: inventory.php?tr=approved");
-                exit;
-            }
+    try {
+
+        // Check stock source
+        $stmt = $conn->prepare("SELECT stock FROM inventory WHERE product_id = ? AND branch_id = ? FOR UPDATE");
+        $stmt->bind_param("ii", $product_id, $source_branch);
+        $stmt->execute();
+        $res = $stmt->get_result();
+        $stmt->close();
+
+        if (!$res || $res->num_rows === 0) {
+            throw new Exception("No stock record for source branch.");
         }
 
-        if ($action === 'rejected') {
-            $stmt = $conn->prepare("
-              UPDATE transfer_requests
-              SET status = 'rejected', decision_date = NOW(), decided_by = ?
-              WHERE request_id = ?
-            ");
-            $stmt->bind_param("ii", $_SESSION['user_id'], $request_id);
-            $stmt->execute();
-            $stmt->close();
-
-            header("Location: inventory.php?tr=rejected");
-            exit;
+        $row = $res->fetch_assoc();
+        if ($row['stock'] < $quantity) {
+            throw new Exception("Not enough stock available.");
         }
+
+        // Deduct from source
+        $stmt = $conn->prepare("UPDATE inventory SET stock = stock - ? WHERE product_id = ? AND branch_id = ?");
+        $stmt->bind_param("iii", $quantity, $product_id, $source_branch);
+        $stmt->execute();
+        $stmt->close();
+
+        // Add to destination
+        $stmt = $conn->prepare("SELECT stock FROM inventory WHERE product_id = ? AND branch_id = ? FOR UPDATE");
+        $stmt->bind_param("ii", $product_id, $destination_branch);
+        $stmt->execute();
+        $res2 = $stmt->get_result();
+        $stmt->close();
+
+        if ($res2 && $res2->num_rows > 0) {
+            $stmt = $conn->prepare("UPDATE inventory SET stock = stock + ? WHERE product_id = ? AND branch_id = ?");
+            $stmt->bind_param("iii", $quantity, $product_id, $destination_branch);
+        } else {
+            $stmt = $conn->prepare("INSERT INTO inventory (product_id, branch_id, stock) VALUES (?, ?, ?)");
+            $stmt->bind_param("iii", $product_id, $destination_branch, $quantity);
+        }
+        $stmt->execute();
+        $stmt->close();
+
+        // Update status
+        $stmt = $conn->prepare("
+            UPDATE transfer_requests
+            SET status = 'approved', decision_date = NOW(), decided_by = ?
+            WHERE request_id = ?
+        ");
+        $stmt->bind_param("ii", $_SESSION['user_id'], $request_id);
+        $stmt->execute();
+        $stmt->close();
+
+        // Log
+        $product = $conn->query("SELECT product_name FROM products WHERE product_id = {$product_id}")->fetch_assoc();
+
+        logAction(
+            $conn,
+            "Stock Transfer Approved",
+            "Approved transfer of {$quantity} {$product['product_name']} from Branch {$source_branch} → Branch {$destination_branch}",
+            null,
+            $source_branch
+        );
+
+        $conn->commit();
+        header("Location: inventory.php?tr=approved");
+        exit;
+
+    } catch (Throwable $e) {
+        $conn->rollback();
+        $_SESSION['stock_message'] = "Transfer approval failed: " . $e->getMessage();
+        header("Location: inventory.php?tr=error");
+        exit;
     }
 }
+
 
 // Fetch current user's full name
 $currentName = '';
@@ -593,11 +583,9 @@ if ($flag || $flash) {
   <link rel="stylesheet" href="css/notifications.css">
   <link rel="stylesheet" href="css/inventory.css?v=2">
 
-
-
 </head>
 <body class="inventory-page">
-  <audio id="notifSound" src="notif.mp3" preload="auto"></audio>
+  
   <script> console.log("🔥 TEST SCRIPT RUNNING"); </script>
 <!-- Sidebar -->
 <div class="sidebar" id="mainSidebar">
@@ -671,7 +659,6 @@ $toolsOpen = ($self === 'backup_admin.php' || $isArchive);
     <i class="fas fa-receipt"></i> Sales
   </a>
 
-
 <a href="accounts.php" class="<?= $self === 'accounts.php' ? 'active' : '' ?>">
   <i class="fas fa-users"></i> Accounts & Branches
 </a>
@@ -697,8 +684,6 @@ $toolsOpen = ($self === 'backup_admin.php' || $isArchive);
   </a>
 
 <?php endif; ?>
-
-
 
    <!-- Stockman Links -->
   <?php if ($role === 'stockman'): ?>
@@ -796,42 +781,60 @@ $toolsOpen = ($self === 'backup_admin.php' || $isArchive);
     <span class="badge sufficient">Sufficient Stocks</span>
   </div>
 </div>
+
 <!-- Manage Products -->
 <div class="card shadow-sm mb-4">
   <div class="card-body">
-    <div class="d-flex justify-content-between align-items-center mb-3">
-      <h2 class="mb-0"><i class="fas fa-box me-2"></i> Manage Products</h2>
-      <div class="d-flex gap-2">
-        <button type="button" class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#addProductModal">
-          <i class="fas fa-plus"></i> Add Product
-        </button>
-        <button type="button" class="btn btn-success btn-sm" data-bs-toggle="modal" data-bs-target="#addStockModal">
-          <i class="fas fa-boxes"></i> Add Stock
-        </button>
-        <button class="btn btn-warning" data-bs-toggle="modal" data-bs-target="#transferModal">
-          <i class="fas fa-exchange-alt me-1"></i> Request Transfer
-        </button>
-      </div>
+   <div class="d-flex justify-content-between align-items-center mb-3">
+  <h2 class="mb-0"><i class="fas fa-box me-2"></i> Manage Products</h2>
+
+  <div class="d-flex gap-2">
+
+    <!-- Hide / Show Columns -->
+    <div class="dropdown">
+      <button class="btn btn-secondary btn-sm dropdown-toggle" type="button" data-bs-toggle="dropdown">
+        Hide / Show Columns
+      </button>
+
+      <ul class="dropdown-menu p-2" style="max-height: 250px; overflow-y: auto;">
+        <li><label><input type="checkbox" class="col-toggle" data-col="0" checked> Product ID</label></li>
+        <li><label><input type="checkbox" class="col-toggle" data-col="1" checked> Product</label></li>
+        <li><label><input type="checkbox" class="col-toggle" data-col="2" checked> Category</label></li>
+        <li><label><input type="checkbox" class="col-toggle" data-col="3" checked> Price</label></li>
+        <li><label><input type="checkbox" class="col-toggle" data-col="4" checked> Markup</label></li>
+        <li><label><input type="checkbox" class="col-toggle" data-col="5" checked> SRP</label></li>
+        <li><label><input type="checkbox" class="col-toggle" data-col="6" checked> Ceiling Point</label></li>
+        <li><label><input type="checkbox" class="col-toggle" data-col="7" checked> Critical Point</label></li>
+        <li><label><input type="checkbox" class="col-toggle" data-col="8" checked> Stocks</label></li>
+        <li><label><input type="checkbox" class="col-toggle" data-col="9" checked> Action</label></li>
+      </ul>
     </div>
+
+    <!-- Buttons -->
+    <button type="button" class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#addProductModal">
+      <i class="fas fa-plus"></i> Add Product
+    </button>
+
+    <button type="button" class="btn btn-success btn-sm" data-bs-toggle="modal" data-bs-target="#addStockModal">
+      <i class="fas fa-boxes"></i> Add Stock
+    </button>
+
+    <button class="btn btn-warning btn-sm" data-bs-toggle="modal" data-bs-target="#transferModal">
+      <i class="fas fa-exchange-alt me-1"></i> Request Transfer
+    </button>
+
+  </div>
+</div>
+
 
     <?php if ($result->num_rows > 0): ?>
       <div class="table-container">
 
         <div class="table-wrap">
   <table class="inventory-table">
+    
     <!-- Optional: control widths per column -->
-    <colgroup>
-      <col style="width: 160px">      <!-- PRODUCT ID -->
-      <col style="min-width: 220px">  <!-- PRODUCT -->
-      <col style="min-width: 160px">  <!-- CATEGORY -->
-      <col style="min-width: 120px">  <!-- PRICE -->
-      <col style="min-width: 120px">  <!-- MARKUP (%) -->
-      <col style="min-width: 140px">  <!-- RETAIL PRICE -->
-      <col style="min-width: 140px">  <!-- CEILING POINT -->
-      <col style="min-width: 140px">  <!-- CRITICAL POINT -->
-      <col style="min-width: 120px">  <!-- STOCKS -->
-      <col style="min-width: 180px">  <!-- ACTION -->
-    </colgroup>
+  
 
     <thead>
       <tr>
@@ -840,7 +843,7 @@ $toolsOpen = ($self === 'backup_admin.php' || $isArchive);
         <th>CATEGORY</th>
         <th>PRICE</th>
         <th>MARKUP (%)</th>
-        <th>RETAIL PRICE</th>
+        <th>SRP</th>
         <th>CEILING POINT</th>
         <th>CRITICAL POINT</th>
         <th>STOCKS</th>
@@ -972,20 +975,23 @@ $toolsOpen = ($self === 'backup_admin.php' || $isArchive);
                   <td><?= htmlspecialchars($r['dest_name']) ?></td>
                   <td><?= htmlspecialchars($r['requested_by_user']) ?></td>
                   <td><?= date('Y-m-d H:i', strtotime($r['request_date'])) ?></td>
-                  <td>
-                    <form method="POST" class="d-inline">
-                      <input type="hidden" name="request_id" value="<?= (int)$r['request_id'] ?>">
-                      <button type="submit" name="action" value="approved" class="btn btn-sm btn-success">
-                        <i class="fas fa-check"></i> Approve
-                      </button>
-                    </form>
-                    <form method="POST" class="d-inline ms-1">
-                      <input type="hidden" name="request_id" value="<?= (int)$r['request_id'] ?>">
-                      <button type="submit" name="action" value="rejected" class="btn btn-sm btn-danger">
-                        <i class="fas fa-times"></i> Reject
-                      </button>
-                    </form>
-                  </td>
+                  <!-- APPROVE transfer -->
+                   <td>
+<form method="POST" class="d-inline">
+    <input type="hidden" name="request_id" value="<?= (int)$r['request_id'] ?>">
+    <button type="submit" name="action" value="approved" class="btn btn-sm btn-success">
+        <i class="fas fa-check"></i> Approve
+    </button>
+</form>
+
+<!-- REJECT transfer -->
+<form method="POST" class="d-inline ms-1">
+    <input type="hidden" name="request_id" value="<?= (int)$r['request_id'] ?>">
+    <button type="submit" name="action" value="rejected" class="btn btn-sm btn-danger">
+        <i class="fas fa-times"></i> Reject
+    </button>
+</form>
+              </td>
                 </tr>
               <?php endwhile; ?>
             </tbody>
@@ -1044,11 +1050,13 @@ $toolsOpen = ($self === 'backup_admin.php' || $isArchive);
                   <td><?= htmlspecialchars($x['requested_by_user']) ?></td>
                   <td><?= date('Y-m-d H:i', strtotime($x['request_date'])) ?></td>
                   <td>
-                    <form method="POST" class="d-inline">
-                      <input type="hidden" name="sir_id" value="<?= (int)$x['id'] ?>">
-                      <button type="submit" name="sir_action" value="approved" class="btn btn-sm btn-success">
-                        <i class="fas fa-check"></i> Approve
-                      </button>
+                    <form method="POST" class="d-inline" onsubmit="event.stopImmediatePropagation(); return true;">
+  <input type="hidden" name="sir_id" value="<?= (int)$x['id'] ?>">
+  <button type="submit" name="sir_action" value="approved" class="btn btn-sm btn-success">
+    <i class="fas fa-check"></i> Approve
+  </button>
+</form>
+
                     </form>
                     <form method="POST" class="d-inline ms-1">
                       <input type="hidden" name="sir_id" value="<?= (int)$x['id'] ?>">
@@ -1517,13 +1525,12 @@ $toolsOpen = ($self === 'backup_admin.php' || $isArchive);
             </div>
 
             <div class="col-md-6">
-            <label class="form-label">Stock</label>
-            <input type="number"
-                  class="form-control"
+              <label class="form-label">Stock</label>
+              <input type="number" class="form-control"
                   id="edit_stock"
                   name="stock"
                   value=""
-                  disabled>
+                  readonly>
             </div>
 
             <!-- Expiration Date -->
@@ -1901,6 +1908,11 @@ $toolsOpen = ($self === 'backup_admin.php' || $isArchive);
   </div>
 </div>
 
+<script>
+  const USER_ROLE   = "<?= $_SESSION['role'] ?>"; 
+  const USER_BRANCH = "<?= $_SESSION['branch_id'] ?>";
+</script>
+
 <script> console.log("🔥 TEST SCRIPT RUNNING 1"); </script>
 <script>
 document.addEventListener("DOMContentLoaded", function () {
@@ -1973,7 +1985,7 @@ document.addEventListener('DOMContentLoaded', function () {
 });
 
 </script>
-
+<!-- EDIT Modal -->
 <script>
 function openEditModal(
   id, name, category, price, stock, markup_price, ceiling_point, critical_point, branch_id
@@ -2183,12 +2195,23 @@ document.addEventListener('DOMContentLoaded', function () {
       .then(list => {
         srcSel.innerHTML = '<option value="">Select Branch</option>';
         dstSel.innerHTML = '<option value="">Select Branch</option>';
-        (list || []).forEach(b => {
-          const o1 = new Option(b.branch_name, b.branch_id);
-          const o2 = new Option(b.branch_name, b.branch_id);
-          srcSel.add(o1);
-          dstSel.add(o2);
-        });
+       (list || []).forEach(b => {
+
+  // ALWAYS show all branches for SOURCE
+  srcSel.add(new Option(b.branch_name, b.branch_id));
+
+  // Destination depends on user role
+  if (USER_ROLE === "admin") {
+      dstSel.add(new Option(b.branch_name, b.branch_id));
+  }
+  else if (USER_ROLE === "stockman") {
+      // Stockman: destination branch MUST be their own
+      if (parseInt(b.branch_id) === parseInt(USER_BRANCH)) {
+          dstSel.add(new Option(b.branch_name, b.branch_id));
+      }
+  }
+});
+
         branchesLoaded = true;
       })
       .catch(() => {
@@ -2843,7 +2866,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
 
   /* =============================================================
-     UNIVERSAL POST JSON (with full error debugging)
+     UNIVERSAL POST JSON
   ============================================================= */
   async function postJSON(url, data){
     try {
@@ -2853,26 +2876,22 @@ document.addEventListener('DOMContentLoaded', () => {
         body: JSON.stringify(data)
       });
 
-      // Get raw text first (can contain warnings/notices)
       const txt = await r.text();
-
       try {
         return JSON.parse(txt);
-      } catch (jsonError) {
-        console.error("⚠ Backend returned invalid JSON:", txt);
+      } catch {
+        console.error("⚠ Invalid JSON:", txt);
         return { ok:false, error: txt };
       }
 
     } catch(e) {
-      console.error("⚠ Fetch error:", e);
       return { ok:false, error: e.message };
     }
   }
 
 
-
   /* =============================================================
-      BRAND CREATE
+     BRAND CREATE
   ============================================================= */
   const brandCreateForm = document.getElementById('brandCreateForm');
   if (brandCreateForm){
@@ -2888,17 +2907,17 @@ document.addEventListener('DOMContentLoaded', () => {
       });
 
       if (res.ok){
-        location.reload();
+        showToast(res.message || "Brand created.", "success");
+        setTimeout(()=>location.reload(),700);
       } else {
-        alert(res.error || 'Failed to add brand.');
+        showToast(res.error || "Failed to add brand.", "danger");
       }
     });
   }
 
 
-
   /* =============================================================
-      BRAND PROCEED (archive, delete, reassign)
+     BRAND PROCEED (archive, delete, reassign)
   ============================================================= */
   const mb_submit = document.getElementById('mb_submit');
   if (mb_submit){
@@ -2910,13 +2929,13 @@ document.addEventListener('DOMContentLoaded', () => {
                         ? document.getElementById('mb_reassign_to').value
                         : null;
 
-      /* Prevent archiving when brand is used */
+      // Prevent archiving when used
       if (mode === 'deactivate') {
           const resU = await fetch(`check_usage.php?mode=brand&id=${brand_id}`);
           const d    = await resU.json();
 
           if (d.ok && d.count > 0){
-            alert(`⚠️ Cannot deactivate this brand.\n${d.count} product(s) use it.`);
+            showToast(`⚠ Cannot deactivate. ${d.count} product(s) use this brand.`, "danger");
             return;
           }
       }
@@ -2928,17 +2947,17 @@ document.addEventListener('DOMContentLoaded', () => {
       });
 
       if (res.ok){
-        location.reload();
+        showToast(res.message || "Brand updated.", "success");
+        setTimeout(()=>location.reload(),700);
       } else {
-        alert(res.error || 'Operation failed.');
+        showToast(res.error || "Operation failed.", "danger");
       }
     });
   }
 
 
-
   /* =============================================================
-      CATEGORY CREATE
+     CATEGORY CREATE
   ============================================================= */
   const categoryCreateForm = document.getElementById('categoryCreateForm');
   if (categoryCreateForm){
@@ -2954,17 +2973,17 @@ document.addEventListener('DOMContentLoaded', () => {
       });
 
       if (res.ok){
-        location.reload();
+        showToast(res.message || "Category created.", "success");
+        setTimeout(()=>location.reload(),700);
       } else {
-        alert(res.error || 'Failed to add category.');
+        showToast(res.error || "Failed to add category.", "danger");
       }
     });
   }
 
 
-
   /* =============================================================
-      CATEGORY PROCEED (archive, delete, reassign)
+     CATEGORY PROCEED (archive, delete, reassign)
   ============================================================= */
   const mc_submit = document.getElementById('mc_submit');
   if (mc_submit){
@@ -2976,13 +2995,12 @@ document.addEventListener('DOMContentLoaded', () => {
                           ? document.getElementById('mc_reassign_to').value
                           : null;
 
-      /* Prevent archiving category when used */
       if (mode === 'deactivate') {
           const resU = await fetch(`check_usage.php?mode=category&id=${category_id}`);
           const d    = await resU.json();
 
           if (d.ok && d.count > 0){
-            alert(`⚠️ Cannot deactivate this category.\n${d.count} product(s) use it.`);
+            showToast(`⚠ Cannot deactivate. ${d.count} product(s) use this category.`, "danger");
             return;
           }
       }
@@ -2994,15 +3012,17 @@ document.addEventListener('DOMContentLoaded', () => {
       });
 
       if (res.ok){
-        location.reload();
+        showToast(res.message || "Category updated.", "success");
+        setTimeout(()=>location.reload(),700);
       } else {
-        alert(res.error || 'Operation failed.');
+        showToast(res.error || "Operation failed.", "danger");
       }
     });
   }
 
 })();  
 </script>
+
 
 <script>
 document.addEventListener('DOMContentLoaded', function () {
@@ -3048,7 +3068,24 @@ document.addEventListener('hidden.bs.modal', function () {
   document.body.style.overflow = '';
 });
 </script>
+<!-- Hide columns in inventory list -->
+<script>
+  document.querySelectorAll('.col-toggle').forEach(toggle => {
+    toggle.addEventListener('change', function () {
+        let colIndex = this.getAttribute('data-col');
+        let isVisible = this.checked;
+        let table = document.querySelector('.inventory-table');
 
+        table.querySelectorAll("tr").forEach(row => {
+            let cell = row.children[colIndex];
+            if (cell) {
+                cell.style.display = isVisible ? "" : "none";
+            }
+        });
+    });
+});
+
+</script>
 
 <!-- Bootstrap 5.3.2 JS -->
 <!-- REQUIRED Bootstrap JS -->

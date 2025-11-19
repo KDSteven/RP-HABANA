@@ -1,0 +1,2 @@
+# Block all access to the backup directory
+Require all denied

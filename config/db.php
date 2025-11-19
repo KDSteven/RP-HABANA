@@ -3,9 +3,9 @@
 date_default_timezone_set('Asia/Manila');
 
 $servername = "localhost";  
-$username = "root";         
-$password = "";            
-$dbname = "rp_habana";  
+$username   = "root";         
+$password   = "";            
+$dbname     = "rp_habana";  
 
 // Create connection
 $conn = new mysqli($servername, $username, $password, $dbname);
@@ -14,4 +14,8 @@ $conn = new mysqli($servername, $username, $password, $dbname);
 if ($conn->connect_error) {
     die("Connection failed: " . $conn->connect_error);
 }
+
+// IMPORTANT: Fix MySQL timezone (Hostinger defaults to UTC)
+$conn->query("SET time_zone = '+08:00'");
+
 ?>

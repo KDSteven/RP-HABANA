@@ -1,102 +1,166 @@
 <?php
-// monthly_sale.php
 declare(strict_types=1);
 session_start();
 require 'config/db.php';
 
 header('Content-Type: application/json');
 
-// ---- Session scope ----
 $role         = $_SESSION['role']      ?? '';
 $userBranchId = $_SESSION['branch_id'] ?? null;
 
-// ---- Inputs ----
-$period = $_GET['period'] ?? 'month'; // month | range | fiscal
+$period = $_GET['period'] ?? 'month';
 $month  = $_GET['month']  ?? date('Y-m');
 $from   = $_GET['from']   ?? '';
 $to     = $_GET['to']     ?? '';
 $fy     = (int)($_GET['fy'] ?? date('Y'));
-$FISCAL_START_MONTH = 1; // keep in sync with dashboard
 
-// Optional branch filter (admin only); for staff/stockman we’ll force below
-$branchIdParam = (isset($_GET['branch_id']) && $_GET['branch_id'] !== '')
+$branchParam = isset($_GET['branch_id']) && $_GET['branch_id'] !== ''
   ? (int)$_GET['branch_id']
   : null;
 
-// ---- Resolve date range ----
-$startDate = '';
-$endDate   = '';
-
+// ----- Resolve date range -----
 if ($period === 'range') {
-  $fromOk = preg_match('/^\d{4}-\d{2}-\d{2}$/', $from);
-  $toOk   = preg_match('/^\d{4}-\d{2}-\d{2}$/', $to);
-  $startDate = $fromOk ? $from : date('Y-m-01');
-  $endDate   = $toOk   ? $to   : date('Y-m-t', strtotime($startDate));
+
+    $startDate = preg_match('/^\d{4}-\d{2}-\d{2}$/', $from) ? $from : date('Y-m-01');
+    $endDate   = preg_match('/^\d{4}-\d{2}-\d{2}$/', $to)   ? $to   : date('Y-m-t', strtotime($startDate));
+
 } elseif ($period === 'fiscal') {
-  $fyStart = DateTime::createFromFormat('Y-n-j', $fy . '-' . $FISCAL_START_MONTH . '-1');
-  if (!$fyStart) {
-    // Fallback to current FY if bad input
-    $fy = (int)date('Y');
-    $fyStart = DateTime::createFromFormat('Y-n-j', $fy . '-' . $FISCAL_START_MONTH . '-1');
-  }
-  $fyEnd = (clone $fyStart)->modify('+1 year')->modify('-1 day');
-  $startDate = $fyStart->format('Y-m-d');
-  $endDate   = $fyEnd->format('Y-m-d');
+
+    $fyStart = DateTime::createFromFormat('Y-n-j', "$fy-1-1");
+    $fyEnd   = (clone $fyStart)->modify('+1 year')->modify('-1 day');
+    $startDate = $fyStart->format('Y-m-d');
+    $endDate   = $fyEnd->format('Y-m-d');
+
 } else {
-  // month mode
-  if (!preg_match('/^\d{4}-\d{2}$/', $month)) $month = date('Y-m');
-  $startDate = $month . '-01';
-  $endDate   = date('Y-m-t', strtotime($startDate));
+
+    if (!preg_match('/^\d{4}-\d{2}$/', $month)) {
+      $month = date('Y-m');
+    }
+
+    $startDate = $month . "-01";
+    $endDate   = date('Y-m-t', strtotime($startDate));
 }
 
-// ---- Determine branch scope ----
-// staff/stockman: always restricted to their branch
-// admin: use ?branch_id=… if provided, else all branches
+// ----- Branch Scope -----
 $scopeBranchId = null;
+
 if ($role === 'staff' || $role === 'stockman') {
-  $scopeBranchId = (int)$userBranchId;
-} elseif (!is_null($branchIdParam)) {
-  $scopeBranchId = $branchIdParam;
+    $scopeBranchId = (int)$userBranchId;
+} elseif (!is_null($branchParam)) {
+    $scopeBranchId = (int)$branchParam;
 }
 
-// ---- Query: sum of sales per month inside the window (optionally per branch) ----
+// -----------------------------
+// MODE A — RANGE = DAILY TOTALS
+// -----------------------------
+if ($period === 'range' || $period === 'month') {
+
+    // If month mode, convert selected month into a from/to range
+    if ($period === 'month') {
+        $startDate = $month . "-01";
+        $endDate   = date("Y-m-t", strtotime($startDate));
+    }
+
+    $sql = "
+      SELECT 
+        DATE(s.sale_date) AS d,
+        SUM(s.total) AS total
+      FROM sales s
+      WHERE s.sale_date BETWEEN ? AND ?
+    ";
+
+    $types = "ss";
+    $params = [$startDate, $endDate];
+
+    if (!is_null($scopeBranchId)) {
+        $sql .= " AND s.branch_id = ?";
+        $types .= "i";
+        $params[] = $scopeBranchId;
+    }
+
+    $sql .= " GROUP BY DATE(s.sale_date) ORDER BY d ASC";
+
+    $stmt = $conn->prepare($sql);
+    $stmt->bind_param($types, ...$params);
+    $stmt->execute();
+    $res = $stmt->get_result();
+
+    // Fill map
+    $dataMap = [];
+    while ($row = $res->fetch_assoc()) {
+        $dataMap[$row['d']] = (float)$row['total'];
+    }
+
+    // Build daily labels
+    $labels = [];
+    $sales  = [];
+
+    $periodObj = new DatePeriod(
+        new DateTime($startDate),
+        new DateInterval('P1D'),
+        (new DateTime($endDate))->modify('+1 day')
+    );
+
+    foreach ($periodObj as $day) {
+        $dStr = $day->format("Y-m-d");
+        $labels[] = $day->format("M d");
+        $sales[]  = $dataMap[$dStr] ?? 0;
+    }
+
+    echo json_encode(["months" => $labels, "sales" => $sales]);
+    exit;
+}
+
+
+// -------------------------------------------------
+// MODE B — MONTH or FISCAL = MONTHLY TOTALS (FIXED)
+// -------------------------------------------------
+
 $sql = "
   SELECT 
     DATE_FORMAT(s.sale_date, '%Y-%m') AS ym,
-    DATE_FORMAT(s.sale_date, '%b %Y') AS label,
     SUM(s.total) AS sum_total
   FROM sales s
   WHERE s.sale_date BETWEEN ? AND ?
 ";
+
 $types  = "ss";
 $params = [$startDate, $endDate];
 
 if (!is_null($scopeBranchId)) {
-  $sql   .= " AND s.branch_id = ? ";
-  $types .= "i";
-  $params[] = $scopeBranchId;
+    $sql .= " AND s.branch_id = ?";
+    $types .= "i";
+    $params[] = $scopeBranchId;
 }
 
-$sql .= " GROUP BY ym, label ORDER BY ym ASC";
+$sql .= " GROUP BY ym ORDER BY ym ASC";
 
 $stmt = $conn->prepare($sql);
-if (!$stmt) {
-  echo json_encode(['months' => [], 'sales' => [], 'error' => $conn->error]);
-  exit;
-}
-
 $stmt->bind_param($types, ...$params);
 $stmt->execute();
 $res = $stmt->get_result();
 
-// Build arrays
-$months = [];
-$sales  = [];
+// Map DB results
+$dbMap = [];
 while ($row = $res->fetch_assoc()) {
-  $months[] = $row['label'];           // e.g., "Sep 2025"
-  $sales[]  = (float)$row['sum_total'];
+    $dbMap[$row['ym']] = (float)$row['sum_total'];
 }
-$stmt->close();
 
-// Return JSON
-echo json_encode(['months' => $months, 'sales' => $sales]);
+// Build full month list
+$labels = [];
+$sales  = [];
+
+$periodObj = new DatePeriod(
+    new DateTime(date("Y-m-01", strtotime($startDate))),
+    new DateInterval("P1M"),
+    (new DateTime(date("Y-m-01", strtotime($endDate))))->modify("+1 month")
+);
+
+foreach ($periodObj as $m) {
+    $key = $m->format("Y-m");
+    $labels[] = $m->format("M Y");
+    $sales[]  = $dbMap[$key] ?? 0; // Auto-0 if no sales
+}
+
+echo json_encode(["months" => $labels, "sales" => $sales]);
+exit;

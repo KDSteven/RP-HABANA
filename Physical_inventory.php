@@ -394,8 +394,8 @@ $toolsOpen = ($self === 'backup_admin.php' || $isArchive);
         <?php endif; ?>
     </div>
 
-    <!-- Last Saved Card -->about-container
-    <div class="card shadow-sm p-3 text-center flex-grow-1" style="min-width:180px; background: linear-gradient(135deg, #6c757d, #343a40); color:white;">
+    <!-- Last Saved Card -->
+    <div class="card shadow-sm p-3 text-center flex-grow-1" style="min-width:180px; background:#343a40; color:#fff;">
         <i class="fas fa-clock me-2"></i>
         <strong>Last Saved:</strong> <?= $lastSaved ?>
     </div>
@@ -403,19 +403,27 @@ $toolsOpen = ($self === 'backup_admin.php' || $isArchive);
 
 <!-- Stats Cards -->
 <div class="d-flex flex-wrap gap-3 mb-3">
-    <div class="card shadow-sm p-3 flex-fill text-white" style="background: linear-gradient(135deg,#007bff,#00c6ff);">
+
+    <!-- Total Products (Brand Orange) -->
+    <div class="card shadow-sm p-3 flex-fill text-white" style="background:#FF7A30;">
         <h6>Total Products <i class="fas fa-box"></i></h6>
         <h4><?= $totalProducts ?></h4>
     </div>
-    <div class="card shadow-sm p-3 flex-fill text-white" style="background: linear-gradient(135deg,#28a745,#85e085);">
+
+    <!-- Match (Green) -->
+    <div class="card shadow-sm p-3 flex-fill text-white" style="background:#1f8a4b;">
         <h6>Match <i class="fas fa-check-circle"></i></h6>
         <h4><?= $match ?></h4>
     </div>
-    <div class="card shadow-sm p-3 flex-fill text-white" style="background: linear-gradient(135deg,#dc3545,#ff7b7b);">
+
+    <!-- Mismatch (Red) -->
+    <div class="card shadow-sm p-3 flex-fill text-white" style="background:#E63946;">
         <h6>Mismatch <i class="fas fa-exclamation-circle"></i></h6>
         <h4><?= $mismatch ?></h4>
     </div>
-    <div class="card shadow-sm p-3 flex-fill text-white" style="background: linear-gradient(135deg,#6c757d,#adb5bd);">
+
+    <!-- Pending (Neutral Gray) -->
+    <div class="card shadow-sm p-3 flex-fill text-white" style="background:#6C757D;">
         <h6>Pending <i class="fas fa-hourglass-half"></i></h6>
         <h4><?= $pendingCount ?></h4>
     </div>
@@ -445,17 +453,26 @@ $toolsOpen = ($self === 'backup_admin.php' || $isArchive);
       <input type="hidden" name="branch_id" value="<?= intval($selected_branch) ?>">
 
       <table class="table table-bordered align-middle" id="inventoryTable">
-        <thead class="table-dark sticky-top" id="inventoryTHead">
+      <thead class="table-dark" id="inventoryTHead">
           <tr>
-            <th>Product ID</th>
-            <th>Product Name</th>
-            <th>Category</th>
-            <th>System Stock</th>
-            <th>Physical Count</th>
-            <th>Discrepancy</th>
-            <th>Status</th>
+              <th>Product ID</th>
+              <th>Product Name</th>
+              <th>Category</th>
+
+              <?php if ($role === 'admin'): ?>
+                  <th>System Stock</th>
+              <?php endif; ?>
+
+              <th>Physical Count</th>
+
+              <?php if ($role === 'admin'): ?>
+                  <th>Discrepancy</th>
+              <?php endif; ?>
+
+              <th>Status</th>
           </tr>
-        </thead>
+      </thead>
+
         <tbody>
             <?php while ($row = $inventoryRes->fetch_assoc()): 
                 $system = (int)$row['system_stock'];
@@ -474,18 +491,27 @@ $toolsOpen = ($self === 'backup_admin.php' || $isArchive);
                 </td>
                 <td><?= htmlspecialchars($row['product_name']) ?></td>
                 <td><?= htmlspecialchars($row['category']) ?></td>
-                <td class="system-stock"><?= htmlspecialchars($system) ?></td>
-                <td>
-                <input
-                    type="number"
-                    min="0"
-                    class="form-control form-control-sm physical-count"
-                    value="<?= ($row['physical_count'] === '' ? '' : htmlspecialchars($phys)) ?>"
-                    placeholder="Count"
-                    oninput="updateDiscrepancy(this)"
-                >
-                </td>
-                <td class="discrepancy"><?= htmlspecialchars($disc) ?></td>
+                <?php if ($role === 'admin'): ?>
+                    <td class="system-stock"><?= htmlspecialchars($system) ?></td>
+                <?php else: ?>
+                    <td class="system-stock" style="display:none;"><?= htmlspecialchars($system) ?></td>
+                <?php endif; ?>
+
+
+                  <td>
+                      <input
+                          type="number"
+                          min="0"
+                          class="form-control form-control-sm physical-count"
+                          value="<?= ($row['physical_count'] === '' ? '' : htmlspecialchars($phys)) ?>"
+                          placeholder="Count"
+                          oninput="updateDiscrepancy(this)"
+                      >
+                  </td>
+
+                  <?php if ($role === 'admin'): ?>
+                      <td class="discrepancy"><?= htmlspecialchars($disc) ?></td>
+                  <?php endif; ?>
                 <td>
                 <span class="badge status-badge <?= $class ?>"><?= htmlspecialchars($status) ?></span>
                 </td>
@@ -563,14 +589,25 @@ function filterTable() {
   });
 }
 
-// ===== Update Discrepancy & Badge =====
+
 function updateDiscrepancy(input) {
   const row = input.closest('tr');
   const systemStockEl = row.querySelector('.system-stock');
   const discrepancyEl = row.querySelector('.discrepancy');
   const badge = row.querySelector('.status-badge');
 
-  const systemStock = parseInt(systemStockEl?.innerText) || 0;
+  let systemStock = 0;
+
+  // Admin sees system stock
+  if (systemStockEl && systemStockEl.innerText.trim() !== "") {
+      systemStock = parseInt(systemStockEl.innerText) || 0;
+  }
+
+  // Stockman has hidden value (system stock still exists in DOM via data-value)
+  if (systemStockEl && systemStockEl.dataset.value !== undefined) {
+      systemStock = parseInt(systemStockEl.dataset.value) || 0;
+  }
+
   const hasValue = input.value.trim() !== '';
   const physicalCount = hasValue ? (parseInt(input.value) || 0) : null;
 
@@ -578,32 +615,29 @@ function updateDiscrepancy(input) {
   let discrepancy = 0;
 
   if (physicalCount === null) {
-    status = 'Pending';
-    discrepancy = 0;
+      status = 'Pending';
   } else if (physicalCount > systemStock) {
-    status = 'Overstock';
-    discrepancy = Math.abs(physicalCount - systemStock);
+      status = 'Overstock';
+      discrepancy = physicalCount - systemStock;
   } else if (physicalCount < systemStock) {
-    status = 'Understock';
-    discrepancy = Math.abs(systemStock - physicalCount);
+      status = 'Understock';
+      discrepancy = systemStock - physicalCount;
   } else {
-    status = 'Complete';
-    discrepancy = 0;
+      status = 'Complete';
+      discrepancy = 0;
   }
 
-  // Update DOM
-  discrepancyEl.innerText = discrepancy;
+  if (discrepancyEl) discrepancyEl.innerText = discrepancy;
 
-  // Reset and apply badge classes
-  badge.classList.remove('status-over','status-under','status-complete','status-pending');
+  badge.className = "badge status-badge";
   badge.classList.add(
     status === 'Overstock'  ? 'status-over'  :
     status === 'Understock' ? 'status-under' :
     status === 'Complete'   ? 'status-complete' : 'status-pending'
   );
+
   badge.innerText = status;
 
-  // Mark row changed + update count
   markChanged(input);
   updateMismatchCount();
 }
@@ -617,6 +651,7 @@ function markChanged(input) {
 
 // ===== Update Total Mismatch (Under/Over) Count =====
 function updateMismatchCount() {
+  if ("<?= $role ?>" !== "admin") return;
   let total = 0;
   document.querySelectorAll('#inventoryTable tbody tr').forEach(row => {
     const badge = row.querySelector('.status-badge');

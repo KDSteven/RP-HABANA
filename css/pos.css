@@ -1,382 +1,213 @@
-/* =========================================
-   POS THEME — ORANGE + GRAY (MATCHES DASHBOARD)
-   ========================================= */
+/* ===== Global Premium Theme ===== */
 :root {
-  /* Accent */
-  --orange-600: #ea580c;
-  --orange-500: #f97316;
-  --orange-400: #fb923c;
-
-  /* Grays */
-  --gray-900: #1f2937;
-  --gray-800: #1f2937;
-  --gray-700: #374151;
-  --gray-500: #6b7280;
-  --gray-300: #d1d5db;
-  --gray-200: #e5e7eb;
-  --gray-100: #f3f4f6;
-  --gray-50:  #f9fafb;
-
-  /* Surfaces & bg */
-  --surface:  #ffffff;
-  --bg-start: #f8fafc;
-  --bg-end:   #eef2f7;
-
-  /* Shape & Elevation */
-  --radius-lg: 16px;
-  --radius-md: 12px;
-  --shadow-1: 0 4px 10px rgba(0,0,0,.06);
-  --shadow-2: 0 6px 16px rgba(0,0,0,.10);
-  --shadow-3: 0 10px 30px rgba(0,0,0,.15);
-
-  /* Motion */
-  --ease: cubic-bezier(.2,.7,.3,1);
-  --t-150: .15s;
-  --t-200: .20s;
-  --t-250: .25s;
-
-  /* Sidebar layout vars */
-  /* --sidebar-desktop: 260px; */
-  --sidebar-rail: 56px;
+    --radius: 12px;
+    --border: #dcdde0;
+    --bg: #f5f7fa;
+    --shadow: 0 4px 12px rgba(0,0,0,0.08);
 }
 
-/* ================= POS Layout ================= */
+/* Page wrapper with no scrolling */
 .pos-wrapper {
-  display: flex;
-  gap: 16px;
-  padding: 16px;
-  width: 100%;
-  align-items: flex-start;
-  flex-wrap: nowrap;
-  min-height: 100vh;
-  font-family: 'Segoe UI', Tahoma, sans-serif;
-  background: linear-gradient(135deg, var(--bg-start), var(--bg-end));
-  overflow-x: hidden;   /* prevent horizontal scroll */
-  overflow-y: visible;  /* allow page scrolling */
-}
-
-/* ================= Cart Section ================= */
-.cart-section {
-  flex: 1.3;
-  max-width: 600px;
-  width: 100%;
-  position: sticky;
-  top: 20px;
-  display: flex;
-  flex-direction: column;
-  height: auto;
-}
-
-.cart-box {
-  background: var(--surface);
-  border: 1px solid var(--gray-200);
-  border-radius: var(--radius-md);
-  box-shadow: var(--shadow-1);
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  padding: 10px;
-  flex: 0 1 auto;
-  max-height: 60vh;
-}
-
-/* Tables inside cart */
-.cart-box table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 13px;
-}
-.cart-box thead th {
-  background: linear-gradient(135deg, var(--orange-600), var(--orange-500));
-  color: #fff;
-  font-weight: 600;
-  padding: 8px;
-  text-align: left;
-  position: sticky;
-  top: 0;
-  font-size: 14px;
-  z-index: 1; /* keep above rows */
-}
-.cart-box tbody td {
-  padding: 6px 8px;
-  border-bottom: 1px solid var(--gray-200);
-  font-size: 13px;
-  color: var(--gray-700);
-}
-.cart-box tbody tr:hover {
-  background: #fff6ec; /* subtle orange-tinted hover */
-}
-
-/* ================= Controls Section ================= */
-.controls-section {
-  flex: 1;
-  min-width: 280px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  max-height: 80vh;
-  overflow-y: auto;
-}
-.controls-section .card {
-  background: var(--surface);
-  padding: 10px;
-  border-radius: var(--radius-md);
-  border: 1px solid var(--gray-200);
-  box-shadow: var(--shadow-1);
-}
-
-/* ================= Quick Add Buttons ================= */
-.quick-btn-form {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(90px, 1fr));
-  gap: 6px;
-}
-.quick-btn-form button {
-  min-height: 50px;
-  font-size: 13px;
-  font-weight: 600;
-  border-radius: 8px;
-  background: linear-gradient(135deg, var(--orange-600), var(--orange-500));
-  color: #fff;
-  border: none;
-  padding: 8px 6px;
-  text-align: center;
-  cursor: pointer;
-  transition: transform var(--t-150) var(--ease), box-shadow var(--t-150) var(--ease);
-  display: flex; flex-direction: column; justify-content: center; align-items: center;
-  line-height: 1.2;
-}
-.quick-btn-form button:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(234,88,12,.22);
-}
-
-/* ================= Totals ================= */
-.totals-box {
-  background: #fff8f1; /* very light orange surface */
-  border: 2px solid var(--orange-500);
-  border-radius: 10px;
-  padding: 10px;
-  font-size: 14px;
-}
-.totals-box h5, .totals-box h4 {
-  display: flex;
-  justify-content: space-between;
-  margin: 4px 0;
-  color: var(--gray-800);
-}
-.totals-box .final-total {
-  font-size: 18px;
-  color: var(--orange-600);
-  font-weight: 800;
-  border-top: 1px solid var(--gray-200);
-  padding-top: 6px;
-}
-
-/* ================= Checkout Buttons ================= */
-.checkout-buttons {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin-top: 10px;
-}
-.checkout-buttons button {
-  font-size: 14px;
-  padding: 10px;
-  border-radius: 10px;
-  font-weight: 800;
-  border: none;
-  transition: transform var(--t-150) var(--ease), box-shadow var(--t-150) var(--ease);
-}
-.checkout-buttons button:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 3px 10px rgba(0,0,0,.12);
-}
-.checkout-buttons .pay-btn {
-  background: #22c55e; /* green-500 */
-  color: #fff;
-}
-.checkout-buttons .pay-btn:hover {
-  background: #16a34a; /* green-600 */
-}
-.checkout-buttons .cancel-btn {
-  background: #ef4444; /* red-500 */
-  color: #fff;
-}
-.checkout-buttons .cancel-btn:hover {
-  background: #dc2626; /* red-600 */
-}
-
-/* ================= Discount Form ================= */
-.discount-form {
-  display: flex;
-  gap: 6px;
-}
-.discount-form input {
-  flex: 1;
-  font-size: 13px;
-  padding: 6px 8px;
-  border: 1px solid var(--gray-300);
-  border-radius: 8px;
-}
-.discount-form button {
-  background: linear-gradient(135deg, var(--orange-500), var(--orange-400));
-  color: #fff;
-  font-weight: 800;
-  border: none;
-  padding: 6px 12px;
-  border-radius: 8px;
-  transition: box-shadow var(--t-150) var(--ease);
-}
-.discount-form button:hover {
-  box-shadow: 0 4px 10px rgba(249,115,22,.25);
-}
-
-/* ================= Toast Overrides ================= */
-.toast-container {
-  position: fixed !important;
-  top: 1rem;
-  right: 1rem;
-  z-index: 2000;
-  pointer-events: none;
-}
-.toast {
-  min-width: 280px;
-  margin-bottom: .5rem;
-  box-shadow: var(--shadow-2);
-  pointer-events: auto;
-}
-
-/* ================= Responsive ================= */
-@media (max-width: 992px) {
-  .pos-wrapper {
-    flex-wrap: wrap;
-  }
-  .cart-section, .controls-section {
-    max-width: 100%;
-    height: auto;
-    position: relative;
-    top: auto;
-    margin-bottom: 16px;
-  }
-}
-@media (max-width: 600px) {
-  .pos-wrapper {
+    height: calc(100vh - 20px);
+    display: flex;
     flex-direction: column;
-    padding: 8px;
-  }
-  .cart-box, .controls-section {
-    max-height: none;
-  }
+    gap: 10px;
+    background: var(--bg);
+    padding: 10px 16px;
+    overflow: hidden; /* IMPORTANT — Stops body scroll */
 }
 
-/* ================= Payment / Refund Modal ================= */
-.modal-dialog {
-  max-width: 720px;
-  margin: 2rem auto;
-}
-.modal-content {
-  border-radius: var(--radius-md);
-  background: #fdfdfd;
-  box-shadow: var(--shadow-3);
-  overflow: hidden;
-  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-  border: 1px solid var(--gray-200);
-}
-.modal-header {
-  background: linear-gradient(135deg, var(--orange-600), var(--orange-500));
-  color: #fff;
-  font-weight: 600;
-  border-bottom: none;
-  padding: 1rem 1.25rem;
-}
-.modal-header .btn-close { filter: brightness(1.5); }
-.modal-title i { margin-right: 8px; }
-.modal-body {
-  padding: 1.25rem 1.5rem;
-  max-height: 70vh;
-  overflow-y: auto;
-}
-.modal-body table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 14px;
-  margin-bottom: 1rem;
-}
-.modal-body th {
-  background: var(--orange-600);
-  color: #fff;
-  font-weight: 600;
-  padding: 8px;
-  text-align: left;
-  border-radius: 4px 4px 0 0;
-}
-.modal-body td {
-  padding: 6px 8px;
-  border-bottom: 1px solid var(--gray-200);
-  color: var(--gray-700);
-}
-.modal-body input[type="number"] {
-  width: 90px;
-  text-align: center;
-  border: 1px solid var(--gray-300);
-  border-radius: 8px;
-  padding: 6px 8px;
-}
-.modal-body .form-label { font-weight: 600; }
-.modal-body select, 
-.modal-body input[type="number"] {
-  margin: 4px 0 12px;
-  width: 100%;
-  box-sizing: border-box;
-  font-size: 14px;
-}
-.modal-footer {
-  padding: .75rem 1.5rem;
-  border-top: none;
-  display: flex;
-  justify-content: flex-end;
-  gap: 10px;
-  background: var(--gray-50);
-}
-.modal-footer .btn {
-  font-weight: 800;
-  border-radius: 10px;
-  padding: 10px 16px;
-  transition: transform var(--t-150) var(--ease), box-shadow var(--t-150) var(--ease);
-}
-.modal-footer .btn:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 3px 10px rgba(0,0,0,.12);
-}
-.modal-footer .btn-danger {
-  background: #ef4444;
-  color: #fff;
-}
-.modal-footer .btn-danger:hover {
-  background: #dc2626;
-}
-/* ================= Sidebar / POS Alignment ================= */
-@media (min-width: 992px) {
-  .pos-wrapper { margin-left: var(--sidebar-desktop); }
-}
-@media (min-width: 768px) and (max-width: 991.98px) {
-  .pos-wrapper { margin-left: var(--sidebar-rail); }
-  #mainSidebar.expanded ~ .pos-wrapper {
-    margin-left: var(--sidebar-desktop);
-  }
-}
-@media (max-width: 767.98px) {
-  .pos-wrapper { margin-left: 0; } /* sidebar overlays on mobile */
+/* ===== TOP BAR ===== */
+.pos-topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    background: white;
+    padding: 10px 16px;
+    border-radius: var(--radius);
+    border: 1px solid var(--border);
+    box-shadow: var(--shadow);
 }
 
-/* ===== Small polish ===== */
-.cart-box::-webkit-scrollbar,
-.controls-section::-webkit-scrollbar,
-.modal-body::-webkit-scrollbar { width: 10px; }
-.cart-box::-webkit-scrollbar-thumb,
-.controls-section::-webkit-scrollbar-thumb,
-.modal-body::-webkit-scrollbar-thumb {
-  background: var(--gray-300);
-  border-radius: 999px;
+.search-box {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex: 1;
+    background: #fff;
+    border: 1px solid var(--border);
+    padding: 6px 12px;
+    border-radius: var(--radius);
 }
+
+.search-box input {
+    flex: 1;
+    border: none;
+    outline: none;
+}
+
+/* ===== BODY: 2 COLUMN SYSTEM ===== */
+.pos-body {
+    flex: 1;
+    display: flex;
+    gap: 16px;
+    overflow: hidden;
+}
+
+/* LEFT CART */
+.pos-cart {
+    flex: 0 0 40%;
+    background: white;
+    padding: 12px;
+    border-radius: var(--radius);
+    border: 1px solid var(--border);
+    box-shadow: var(--shadow);
+    overflow-y: auto;
+}
+
+/* RIGHT PRODUCT LIST (THIS IS THE ONLY SCROLLABLE AREA) */
+.pos-products {
+    flex: 1;
+    overflow-y: auto;
+    padding-right: 8px;
+}
+
+/* =====================================
+   ULTRA PREMIUM POS PRODUCT BUTTONS
+===================================== */
+
+/* SECTION WRAPPER */
+.product-section {
+    background: #ffffff;
+    padding: 20px;
+    border-radius: 14px;
+    border: 1px solid #e5e7eb;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.04);
+    margin-bottom: 20px;
+}
+
+/* SECTION TITLE */
+.product-section h4 {
+    margin-bottom: 14px;
+    font-size: 17px;
+    font-weight: 700;
+    color: #1f2937;
+}
+
+/* GRID */
+.product-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+    gap: 12px;
+}
+
+/* ===============================
+   THE ACTUAL PRODUCT BUTTON STYLE
+================================*/
+.product-btn {
+    background: #f9fafb;
+    color: #111827;
+    padding: 14px 10px;
+    border: 1px solid #e5e7eb;
+    border-radius: 12px;
+    font-size: 14px;
+    font-weight: 600;
+    line-height: 1.3;
+    cursor: pointer;
+
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.5),
+                0 3px 8px rgba(0,0,0,0.05);
+
+    transition: 
+        transform 0.12s ease,
+        box-shadow 0.15s ease,
+        background 0.12s ease,
+        border-color 0.12s ease;
+}
+
+/* HOVER: LIKE AN IPAD TILE */
+.product-btn:hover {
+    background: #1d4ed8;
+    color: #ffffff;
+    border-color: #1d4ed8;
+    transform: translateY(-3px);
+    box-shadow: 0 6px 18px rgba(29,78,216,0.25);
+}
+
+/* SERVICE BUTTONS – PREMIUM BLUE */
+.product-btn.service {
+    background: #1e40af;
+    color: white;
+    border-color: #1e3a8a;
+}
+
+.product-btn.service:hover {
+    background: #1d4ed8;
+    box-shadow: 0 6px 18px rgba(29,78,216,0.25);
+}
+
+/* ===== FIXED PAYMENT BAR ===== */
+.pos-payment-bar {
+    display: flex;
+    justify-content: center;
+    gap: 12px;
+    padding: 10px 16px;
+    background: #ffffffee;
+    backdrop-filter: blur(8px);
+    border-top: 1px solid var(--border);
+    position: sticky;
+    bottom: 0;
+}
+
+.pay-btn, .cancel-btn {
+    flex: 1;
+    padding: 12px;
+    border-radius: 10px;
+    font-size: 15px;
+    font-weight: bold;
+    border: none;
+}
+
+.pay-btn { background: #22c55e; color: #fff; }
+.cancel-btn { background: #ef4444; color: #fff; }
+/* PAYMENT MODAL LANDSCAPE LAYOUT */
+.payment-layout {
+    display: flex;
+    gap: 25px;
+    padding: 25px !important;
+}
+
+.payment-left {
+    flex: 1.6;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.payment-right {
+    flex: 1;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+}
+
+.payment-right .btn {
+    padding: 18px 0;
+    font-size: 1.5rem;
+    font-weight: bold;
+    border-radius: 12px;
+    background: #f8fafc;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+}
+
+.payment-right .btn-danger {
+    background: #dc3545;
+    color: white;
+}
+
+.payment-right .btn-warning {
+    background: #facc15;
+    color: black;
+}
+

@@ -99,9 +99,16 @@ if ($reportType === 'itemized') {
           WHERE ss.sale_id = s.sale_id)
       )) AS item_list,
 
-      -- aggregate refunds, cap to grand total
+      -- total refunded (capped)
       ROUND(COALESCE(SUM(r.refund_total), 0), 2)                           AS total_refunded_raw,
       ROUND(LEAST(COALESCE(SUM(r.refund_total), 0), (s.total + s.vat)), 2) AS total_refunded,
+
+      -- NEW: total products amount
+      (
+        SELECT COALESCE(SUM(si.price * si.quantity), 0)
+        FROM sales_items si
+        WHERE si.sale_id = s.sale_id
+      ) AS products_total,
 
       TRIM(BOTH '; ' FROM COALESCE(
         NULLIF(GROUP_CONCAT(DISTINCT r.refund_reason ORDER BY r.refund_date SEPARATOR '; '), ''),
@@ -109,7 +116,7 @@ if ($reportType === 'itemized') {
       )) AS refund_reason
 
     FROM sales s
-    LEFT JOIN branches b    ON s.branch_id = b.branch_id
+    LEFT JOIN branches b      ON s.branch_id = b.branch_id
     LEFT JOIN sales_refunds r ON r.sale_id = s.sale_id
     $whereSql
     GROUP BY s.sale_id
@@ -416,23 +423,25 @@ $toolsOpen = ($self === 'backup_admin.php' || $isArchive);
   usort($salesDataArr, fn($a, $b) => strcmp($b['sale_date'], $a['sale_date']));
 
   foreach ($salesDataArr as $row):
-    $gt   = round((float)$row['grand_total'], 2);
-    $rf   = round((float)$row['total_refunded'], 2); // capped by SQL
-    $eps  = 0.01;
+    $rf = (float)$row['total_refunded'];      // refunded amount
+    $pt = (float)$row['products_total'];      // product-only total
+    $eps = 0.01;                              // rounding tolerance
 
-    if ($rf <= 0) {
-        $status = 'Not Refunded'; 
+    if ($pt < $eps) {
+        $status = 'Not Refundable';
         $badge = 'secondary';
-    } elseif ($rf + $eps < $gt) {
-        $status = 'Partial';
-        $badge = 'warning';
-    } elseif ($rf <= $gt + $eps) {
+
+    } elseif ($rf < $eps) {
+        $status = 'Not Refunded';
+        $badge = 'secondary';
+
+    } elseif ($rf >= $pt - $eps) {
         $status = 'Full';
         $badge = 'success';
+
     } else {
-        // should no longer happen because SQL caps, but kept for safety
-        $status = 'Over-refunded';
-        $badge = 'danger';
+        $status = 'Partial';
+        $badge = 'warning';
     }
   ?>
   <tr>

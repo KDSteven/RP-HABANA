@@ -1,7 +1,6 @@
 /* ==========================================================
    PHYSICAL INVENTORY PAGE — RESPONSIVE, CLEAN, BALANCED
 ========================================================== */
-
 /* ------------------------------
    MAIN CONTAINER
 ------------------------------ */
@@ -46,7 +45,7 @@
 
 .card h6 {
   font-weight: 600;
-  color: #555;
+  color: #fff;
   margin-bottom: 4px;
 }
 
@@ -118,7 +117,9 @@
   vertical-align: middle;
   padding: 10px 12px;
   font-size: 15px;
-  white-space: nowrap;
+}
+#inventoryTable th {
+  background-color: #FF7A30;
 }
 
 /* Sticky header */
@@ -128,21 +129,6 @@
   background: linear-gradient(90deg, #f7931e, #ffb347);
   color: #fff;
   z-index: 5;
-}
-
-/* Row effects */
-#inventoryTable tbody tr:not(.changed):hover td {
-  background-color: #e9f5ff !important;
-  cursor: pointer;
-  transition: background-color 0.2s;
-}
-
-#inventoryTable tbody tr.changed td {
-  background-color: #fff3cd !important;
-  transition: background-color 0.2s;
-}
-#inventoryTable tbody tr.changed:hover td {
-  background-color: #ffe8a1 !important;
 }
 
 /* Table input fields */
@@ -164,16 +150,16 @@
   font-size: 0.9rem;
 }
 
-.status-over    { background-color: #d9534f; color: #fff; }
-.status-under   { background-color: #f0ad4e; color: #fff; }
-.status-complete{ background-color: #5cb85c; color: #fff; }
+.status-over    { background-color: #E63946; color: #fff; }
+.status-under   { background-color: #FF7A30; color: #fff; }
+.status-complete{ background-color: #1f8a4b; color: #fff; }
 .status-pending { background-color: #6c757d; color: #fff; }
 
 /* ------------------------------
    BUTTONS
 ------------------------------ */
 .btn-success {
-  background-color: #28a745;
+  background-color: #1f8a4b;
   border: none;
 }
 .btn-primary {
